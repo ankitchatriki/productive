@@ -18,6 +18,8 @@ export interface EntryDialogInit {
   sectionId?: Id | null;
   /** Prefill from the running timer; saving stops the timer at the chosen end. */
   fromTimer?: boolean;
+  /** Called after the dialog closes (e.g. to reopen the Timecard cell panel). */
+  onClosed?: () => void;
 }
 
 interface EntryDialogProps {

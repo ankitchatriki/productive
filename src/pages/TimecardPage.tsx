@@ -25,6 +25,24 @@ interface CellSel { courseId: Id; sectionId: Id | null | 'all'; date: DateKey }
 
 export function TimecardPage() {
   useDocumentTitle('Timecard');
+  const week = useWeekParam('/timecard');
+  const [fmt, setFmt] = useState<DurationFormat>('decimal');
+  const [phoneMode, setPhoneMode] = useState<'day' | 'week'>('day');
+  // Keyed on the week so per-week state (selected phone day, added rows, open panel) resets (review R2, R14).
+  return <TimecardBody key={week.weekStart} {...week} fmt={fmt} setFmt={setFmt} phoneMode={phoneMode} setPhoneMode={setPhoneMode} />;
+}
+
+interface TimecardBodyProps {
+  weekStart: string;
+  currentWeek: string;
+  go: (w: string) => void;
+  fmt: DurationFormat;
+  setFmt: (f: DurationFormat) => void;
+  phoneMode: 'day' | 'week';
+  setPhoneMode: (m: 'day' | 'week') => void;
+}
+
+function TimecardBody({ weekStart, currentWeek, go, fmt, setFmt, phoneMode, setPhoneMode }: TimecardBodyProps) {
   const data = useStore();
   const dispatch = useDispatch();
   const ui = useUi();
@@ -32,17 +50,14 @@ export function TimecardPage() {
   const navigate = useNavigate();
   const now = useNow(60_000);
   const isPhone = useMediaQuery(PHONE_QUERY);
-  const { weekStart, currentWeek, go } = useWeekParam('/timecard');
   const today = toDateKey(now);
   const dates = weekDates(weekStart);
   const plan = data.weekPlans[weekStart];
 
-  const [fmt, setFmt] = useState<DurationFormat>('decimal');
   const [extraRows, setExtraRows] = useState<Id[]>([]);
   const [expanded, setExpanded] = useState<Set<Id>>(new Set());
   const [sel, setSel] = useState<CellSel | null>(null);
   const [phoneDay, setPhoneDay] = useState<DateKey>(dates.includes(today) ? today : weekStart);
-  const [phoneMode, setPhoneMode] = useState<'day' | 'week'>('day');
 
   const intervals = useMemo(() => allIntervals(data, now), [data, now]);
   const tc = useMemo(() => timecard(intervals, weekStart, extraRows), [intervals, weekStart, extraRows]);
@@ -189,7 +204,7 @@ export function TimecardPage() {
             </tfoot>
           </table>
         </div>
-      ) : phoneMode === 'day' ? (
+      ) : tc.rows.length === 0 ? null : phoneMode === 'day' ? (
         <div className={`card print-area ${styles.phoneCard}`}>
           <div className={styles.dayTabs} role="tablist" aria-label="Day">
             {dates.map((d, i) => (
@@ -277,14 +292,24 @@ export function TimecardPage() {
 
       {sel && (
         <CellPanel sel={sel} intervals={intervals} label={rowLabel(sel.courseId, sel.sectionId)} onClose={() => setSel(null)}
-          onEdit={(id) => { const e = data.entries.find((x) => x.id === id); if (e) ui.openEntry({ entry: e }); }}
+          onEdit={(id) => {
+            const e = data.entries.find((x) => x.id === id);
+            if (!e) return;
+            const back = sel;
+            setSel(null);
+            ui.openEntry({ entry: e, onClosed: () => setSel(back) });
+          }}
           onDelete={(id) => {
             const e = data.entries.find((x) => x.id === id);
             if (!e) return;
             dispatch({ type: 'entry/delete', id });
             toast.show('Entry deleted.', { label: 'Undo', onClick: () => dispatch({ type: 'entry/add', entry: e }) });
           }}
-          onAdd={() => ui.openEntry({ date: sel.date, courseId: sel.courseId, sectionId: sel.sectionId === 'all' ? null : sel.sectionId })}
+          onAdd={() => {
+            const back = sel;
+            setSel(null);
+            ui.openEntry({ date: sel.date, courseId: sel.courseId, sectionId: sel.sectionId === 'all' ? null : sel.sectionId, onClosed: () => setSel(back) });
+          }}
           notes={new Map(data.entries.map((e) => [e.id, e.note]))}
           sectionTitle={(id) => (id ? sectionById.get(id)?.title ?? 'Section' : 'General')}
         />

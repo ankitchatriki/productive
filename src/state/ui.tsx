@@ -87,7 +87,7 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
   return (
     <UiContext.Provider value={value}>
       {children}
-      <EntryDialog open={!!entryInit} init={entryInit ?? {}} onClose={() => setEntryInit(null)} />
+      <EntryDialog open={!!entryInit} init={entryInit ?? {}} onClose={() => { const done = entryInit?.onClosed; setEntryInit(null); done?.(); }} />
       <SwitchDialog open={switchOpen} onClose={() => setSwitchOpen(false)} onConfirm={(next) => { switchTo(next); setAnnouncement('Switched section.'); }} />
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <div className="visually-hidden" aria-live="polite">{announcement}</div>
