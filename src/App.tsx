@@ -9,6 +9,7 @@ import { CourseDetailPage } from './pages/CourseDetailPage';
 import { TodayPage } from './pages/TodayPage';
 import { PlanPage } from './pages/PlanPage';
 import { TimecardPage } from './pages/TimecardPage';
+import { ReviewPage } from './pages/ReviewPage';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -62,7 +63,7 @@ export function App() {
           <Route path="timecard/:weekStart?" element={<TimecardPage />} />
           <Route path="courses" element={<CoursesPage />} />
           <Route path="courses/:courseId" element={<CourseDetailPage />} />
-          <Route path="review/:weekStart?" element={<Placeholder title="Review" />} />
+          <Route path="review/:weekStart?" element={<ReviewPage />} />
           <Route path="settings" element={<Placeholder title="Settings" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
