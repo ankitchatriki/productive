@@ -7,6 +7,7 @@ import { AppUiProvider, useUi } from './state/ui';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
 import { TodayPage } from './pages/TodayPage';
+import { PlanPage } from './pages/PlanPage';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -56,7 +57,7 @@ export function App() {
         <Route path="/welcome" element={<Placeholder title="Welcome" />} />
         <Route element={<Shell />}>
           <Route index element={<TodayPage />} />
-          <Route path="plan/:weekStart?" element={<Placeholder title="Plan week" />} />
+          <Route path="plan/:weekStart?" element={<PlanPage />} />
           <Route path="timecard/:weekStart?" element={<Placeholder title="Timecard" />} />
           <Route path="courses" element={<CoursesPage />} />
           <Route path="courses/:courseId" element={<CourseDetailPage />} />

@@ -38,7 +38,7 @@
 }
 
 /* Phone */
-.topbar, .tabbar { display: none; }
+.topbar, .tabbar, .phonePill { display: none; }
 @media (max-width: 767px) {
   .sidebar { display: none; }
   .topbar {
@@ -57,7 +57,7 @@
     background: none; border: 0; font-weight: var(--weight-medium);
   }
   .tab.active { color: var(--accent-text); }
-  .phonePill { position: fixed; left: 0; right: 0; bottom: var(--tabbar-h); z-index: 29; }
+  .phonePill { display: block; position: fixed; left: 0; right: 0; bottom: var(--tabbar-h); z-index: 29; }
 }
 .sheetList { display: flex; flex-direction: column; gap: var(--space-1); }
 .sheetList a, .sheetList button {
