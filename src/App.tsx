@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import styles from './App.module.css';
 import { Nav } from './components/Nav';
+import { useStorageInfo } from './state/store';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -14,10 +15,14 @@ function Placeholder({ title }: { title: string }) {
 
 function Layout() {
   const [, setShortcuts] = useState(false);
+  const { storageError } = useStorageInfo();
   return (
     <div className={styles.shell}>
       <Nav pill={null} onShowShortcuts={() => setShortcuts(true)} />
-      <main className={styles.main} id="main"><Outlet /></main>
+      <main className={styles.main} id="main">
+        {storageError && <div className="banner banner-danger" role="alert" style={{ margin: 16 }}>{storageError}</div>}
+        <Outlet />
+      </main>
     </div>
   );
 }
