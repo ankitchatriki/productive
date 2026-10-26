@@ -29,3 +29,12 @@ describe('timecardCsv', () => {
     expect(csvCell(12)).toBe('12');
   });
 });
+
+describe('formula injection (review R12)', () => {
+  it('prefixes cells that start with = + - @', () => {
+    expect(csvCell('=1+1')).toBe("'=1+1");
+    expect(csvCell('@SUM(A1)')).toBe("'@SUM(A1)");
+    expect(csvCell('-x')).toBe("'-x");
+    expect(csvCell(-5)).toBe('-5');
+  });
+});

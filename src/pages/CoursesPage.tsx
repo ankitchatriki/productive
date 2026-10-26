@@ -52,9 +52,10 @@ export function CoursesPage() {
         </div>
       </div>
 
-      {data.courses.length === 0 ? (
+      {activeCount === 0 && !showArchived ? (
         <EmptyState icon="book" title="No courses yet" actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New course</button>}>
           Courses hold sections. Every hour you log belongs to one.
+          {archivedCount > 0 && <><br /><button type="button" className="link-btn" onClick={() => setShowArchived(true)}>Show archived ({archivedCount})</button></>}
         </EmptyState>
       ) : (
         <>

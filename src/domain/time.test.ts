@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, daysBetween, formatDuration, formatElapsed, formatHoursDecimal, formatSigned, hhmmToMin,
+  addDays, daysBetween, formatDay, formatDuration, formatElapsed, formatHoursDecimal, formatSigned, hhmmToMin,
   isRestDay, isValidDateKey, minToHHMM, minutesBetween, splitByLocalDay, toDateKey, weekDates, weekStartOf, weekdayOf,
 } from './time';
 
@@ -128,5 +128,11 @@ describe('formatting', () => {
     expect(minToHHMM(1440)).toBe('24:00');
     expect(hhmmToMin('09:05')).toBe(545);
     expect(hhmmToMin('25:00')).toBeNull();
+  });
+});
+
+describe('formatDay (review R15)', () => {
+  it('uses a fixed three-letter month', () => {
+    expect(formatDay('2026-09-07')).toBe('Mon 7 Sep');
   });
 });

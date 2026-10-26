@@ -287,7 +287,7 @@ function PlanBody({ plan }: { plan: WeekPlan }) {
                   <DurationInput id={`gt-${g.id}`} value={g.targetMinutes} min={15} onCommit={(m) => m && setGoal(g.id, { ...g, targetMinutes: m })} ariaLabel={`Goal ${i + 1} target hours`} />
                 ) : (
                   <input id={`gt-${g.id}`} type="number" className="input input-num" min={1} max={g.kind === 'dailyGoalDays' ? 7 : 999} value={g.targetCount}
-                    onChange={(e) => { const n = Math.round(Number(e.target.value)); if (n >= 1) setGoal(g.id, { ...g, targetCount: g.kind === 'dailyGoalDays' ? Math.min(7, n) : n }); }} />
+                    onChange={(e) => { const n = Math.round(Number(e.target.value)); if (Number.isFinite(n) && n >= 1) setGoal(g.id, { ...g, targetCount: Math.min(g.kind === 'dailyGoalDays' ? 7 : 999, n) }); }} />
                 )}
                 <span className="subtle small">{g.kind === 'totalHours' || g.kind === 'courseHours' ? 'h' : g.kind === 'dailyGoalDays' ? 'days' : 'sections'}</span>
               </div>

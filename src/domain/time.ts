@@ -147,9 +147,7 @@ export function formatClock(d: Date | IsoInstant): string {
 /** "Thu 30 Oct" */
 export function formatDay(key: DateKey): string {
   const d = parseDateKey(key);
-  const wd = new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(d);
-  const mo = new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(d);
-  return `${wd} ${d.getDate()} ${mo}`;
+  return `${WEEKDAY_SHORT[weekdayOf(key)]} ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
 }
 
 /** "Week of Mon 26 Oct 2026" */
@@ -157,5 +155,6 @@ export function formatWeekLabel(weekStart: WeekKey): string {
   return `Week of ${formatDay(weekStart)} ${parseDateKey(weekStart).getFullYear()}`;
 }
 
+export const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export const WEEKDAY_LETTER = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];

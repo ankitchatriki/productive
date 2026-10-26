@@ -1,7 +1,7 @@
 import { useRef, type KeyboardEvent } from 'react';
 import styles from './Heatmap.module.css';
 import { heatLevel } from '../domain/streaks';
-import { WEEKDAY_SHORT, addDays, formatDay, formatDuration } from '../domain/time';
+import { MONTH_SHORT, WEEKDAY_SHORT, addDays, formatDay, formatDuration, parseDateKey } from '../domain/time';
 import type { DateKey, WeekKey } from '../domain/types';
 
 interface HeatmapProps {
@@ -39,6 +39,14 @@ export function Heatmap({ lastWeekStart, weeks, today, minutesFor, goalFor, isRe
   return (
     <div className={styles.wrap}>
       <div className={styles.scroller}>
+        <div className={styles.months} style={{ gridTemplateColumns: `24px repeat(${weeks}, 12px)` }} aria-hidden="true">
+          <span />
+          {cols.map((ws, i) => {
+            const m = parseDateKey(ws).getMonth();
+            const show = i === 0 || parseDateKey(cols[i - 1]).getMonth() !== m;
+            return <span key={ws}>{show ? MONTH_SHORT[m] : ''}</span>;
+          })}
+        </div>
         <div className={styles.grid} ref={ref} role="grid" aria-label={`Daily hours, last ${weeks} weeks`} style={{ gridTemplateColumns: `24px repeat(${weeks}, 12px)` }}>
           {WEEKDAY_SHORT.map((wd, r) => (
             <div key={wd} role="row" className={styles.row}>

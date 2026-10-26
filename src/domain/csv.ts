@@ -5,7 +5,9 @@ import { addDays, minToHHMM, parseDateKey, toDateKey } from './time';
 export const CSV_HEADER = ['date', 'start', 'end', 'minutes', 'course', 'section', 'note', 'source'];
 
 export function csvCell(v: string | number): string {
-  const s = String(v);
+  let s = String(v);
+  // Keep spreadsheets from treating user text as a formula (review R12).
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
