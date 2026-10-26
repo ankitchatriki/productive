@@ -10,15 +10,8 @@ import { TodayPage } from './pages/TodayPage';
 import { PlanPage } from './pages/PlanPage';
 import { TimecardPage } from './pages/TimecardPage';
 import { ReviewPage } from './pages/ReviewPage';
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="page">
-      <div className="page-header"><h1 className="page-title">{title}</h1></div>
-      <p className="muted">Coming soon.</p>
-    </div>
-  );
-}
+import { SettingsPage } from './pages/SettingsPage';
+import { WelcomePage } from './pages/WelcomePage';
 
 function Layout() {
   const { storageError } = useStorageInfo();
@@ -56,7 +49,7 @@ export function App() {
   return (
     <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
-        <Route path="/welcome" element={<Placeholder title="Welcome" />} />
+        <Route path="/welcome" element={<WelcomePage />} />
         <Route element={<Shell />}>
           <Route index element={<TodayPage />} />
           <Route path="plan/:weekStart?" element={<PlanPage />} />
@@ -64,7 +57,7 @@ export function App() {
           <Route path="courses" element={<CoursesPage />} />
           <Route path="courses/:courseId" element={<CourseDetailPage />} />
           <Route path="review/:weekStart?" element={<ReviewPage />} />
-          <Route path="settings" element={<Placeholder title="Settings" />} />
+          <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

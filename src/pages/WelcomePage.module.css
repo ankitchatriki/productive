@@ -1,0 +1,19 @@
+.screen { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: var(--space-12) var(--space-4); }
+.inner { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: var(--space-4); }
+.brand { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); font-size: var(--text-lg); }
+.mark { width: 24px; height: 24px; border-radius: 6px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
+.dots { display: flex; gap: 6px; }
+.dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--surface-3); }
+.dots .on { background: var(--accent); }
+.title { font-size: var(--text-2xl); line-height: var(--lh-2xl); font-weight: var(--weight-semibold); }
+.step { display: flex; flex-direction: column; gap: var(--space-4); }
+.step.done { opacity: 0.7; }
+.stepHead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.footer { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.dayList { display: flex; flex-direction: column; gap: var(--space-2); }
+.dayRow { display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: center; gap: var(--space-3); }
+.past { color: var(--text-subtle); }
+@media (max-width: 767px) {
+  .screen { padding: var(--space-6) var(--space-4); }
+  .dayRow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}

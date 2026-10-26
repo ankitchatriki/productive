@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import styles from './TodayPage.module.css';
 import { useDispatch, useStore } from '../state/store';
 import { useUi } from '../state/ui';
@@ -111,6 +111,8 @@ export function TodayPage() {
     ui.setDraft({ ...base, ...patch });
   };
 
+  if (!data.settings.onboarded && data.courses.length === 0) return <Navigate to="/welcome" replace />;
+
   return (
     <div className="page">
       <div className="page-header">
@@ -164,7 +166,7 @@ export function TodayPage() {
             </>
           ) : (
             <>
-              <h2 id="timer-heading" className="eyebrow">Today's section</h2>
+              <h2 id="timer-heading" className="eyebrow">Clock in to</h2>
               {hasCourses ? (
                 <div className={styles.pickers}>
                   <div className="field">
