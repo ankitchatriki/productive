@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import styles from './WelcomePage.module.css';
 import { useDispatch, useStore } from '../state/store';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { autoAssign, createWeekPlan } from '../domain/plan';
-import { makeSections, parseBulkSections, sectionsOfCourse } from '../domain/sections';
+import { parseBulkSections, sectionsOfCourse } from '../domain/sections';
+import { onboardingActions, onboardingGoalActions } from '../state/onboarding';
 import { nextCourseColor } from '../domain/colors';
 import { newId } from '../domain/ids';
 import { WEEKDAY_SHORT, formatDay, toDateKey, weekDates, weekStartOf } from '../domain/time';
@@ -36,22 +36,14 @@ export function WelcomePage() {
     navigate('/');
   };
   const step1 = () => {
-    dispatch({ type: 'settings/update', patch: { dailyGoalMinutes: goal, restDays: rest } });
+    for (const a of onboardingGoalActions(data, { dailyGoalMinutes: goal, restDays: rest }, today, new Date().toISOString())) dispatch(a);
     setStep(2);
   };
   const step2 = () => {
     if (!name.trim()) { setNameError('Enter a course name.'); return; }
-    const id = newId();
-    const now = new Date().toISOString();
-    const settings = { ...data.settings, dailyGoalMinutes: goal, restDays: rest };
-    const sections = makeSections(id, parseBulkSections(bulk), [], newId);
-    dispatch({ type: 'course/add', course: { id, name: name.trim(), color, archived: false, createdAt: now } });
-    if (sections.length) dispatch({ type: 'section/addMany', sections });
-    // Step 3: this week's plan with auto-assign from today (days before today stay empty).
-    const base = data.weekPlans[ws] ?? createWeekPlan(ws, settings, now);
-    const assigned = autoAssign(base, sections, id, today);
-    dispatch({ type: 'plan/update', weekStart: ws, patch: { ...base, sectionByDay: assigned.sectionByDay }, now });
-    setCourseId(id);
+    const r = onboardingActions(data, { dailyGoalMinutes: goal, restDays: rest, courseName: name, color, sectionsText: bulk }, courseId, today, new Date().toISOString(), newId);
+    for (const a of r.actions) dispatch(a);
+    setCourseId(r.courseId);
     setStep(3);
   };
 
