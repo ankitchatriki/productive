@@ -33,13 +33,16 @@ export function shiftPlanFrom(plan: WeekPlan, today: DateKey, sectionId: Id): { 
   const next: Record<DateKey, Id | null> = { ...plan.sectionByDay };
   for (let i = startIdx; i < 7; i++) next[dates[i]] = null;
   const dropped: Id[] = [];
+  // Each section moves to the next non-rest day after its own day, but never onto
+  // a day already taken by an earlier section (review R4: rest-day sections collided).
+  let lastTarget = startIdx;
   for (let i = startIdx; i < 7; i++) {
     const sid = plan.sectionByDay[dates[i]];
     if (!sid || sid === sectionId) continue;
-    let j = i + 1;
+    let j = Math.max(i, lastTarget) + 1;
     while (j < 7 && isRestDay(dates[j], plan.restDays)) j++;
-    if (j < 7) next[dates[j]] = sid;
-    else dropped.push(sid);
+    if (j < 7) { next[dates[j]] = sid; lastTarget = j; }
+    else { dropped.push(sid); lastTarget = 7; }
   }
   next[today] = sectionId;
   return { plan: { ...plan, sectionByDay: next }, dropped };

@@ -71,6 +71,25 @@ describe('shiftPlanFrom', () => {
   });
 });
 
+describe('shiftPlanFrom with a section on a rest day (review R4)', () => {
+  it('never drops a section silently when two would land on the same day', () => {
+    const p = createWeekPlan(WS, { ...settings, restDays: [2] }, iso(2026, 10, 26)); // Wednesday rest
+    p.sectionByDay = { ...p.sectionByDay, '2026-10-27': 'A', '2026-10-28': 'B', '2026-10-29': 'C' };
+    const r = shiftPlanFrom(p, '2026-10-27', 'X');
+    expect(r.plan.sectionByDay).toMatchObject({ '2026-10-27': 'X', '2026-10-28': null, '2026-10-29': 'A', '2026-10-30': 'B', '2026-10-31': 'C' });
+    expect(r.dropped).toEqual([]);
+    const assigned = Object.values(r.plan.sectionByDay).filter(Boolean).sort();
+    expect(assigned).toEqual(['A', 'B', 'C', 'X']);
+  });
+  it('reports every section that falls off Sunday', () => {
+    const p = createWeekPlan(WS, { ...settings, restDays: [5] }, iso(2026, 10, 26)); // Saturday rest
+    p.sectionByDay = { ...p.sectionByDay, '2026-10-30': 'F', '2026-10-31': 'S', '2026-11-01': 'U' };
+    const r = shiftPlanFrom(p, '2026-10-30', 'X');
+    expect(r.plan.sectionByDay['2026-11-01']).toBe('F');
+    expect(r.dropped).toEqual(['S', 'U']);
+  });
+});
+
 describe('blocks', () => {
   it('overlap rules (touching is fine, different days never overlap)', () => {
     expect(blocksOverlap(blk('a', WS, 540, 600), blk('b', WS, 600, 660))).toBe(false);
