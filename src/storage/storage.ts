@@ -6,4 +6,8 @@ export interface Storage {
   clear(): void;
   subscribe(onExternalChange: (data: AppData) => void): () => void; // cross-tab 'storage' event
   approxBytes(): number;
+  /** Raw text kept from an unreadable load in this session, if any (review R9). */
+  corruptCopy?(): string | null;
+  /** Forget the kept corrupt copy. */
+  discardCorrupt?(): void;
 }

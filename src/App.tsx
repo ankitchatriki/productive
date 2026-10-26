@@ -3,6 +3,7 @@ import styles from './App.module.css';
 import { Nav } from './components/Nav';
 import { TimerIdle, TimerPill } from './components/TimerPill';
 import { useStorageInfo, useStore } from './state/store';
+import { CorruptBanner } from './components/CorruptBanner';
 import { AppUiProvider, useUi } from './state/ui';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
@@ -31,6 +32,7 @@ function Layout() {
       />
       <main className={`${styles.main} ${showPill ? styles.withPill : ''}`} id="main">
         {storageError && <div className="banner banner-danger" role="alert" style={{ margin: 16 }}>{storageError}</div>}
+        <CorruptBanner />
         <Outlet />
       </main>
     </div>

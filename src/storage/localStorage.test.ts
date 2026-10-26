@@ -62,3 +62,32 @@ describe('export/import JSON', () => {
     expect(importJson('nope')).toEqual({ errors: ['The file is not valid JSON.'] });
   });
 });
+
+describe('recovering from bad stored data (review R9)', () => {
+  it('drops a broken goal with a warning instead of discarding everything', () => {
+    const mem = new MemoryStore();
+    const d = data({ courses: [course('c1')] });
+    const raw = JSON.parse(JSON.stringify(d));
+    raw.weekPlans['2026-10-26'] = {
+      weekStart: '2026-10-26', dailyGoalMinutes: 480, restDays: [], sectionByDay: {}, blocks: [], reviewNote: '',
+      createdAt: iso(2026, 10, 26), updatedAt: iso(2026, 10, 26),
+      goals: [{ id: 'g1', kind: 'totalHours', targetMinutes: null }, { id: 'g2', kind: 'dailyGoalDays', targetCount: 5 }],
+    };
+    mem.setItem(STORAGE_KEY, JSON.stringify(raw));
+    const a = new LocalStorageAdapter(mem, null);
+    const loaded = a.load();
+    expect(loaded?.courses).toHaveLength(1);
+    expect(loaded?.weekPlans['2026-10-26'].goals.map((g) => g.id)).toEqual(['g2']);
+    expect(a.corruptCopy()).toBeNull();
+  });
+  it('exposes the raw copy of unreadable data for this session, and can discard it', () => {
+    const mem = new MemoryStore();
+    mem.setItem(STORAGE_KEY, '{oops');
+    const a = new LocalStorageAdapter(mem, null);
+    expect(a.load()).toBeNull();
+    expect(a.corruptCopy()).toBe('{oops');
+    a.discardCorrupt();
+    expect(a.corruptCopy()).toBeNull();
+    expect(mem.getItem(CORRUPT_KEY)).toBeNull();
+  });
+});

@@ -6,6 +6,18 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
+const isInt = (v: unknown): v is number => Number.isInteger(v);
+const isPos = (v: unknown): v is number => isNum(v) && v > 0;
+
+/** Report ids that appear more than once in a list. */
+function checkDuplicateIds(list: unknown[], label: string, errors: string[]) {
+  const seen = new Set<string>();
+  list.forEach((x, i) => {
+    if (!isObj(x) || !isStr(x.id)) return;
+    if (seen.has(x.id)) errors.push(`${label}[${i}] has a duplicate id ${x.id}.`);
+    seen.add(x.id);
+  });
+}
 const isIso = (v: unknown) => isStr(v) && !Number.isNaN(Date.parse(v));
 const isDateKey = (v: unknown) => isStr(v) && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const isWeekdays = (v: unknown): v is Weekday[] => Array.isArray(v) && v.every((d) => Number.isInteger(d) && d >= 0 && d <= 6);
@@ -22,9 +34,11 @@ export function validateAppData(raw: unknown, warnings: string[] = []): AppData 
   const s = raw.settings;
   if (!isObj(s)) errors.push('settings is missing.');
   else {
-    if (!isNum(s.dailyGoalMinutes) || s.dailyGoalMinutes < 0) errors.push('settings.dailyGoalMinutes must be a number.');
+    if (!isNum(s.dailyGoalMinutes) || s.dailyGoalMinutes < 1 || s.dailyGoalMinutes > 1440) errors.push('settings.dailyGoalMinutes must be between 1 and 1440 minutes.');
     if (!isWeekdays(s.restDays)) errors.push('settings.restDays must be a list of weekdays 0–6.');
-    if (!isNum(s.gridStartHour) || !isNum(s.gridEndHour)) errors.push('settings.gridStartHour/gridEndHour must be numbers.');
+    if (!isInt(s.gridStartHour) || !isInt(s.gridEndHour) || s.gridStartHour < 0 || s.gridEndHour > 24 || s.gridStartHour >= s.gridEndHour) {
+      errors.push('settings.gridStartHour/gridEndHour must be whole hours with 0 ≤ start < end ≤ 24.');
+    }
     if (!isBool(s.onboarded)) errors.push('settings.onboarded must be true or false.');
   }
 
@@ -38,6 +52,9 @@ export function validateAppData(raw: unknown, warnings: string[] = []): AppData 
   const courses = raw.courses as unknown[];
   const sections = raw.sections as unknown[];
   const entries = raw.entries as unknown[];
+  checkDuplicateIds(courses, 'courses', errors);
+  checkDuplicateIds(sections, 'sections', errors);
+  checkDuplicateIds(entries, 'entries', errors);
   const courseIds = new Set<string>();
   courses.forEach((c, i) => {
     if (!isObj(c) || !isStr(c.id) || !isStr(c.name) || !isStr(c.color) || !isBool(c.archived) || !isIso(c.createdAt)) {
@@ -72,6 +89,19 @@ export function validateAppData(raw: unknown, warnings: string[] = []): AppData 
     return copy;
   });
 
+  // Entries are a timesheet: no double billing (review R6).
+  const timed = cleanEntries
+    .map((e, i) => ({ i, e: e as Obj }))
+    .filter(({ e }) => isObj(e) && isIso(e.start) && isIso(e.end))
+    .sort((a, b) => Date.parse(a.e.start as string) - Date.parse(b.e.start as string));
+  let latest: { i: number; end: number } | null = null;
+  for (const { i, e } of timed) {
+    const start = Date.parse(e.start as string);
+    if (latest && start < latest.end) errors.push(`entries[${i}] overlaps entries[${latest.i}].`);
+    const end = Date.parse(e.end as string);
+    if (!latest || end > latest.end) latest = { i, end };
+  }
+
   const plans = raw.weekPlans as Obj;
   const cleanPlans: Obj = {};
   for (const [wk, p] of Object.entries(plans)) {
@@ -81,14 +111,18 @@ export function validateAppData(raw: unknown, warnings: string[] = []): AppData 
       errors.push(`weekPlans[${wk}] is missing required fields.`);
       continue;
     }
+    const seenGoal = new Set<string>();
     const goals = (p.goals as unknown[]).filter((g, i): g is Goal => {
       const ok = isObj(g) && isStr(g.id) && (
-        (g.kind === 'totalHours' && isNum(g.targetMinutes)) ||
-        (g.kind === 'courseHours' && isStr(g.courseId) && isNum(g.targetMinutes)) ||
-        (g.kind === 'sectionsCompleted' && (g.courseId === null || isStr(g.courseId)) && isNum(g.targetCount)) ||
-        (g.kind === 'dailyGoalDays' && isNum(g.targetCount)));
-      if (!ok) errors.push(`weekPlans[${wk}].goals[${i}] is invalid.`);
-      else if ('courseId' in g && g.courseId && !courseIds.has(g.courseId as string)) errors.push(`weekPlans[${wk}].goals[${i}] references unknown course.`);
+        (g.kind === 'totalHours' && isPos(g.targetMinutes)) ||
+        (g.kind === 'courseHours' && isStr(g.courseId) && isPos(g.targetMinutes)) ||
+        (g.kind === 'sectionsCompleted' && (g.courseId === null || isStr(g.courseId)) && isPos(g.targetCount)) ||
+        (g.kind === 'dailyGoalDays' && isPos(g.targetCount)));
+      // A broken goal is dropped with a warning rather than rejecting the whole file (review R9).
+      if (!ok) { warnings.push(`weekPlans[${wk}].goals[${i}] was invalid and was removed.`); return false; }
+      if ('courseId' in g && g.courseId && !courseIds.has(g.courseId as string)) { warnings.push(`weekPlans[${wk}].goals[${i}] referenced a missing course and was removed.`); return false; }
+      if (seenGoal.has(g.id as string)) { errors.push(`weekPlans[${wk}].goals[${i}] has a duplicate id.`); return false; }
+      seenGoal.add(g.id as string);
       return ok;
     });
     const sbd: Record<string, string | null> = {};
@@ -103,10 +137,21 @@ export function validateAppData(raw: unknown, warnings: string[] = []): AppData 
         return b;
       }
       if (!courseIds.has(b.courseId)) errors.push(`weekPlans[${wk}].blocks[${i}] references unknown course.`);
+      if (!isInt(b.startMin) || !isInt(b.endMin) || b.startMin % 15 || b.endMin % 15 || b.startMin < 0 || b.endMin > 1440 || b.endMin <= b.startMin) {
+        errors.push(`weekPlans[${wk}].blocks[${i}] must start and end on 15-minute steps within the day.`);
+      }
       const copy = { ...b, label: b.label ?? '', sectionId: b.sectionId ?? null };
       fixSection(`weekPlans[${wk}].blocks[${i}]`, copy);
       return copy;
     });
+    checkDuplicateIds(blocks, `weekPlans[${wk}].blocks`, errors);
+    const valid = blocks.filter((b): b is Obj => isObj(b) && isDateKey(b.date) && isInt(b.startMin) && isInt(b.endMin)) as Array<Obj & { date: string; startMin: number; endMin: number }>;
+    for (let a = 0; a < valid.length; a++) {
+      for (let c = a + 1; c < valid.length; c++) {
+        const x = valid[a]; const y = valid[c];
+        if (x.date === y.date && x.startMin < y.endMin && y.startMin < x.endMin) errors.push(`weekPlans[${wk}] has overlapping blocks on ${x.date}.`);
+      }
+    }
     cleanPlans[wk] = { ...p, goals, sectionByDay: sbd, blocks };
   }
 

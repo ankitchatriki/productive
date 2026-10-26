@@ -12,6 +12,7 @@ import type { Id, Weekday } from '../domain/types';
 import { DurationInput } from '../components/DurationInput';
 import { ColorSwatches } from '../components/CourseDialog';
 import { Icon } from '../components/Icon';
+import { CorruptBanner } from '../components/CorruptBanner';
 
 export function WelcomePage() {
   useDocumentTitle('Welcome');
@@ -52,6 +53,7 @@ export function WelcomePage() {
   return (
     <div className={styles.screen}>
       <main className={styles.inner}>
+        <CorruptBanner />
         <div className={styles.brand}><span className={styles.mark}><Icon name="clock" size={14} /></span> Productive</div>
         <div className={styles.dots} aria-label={`Step ${step} of 3`}>
           {[1, 2, 3].map((n) => <span key={n} className={n <= step ? styles.on : ''} />)}

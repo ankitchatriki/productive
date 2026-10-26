@@ -11,6 +11,9 @@ interface StoreValue {
   dispatch: Dispatch<Action>;
   storage: Storage;
   storageError: string | null;
+  /** Raw text of unreadable saved data found at startup (review R9). */
+  corruptCopy: string | null;
+  dismissCorrupt: () => void;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -21,6 +24,7 @@ export function StoreProvider({ children, storage: injected }: { children: React
   const storage = useMemo(() => injected ?? new LocalStorageAdapter(), [injected]);
   const [data, dispatch] = useReducer(reducer, undefined, () => storage.load() ?? emptyAppData());
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [corruptCopy, setCorruptCopy] = useState<string | null>(() => storage.corruptCopy?.() ?? null);
   const latest = useRef(data);
   const external = useRef(false);
   const timer = useRef<number | null>(null);
@@ -57,7 +61,10 @@ export function StoreProvider({ children, storage: injected }: { children: React
     return () => { window.removeEventListener('pagehide', onHide); unsubscribe(); };
   }, [storage]);
 
-  const value = useMemo(() => ({ data, dispatch, storage, storageError }), [data, storage, storageError]);
+  const value = useMemo(() => ({
+    data, dispatch, storage, storageError, corruptCopy,
+    dismissCorrupt: () => { storage.discardCorrupt?.(); setCorruptCopy(null); },
+  }), [data, storage, storageError, corruptCopy]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 
@@ -76,6 +83,6 @@ export function useDispatch(): Dispatch<Action> {
 }
 
 export function useStorageInfo() {
-  const { storage, storageError } = useStoreContext();
-  return { storage, storageError };
+  const { storage, storageError, corruptCopy, dismissCorrupt } = useStoreContext();
+  return { storage, storageError, corruptCopy, dismissCorrupt };
 }

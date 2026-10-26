@@ -51,3 +51,40 @@ describe('validateAppData', () => {
     expect(r).toEqual(['entries[0] ends before it starts.']);
   });
 });
+
+describe('semantic checks (review R6)', () => {
+  const base = () => data({ courses: [course('c1')] });
+  it('rejects out-of-range settings', () => {
+    const d = base();
+    d.settings = { ...d.settings, gridStartHour: 30, gridEndHour: -5 };
+    expect((validateAppData(d) as string[]).join()).toMatch(/gridStartHour\/gridEndHour/);
+    const d2 = base();
+    d2.settings = { ...d2.settings, dailyGoalMinutes: 5000 };
+    expect((validateAppData(d2) as string[]).join()).toMatch(/dailyGoalMinutes/);
+  });
+  it('rejects duplicate ids', () => {
+    const e = entry('dup', 'c1', iso(2026, 10, 27, 9), iso(2026, 10, 27, 10));
+    const d = base();
+    d.entries = [e, { ...e, start: iso(2026, 10, 27, 11), end: iso(2026, 10, 27, 12) }];
+    expect(validateAppData(d)).toEqual(['entries[1] has a duplicate id dup.']);
+  });
+  it('rejects overlapping entries but allows touching ones', () => {
+    const d = base();
+    d.entries = [entry('a', 'c1', iso(2026, 10, 27, 9), iso(2026, 10, 27, 10)), entry('b', 'c1', iso(2026, 10, 27, 9, 30), iso(2026, 10, 27, 11))];
+    expect(validateAppData(d)).toEqual(['entries[1] overlaps entries[0].']);
+    d.entries[1] = entry('b', 'c1', iso(2026, 10, 27, 10), iso(2026, 10, 27, 11));
+    expect(Array.isArray(validateAppData(d))).toBe(false);
+  });
+  it('rejects off-grid or overlapping blocks', () => {
+    const d = base();
+    const plan = createWeekPlan('2026-10-26', d.settings, iso(2026, 10, 26));
+    plan.blocks = [{ id: 'b', date: '2026-10-26', startMin: 7, endMin: 60, courseId: 'c1', sectionId: null, label: '' }];
+    d.weekPlans['2026-10-26'] = plan;
+    expect((validateAppData(d) as string[])[0]).toMatch(/15-minute steps/);
+    plan.blocks = [
+      { id: 'b', date: '2026-10-26', startMin: 0, endMin: 60, courseId: 'c1', sectionId: null, label: '' },
+      { id: 'c', date: '2026-10-26', startMin: 45, endMin: 90, courseId: 'c1', sectionId: null, label: '' },
+    ];
+    expect(validateAppData(d)).toEqual(['weekPlans[2026-10-26] has overlapping blocks on 2026-10-26.']);
+  });
+});

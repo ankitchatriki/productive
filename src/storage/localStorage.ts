@@ -23,6 +23,8 @@ export function parseStored(raw: string): AppData | null {
 }
 
 export class LocalStorageAdapter implements Storage {
+  private corruptThisSession = false;
+
   constructor(
     private store: KeyValueStore = window.localStorage,
     private win: Pick<Window, 'addEventListener' | 'removeEventListener'> | null = typeof window !== 'undefined' ? window : null,
@@ -40,6 +42,7 @@ export class LocalStorageAdapter implements Storage {
     if (!data) {
       console.warn('Productive: stored data was unreadable; starting fresh. A raw copy was kept under', CORRUPT_KEY);
       try { this.store.setItem(CORRUPT_KEY, raw); } catch { /* ignore */ }
+      this.corruptThisSession = true;
       return null;
     }
     return data;
@@ -62,6 +65,16 @@ export class LocalStorageAdapter implements Storage {
     };
     this.win.addEventListener('storage', handler as EventListener);
     return () => this.win?.removeEventListener('storage', handler as EventListener);
+  }
+
+  corruptCopy(): string | null {
+    if (!this.corruptThisSession) return null;
+    try { return this.store.getItem(CORRUPT_KEY); } catch { return null; }
+  }
+
+  discardCorrupt(): void {
+    this.corruptThisSession = false;
+    try { this.store.removeItem(CORRUPT_KEY); } catch { /* ignore */ }
   }
 
   approxBytes(): number {
