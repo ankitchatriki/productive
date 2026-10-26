@@ -1,0 +1,221 @@
+/* ==========================================================
+   Productive design tokens
+   Light is the default. Dark applies via prefers-color-scheme
+   unless the user forces light with [data-theme="light"].
+   [data-theme="dark"] forces dark. Set data-theme on <html>.
+   ========================================================== */
+:root {
+  color-scheme: light;
+
+  /* ---- Fonts ---- */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Type scale (size / line-height) ---- */
+  --text-2xs: 11px;  --lh-2xs: 16px;   /* kbd hints, heatmap axis */
+  --text-xs: 12px;   --lh-xs: 16px;    /* captions, table headers (uppercase) */
+  --text-sm: 13px;   --lh-sm: 18px;    /* secondary text, sidebar items */
+  --text-md: 14px;   --lh-md: 20px;    /* BODY default */
+  --text-lg: 16px;   --lh-lg: 24px;    /* card titles, inputs on phone */
+  --text-xl: 20px;   --lh-xl: 28px;    /* section headings */
+  --text-2xl: 24px;  --lh-2xl: 32px;   /* page titles */
+  --text-3xl: 32px;  --lh-3xl: 40px;   /* stat tile values */
+  --text-display: 56px; --lh-display: 64px; /* Today timer readout (mono) */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --tracking-caps: 0.06em;             /* for uppercase labels */
+
+  /* ---- Spacing (4px base) ---- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- Radii ---- */
+  --radius-xs: 3px;    /* kbd, heatmap cells, tags */
+  --radius-sm: 6px;    /* buttons, inputs, time blocks */
+  --radius-md: 10px;   /* cards, tables, modals */
+  --radius-lg: 14px;   /* drawers, command palette */
+  --radius-full: 999px;
+
+  /* ---- Borders ---- */
+  --border-width: 1px;
+  --border-width-strong: 2px;   /* today column edge, focus-ring offset */
+
+  /* ---- Motion ---- */
+  --dur-instant: 80ms;   /* hover/press colour */
+  --dur-fast: 140ms;     /* small UI: toggles, menus */
+  --dur-base: 220ms;     /* drawers, modals, toasts */
+  --dur-slow: 400ms;     /* progress ring fill */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Layout ---- */
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 56px;
+  --tabbar-h: 60px;          /* phone bottom nav */
+  --content-max: 1200px;
+  --hour-h: 48px;            /* week grid row height per hour (desktop) */
+
+  /* ---- Neutral ramp (warm "card stock") ---- */
+  --n-0:   #ffffff;
+  --n-25:  #fbfaf7;
+  --n-50:  #f7f5f0;
+  --n-100: #f0ede6;
+  --n-150: #e8e4db;
+  --n-200: #dcd8ce;
+  --n-300: #c4bfb4;
+  --n-400: #8f8a80;
+  --n-500: #6c6760;
+  --n-600: #5e5a52;
+  --n-700: #45423c;
+  --n-800: #2e2c28;
+  --n-900: #1c1b18;
+
+  /* ---- Semantic surface/text (LIGHT) ---- */
+  --bg:            #f7f5f0;   /* app background */
+  --surface:       #ffffff;   /* cards, tables, sidebar */
+  --surface-2:     #f0ede6;   /* table header, hover row, inset wells */
+  --surface-3:     #e8e4db;   /* pressed, selected neutral */
+  --border:        #dcd8ce;   /* hairlines */
+  --border-strong: #8f8a80;   /* input borders, heatmap cell outline (>=3:1) */
+  --text:          #1c1b18;   /* primary text */
+  --text-muted:    #5e5a52;   /* secondary text */
+  --text-subtle:   #6c6760;   /* placeholders, captions, zero cells */
+  --text-inverse:  #ffffff;
+
+  /* ---- Accent: ink blue ---- */
+  --accent:        #3446c9;
+  --accent-hover:  #2a3aa8;
+  --accent-active: #22308c;
+  --accent-soft:   #e8ebfb;   /* today column tint, selected nav bg */
+  --accent-text:   #3446c9;   /* links, accent text on surfaces */
+  --on-accent:     #ffffff;
+  --focus-ring:    #3446c9;
+
+  /* ---- Status semantics ---- */
+  --ontrack:       #1f7a3d;  --ontrack-soft: #e5f2e8;   /* On track / Met */
+  --behind:        #965300;  --behind-soft:  #fbefdc;   /* Behind pace */
+  --over:          #0b6f7a;  --over-soft:    #e0f1f3;   /* Overtime (past goal) */
+  --danger:        #b4232c;  --danger-soft:  #fbe6e6;   /* destructive, errors */
+
+  /* ---- Subject palette (courses). Solid = dots, bars, block edge.
+         Soft = block fill / chip bg with --text on top. ---- */
+  --subj-1: #2f6bd8;  --subj-1-soft: #e7eefb;   /* blue    */
+  --subj-2: #c4570c;  --subj-2-soft: #fbeadf;   /* orange  */
+  --subj-3: #2b8040;  --subj-3-soft: #e4f1e7;   /* green   */
+  --subj-4: #c0337a;  --subj-4-soft: #f9e4ee;   /* magenta */
+  --subj-5: #0e8585;  --subj-5-soft: #ddf0f0;   /* teal    */
+  --subj-6: #7548cc;  --subj-6-soft: #ece5f9;   /* violet  */
+  --subj-7: #9a7300;  --subj-7-soft: #f5edd6;   /* ochre   */
+  --subj-8: #80563a;  --subj-8-soft: #f0e7e1;   /* brown   */
+
+  /* ---- Heatmap (single-hue ink, 0 = empty) ---- */
+  --heat-0: var(--surface-2);
+  --heat-1: #e3e7fb;
+  --heat-2: #b7c0f2;
+  --heat-3: #8392e6;
+  --heat-4: #4c5fd6;
+  --heat-5: #2a3aa8;
+
+  /* ---- Shadows (one elevation + overlay) ---- */
+  --shadow-1: 0 1px 2px rgba(28, 27, 24, 0.06), 0 1px 1px rgba(28, 27, 24, 0.04);
+  --shadow-overlay: 0 12px 32px rgba(28, 27, 24, 0.16), 0 2px 6px rgba(28, 27, 24, 0.08);
+  --scrim: rgba(28, 27, 24, 0.40);
+
+  /* ---- Hatch pattern for planned blocks ---- */
+  --hatch: repeating-linear-gradient(135deg, transparent 0 6px, rgba(28,27,24,0.05) 6px 7px);
+}
+
+/* ---------- DARK (system) ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #141412; --surface: #1c1b19; --surface-2: #252421; --surface-3: #2e2d29;
+    --border: #33312d; --border-strong: #6b675f;
+    --text: #edebe5; --text-muted: #aaa69c; --text-subtle: #8e8a81; --text-inverse: #141412;
+    --accent: #8d9bff; --accent-hover: #a4afff; --accent-active: #b8c1ff;
+    --accent-soft: #23264a; --accent-text: #8d9bff; --on-accent: #11131f; --focus-ring: #8d9bff;
+    --ontrack: #5cc283; --ontrack-soft: #1c2e22;
+    --behind:  #e9a23b; --behind-soft:  #33281a;
+    --over:    #4fc3cf; --over-soft:    #16302f;
+    --danger:  #ff7a7f; --danger-soft:  #3a1f21;
+    --subj-1: #6d9cf5; --subj-1-soft: #222c40;
+    --subj-2: #f08a45; --subj-2-soft: #3a2a1f;
+    --subj-3: #5cbf72; --subj-3-soft: #20321f;
+    --subj-4: #ec74ae; --subj-4-soft: #3a2230;
+    --subj-5: #3fc0c0; --subj-5-soft: #183333;
+    --subj-6: #a88bf2; --subj-6-soft: #2b2540;
+    --subj-7: #d6ad2e; --subj-7-soft: #38301a;
+    --subj-8: #c49274; --subj-8-soft: #33281f;
+    --heat-0: var(--surface-2);
+    --heat-1: #262b4a; --heat-2: #33408a; --heat-3: #4c5fd6; --heat-4: #7d8df5; --heat-5: #b3bdff;
+    --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-overlay: 0 16px 40px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.4);
+    --scrim: rgba(0,0,0,0.6);
+    --hatch: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255,255,255,0.06) 6px 7px);
+  }
+}
+
+/* ---------- DARK (forced) — keep identical to the block above ---------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #141412; --surface: #1c1b19; --surface-2: #252421; --surface-3: #2e2d29;
+  --border: #33312d; --border-strong: #6b675f;
+  --text: #edebe5; --text-muted: #aaa69c; --text-subtle: #8e8a81; --text-inverse: #141412;
+  --accent: #8d9bff; --accent-hover: #a4afff; --accent-active: #b8c1ff;
+  --accent-soft: #23264a; --accent-text: #8d9bff; --on-accent: #11131f; --focus-ring: #8d9bff;
+  --ontrack: #5cc283; --ontrack-soft: #1c2e22;
+  --behind:  #e9a23b; --behind-soft:  #33281a;
+  --over:    #4fc3cf; --over-soft:    #16302f;
+  --danger:  #ff7a7f; --danger-soft:  #3a1f21;
+  --subj-1: #6d9cf5; --subj-1-soft: #222c40;
+  --subj-2: #f08a45; --subj-2-soft: #3a2a1f;
+  --subj-3: #5cbf72; --subj-3-soft: #20321f;
+  --subj-4: #ec74ae; --subj-4-soft: #3a2230;
+  --subj-5: #3fc0c0; --subj-5-soft: #183333;
+  --subj-6: #a88bf2; --subj-6-soft: #2b2540;
+  --subj-7: #d6ad2e; --subj-7-soft: #38301a;
+  --subj-8: #c49274; --subj-8-soft: #33281f;
+  --heat-0: var(--surface-2);
+  --heat-1: #262b4a; --heat-2: #33408a; --heat-3: #4c5fd6; --heat-4: #7d8df5; --heat-5: #b3bdff;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-overlay: 0 16px 40px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.4);
+  --scrim: rgba(0,0,0,0.6);
+  --hatch: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255,255,255,0.06) 6px 7px);
+}
+
+/* ---------- Base ---------- */
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  -webkit-font-smoothing: antialiased;
+}
+.num, time, td.num, .duration {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 0;
+}
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}
