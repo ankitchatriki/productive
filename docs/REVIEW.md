@@ -119,3 +119,26 @@ Legend: ✅ pass · ⚠️ partial · ❌ fail
 - The Plan week grid is good to use: drag-create, move across days, resize, a snap-back toast on overlap, and keyboard arrows to move blocks.
 - Phone layouts (day tabs, the "Week totals" toggle, the bottom tab bar with "More") are well done, and there is no horizontal scroll down to 360px.
 - Accessibility basics are in place: labelled controls, `aria-pressed` rest-day chips, a roving-tabindex heatmap, polite live regions, and focus trap and focus restore in modals.
+
+## Resolution
+
+Fixes by the coder agent on `build-v1`. Each logic fix has a regression test; `npm test` is at 152 passing tests, and typecheck and build are clean.
+
+| ID | Outcome | Commit | Notes |
+|---|---|---|---|
+| R1 | Fixed | a93b9d8 | Undo no longer restores a snapshot of the whole app. Clock-out Undo uses the new `timer/restore` action, which removes only that entry and restores the timer. It does nothing if a newer timer is running. Section-delete Undo uses `section/restore` with a record of exactly what the delete changed: the entries, blocks and plan days that pointed at the section. The goal-remove and clear-sections Undos were also made targeted (`plan/insertGoal`, `plan/fillDays`). Tests are in `reducer.test.ts`. |
+| R2 | Fixed | c6ddc6e | The Timecard body is keyed on `weekStart`, so the selected phone day, added rows and open panel all reset when the week changes. Checked in the browser: no `NaN`, and a day tab is selected. |
+| R3 | Fixed | f45269f | "Add block" is shown at every width. It opens the block form (day, start and end time, course, section), which can be used entirely from the keyboard. The help text lists the block keyboard controls. |
+| R4 | Fixed | 2cc8152 | `shiftPlanFrom` never puts a section on a day already taken by an earlier section. Sections that fall off Sunday all go to `dropped`. Tests: the rest-day collision case and the overflow case. |
+| R5 | Fixed | a936d87 | Onboarding now runs through a pure `onboardingActions` function. Re-running step 2 updates the same course, replaces its sections and rebuilds this week's plan. Re-submitting step 1 also updates the existing plan's goal, rest days and default goals. Tests are in `state/onboarding.test.ts`. |
+| R6 | Fixed | f375552 | Import now checks ranges: grid hours 0 ≤ start < end ≤ 24, daily goal 1–1440 minutes, goal targets > 0. Blocks must start and end on 15-minute steps within the day and must not overlap. Duplicate ids and overlapping entries are reported as errors. Tests are in `validate.test.ts`. |
+| R7 | Fixed | c6ddc6e | The cell panel closes while the Entry dialog is open and reopens when it closes, so only one dialog exists at a time. A modal was kept rather than a drawer. |
+| R8 | Fixed | d353c23 | Today and Review share `streaksAt(data, now)`, which includes the running timer. Test in `selectors.test.ts`. |
+| R9 | Fixed | f375552 | An invalid goal is dropped with a warning instead of rejecting the whole dataset. When stored data is still unreadable, a banner on every screen, including Welcome, offers "Download raw copy" and "Dismiss". Tests are in `localStorage.test.ts`. |
+| R10 | Fixed | 0167ac4 | Count targets are clamped (1–999, or 1–7 for days). |
+| R11 | Fixed | 0167ac4 | With only archived courses, the Courses page shows the empty state plus a "Show archived" link. |
+| R12 | Fixed | 0167ac4 | CSV cells starting with `= + - @` are prefixed with `'`. Tested. |
+| R13 | Fixed | c6ddc6e | The phone day card is hidden for an empty week. |
+| R14 | Fixed | c6ddc6e | Fixed by the same change as R2. |
+| R15 | Fixed | 0167ac4 | Month names are fixed three-letter abbreviations ("Sep"), and the heatmap has month labels above its columns. |
+| R16 | Skipped | — | Optional. Vitest's `test.env.TZ` applies to the whole run, so adding a second time zone would need a separate project or script. The reviewer's ad-hoc `America/Santiago` run already passed. |
