@@ -9,7 +9,7 @@ import { allIntervals, dayTotals, intervalsOnDate, minutesBySection, minutesOnDa
 import { adherence, createWeekPlan, dailyGoalFor, findCarryOver, isRestDate, shiftPlanFrom } from '../domain/plan';
 import { useToast } from '../hooks/useToast';
 import { useHotkeys } from '../hooks/useHotkeys';
-import { computeStreaks } from '../domain/streaks';
+import { streaksAt } from '../state/selectors';
 import { DayTimeline } from '../components/DayTimeline';
 import { ProgressBar } from '../components/ProgressBar';
 import { colorVar } from '../domain/colors';
@@ -71,7 +71,8 @@ export function TodayPage() {
   const todayBlocks = (plan?.blocks ?? []).filter((b) => b.date === today).sort((a, b) => a.startMin - b.startMin);
   const adh = adherence(plan?.blocks ?? [], intervals, [today]);
 
-  const streak = useMemo(() => computeStreaks(data, today).current, [data, today]);
+  const minuteNow = Math.floor(now.getTime() / 60000);
+  const streak = useMemo(() => streaksAt(data, new Date(minuteNow * 60000)).current, [data, minuteNow]);
   const carry = useMemo(() => findCarryOver(data, today), [data, today]);
   const dismissKey = carry ? `productive:dismissed:${carry.sectionId}:${today}` : '';
   let dismissed = false;

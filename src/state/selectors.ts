@@ -2,6 +2,7 @@
 import type { AppData, Course, Id, Section } from '../domain/types';
 import { sectionsOfCourse } from '../domain/sections';
 import { toDateKey, weekStartOf } from '../domain/time';
+import { computeStreaks } from '../domain/streaks';
 
 export const todayKey = (now: Date) => toDateKey(now);
 export const currentWeekStart = (now: Date) => weekStartOf(toDateKey(now));
@@ -24,4 +25,9 @@ export function sectionsByCourse(data: AppData, opts: { includeArchived?: boolea
   return courses
     .map((course) => ({ course, sections: sectionsOfCourse(data.sections, course.id).filter((s) => (opts.filter ? opts.filter(s) : true)) }))
     .filter((g) => g.sections.length > 0);
+}
+
+/** Streaks as of `now`, including the running timer — shared by Today and Review (review R8). */
+export function streaksAt(data: AppData, now: Date) {
+  return computeStreaks(data, toDateKey(now), now);
 }

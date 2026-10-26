@@ -8,7 +8,7 @@ import { useMediaQuery, PHONE_QUERY } from '../hooks/useMediaQuery';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { allIntervals, minutesByCourse, minutesByDay, weekTotals } from '../domain/aggregate';
 import { computeGoalProgress, goalIsDuration } from '../domain/goals';
-import { computeStreaks } from '../domain/streaks';
+import { streaksAt } from '../state/selectors';
 import { dailyGoalFor, isRestDate, plannedMinutes } from '../domain/plan';
 import { colorVar } from '../domain/colors';
 import { WEEKDAY_SHORT, addDays, formatDay, formatDuration, parseDateKey, toDateKey, weekDates, weekStartOf } from '../domain/time';
@@ -43,7 +43,7 @@ export function ReviewPage() {
   const goalsFor = dates.map((d) => dailyGoalFor(d, data));
   const progress = useMemo(() => (plan ? plan.goals.map((g) => ({ goal: g, p: computeGoalProgress(g, plan, data, now) })) : []), [plan, data, now]);
   const met = progress.filter((x) => x.p.status === 'met').length;
-  const streaks = useMemo(() => computeStreaks(data, today, now), [data, today, now]);
+  const streaks = useMemo(() => streaksAt(data, now), [data, now]);
   const byCourse = minutesByCourse(intervals, dates);
   const courseRows = Object.entries(byCourse).sort((a, b) => b[1] - a[1]);
   const maxCourse = Math.max(1, ...courseRows.map(([, m]) => m));
