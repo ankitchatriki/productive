@@ -8,6 +8,7 @@ import { CoursesPage } from './pages/CoursesPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
 import { TodayPage } from './pages/TodayPage';
 import { PlanPage } from './pages/PlanPage';
+import { TimecardPage } from './pages/TimecardPage';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -58,7 +59,7 @@ export function App() {
         <Route element={<Shell />}>
           <Route index element={<TodayPage />} />
           <Route path="plan/:weekStart?" element={<PlanPage />} />
-          <Route path="timecard/:weekStart?" element={<Placeholder title="Timecard" />} />
+          <Route path="timecard/:weekStart?" element={<TimecardPage />} />
           <Route path="courses" element={<CoursesPage />} />
           <Route path="courses/:courseId" element={<CourseDetailPage />} />
           <Route path="review/:weekStart?" element={<Placeholder title="Review" />} />

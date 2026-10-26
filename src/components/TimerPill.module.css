@@ -11,14 +11,14 @@
 .stop { flex: none; width: 32px; height: 32px; padding: 0; }
 .short { display: none; }
 .idle { display: flex; }
-.idle .btn { width: 100%; justify-content: flex-start; }
+.idle :global(.btn) { width: 100%; justify-content: flex-start; }
 @media (min-width: 768px) and (max-width: 1199px) {
   .pill { flex-direction: column; padding: 6px 4px; gap: 4px; border-left-width: 1px; border-top: 3px solid var(--c); align-items: center; }
   .body { align-items: center; }
   .label, .long { display: none; }
   .short { display: inline; font-size: var(--text-xs); }
-  .idle .btn span { display: none; }
-  .idle .btn { justify-content: center; padding: 0; }
+  .idle :global(.btn) span { display: none; }
+  .idle :global(.btn) { justify-content: center; padding: 0; }
 }
 @media (max-width: 767px) {
   .pill { border-radius: 0; border-left-width: 3px; border-right: 0; border-bottom: 0; height: 48px; padding: 0 8px 0 16px; background: var(--surface); }

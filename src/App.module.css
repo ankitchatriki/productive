@@ -8,3 +8,4 @@
   .main { padding-bottom: calc(var(--tabbar-h) + 8px); }
   .main.withPill { padding-bottom: calc(var(--tabbar-h) + 56px); }
 }
+@media print { .shell { display: block; } .main { padding: 0; } }

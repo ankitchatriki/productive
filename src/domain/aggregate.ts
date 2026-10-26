@@ -113,3 +113,36 @@ export function intervalsOnDate(intervals: Interval[], date: DateKey): Array<Int
     })
     .sort((a, b) => a.clipStart.getTime() - b.clipStart.getTime());
 }
+
+export interface TimecardRow { key: string; courseId: Id; sectionId: Id | null; days: number[]; total: number }
+export interface TimecardCourseRow extends TimecardRow { sections: TimecardRow[] }
+export interface Timecard { rows: TimecardCourseRow[]; dayTotals: number[]; total: number }
+
+/** Courses × days grid for a week, with section sub-rows ('General' = null). */
+export function timecard(intervals: Interval[], weekStart: WeekKey, extraCourseIds: Id[] = []): Timecard {
+  const dates = weekDates(weekStart);
+  const idx = new Map(dates.map((d, i) => [d, i]));
+  const courses = new Map<Id, TimecardCourseRow>();
+  const ensure = (courseId: Id) => {
+    let r = courses.get(courseId);
+    if (!r) { r = { key: courseId, courseId, sectionId: null, days: [0, 0, 0, 0, 0, 0, 0], total: 0, sections: [] }; courses.set(courseId, r); }
+    return r;
+  };
+  for (const i of intervals) {
+    for (const p of splitByLocalDay(i.start, i.end)) {
+      const k = idx.get(p.date);
+      if (k === undefined) continue;
+      const row = ensure(i.courseId);
+      row.days[k] += p.minutes;
+      row.total += p.minutes;
+      let sub = row.sections.find((s) => s.sectionId === i.sectionId);
+      if (!sub) { sub = { key: `${i.courseId}:${i.sectionId ?? 'general'}`, courseId: i.courseId, sectionId: i.sectionId, days: [0, 0, 0, 0, 0, 0, 0], total: 0 }; row.sections.push(sub); }
+      sub.days[k] += p.minutes;
+      sub.total += p.minutes;
+    }
+  }
+  for (const id of extraCourseIds) ensure(id);
+  const rows = [...courses.values()];
+  const dayTotalsArr = [0, 1, 2, 3, 4, 5, 6].map((k) => rows.reduce((s, r) => s + r.days[k], 0));
+  return { rows, dayTotals: dayTotalsArr, total: dayTotalsArr.reduce((a, b) => a + b, 0) };
+}

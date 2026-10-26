@@ -215,3 +215,6 @@ table { border-collapse: separate; border-spacing: 0; }
   }
   .page-header .page-sub { margin-top: 0; }
 }
+@media print {
+  .page-actions, .banner, .empty { display: none !important; }
+}

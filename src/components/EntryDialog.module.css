@@ -1,7 +1,7 @@
 .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .date { grid-column: 1 / -1; }
 .full { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
-.full.field { display: flex; align-items: stretch; }
+.full:global(.field) { display: flex; align-items: stretch; }
 .duration { color: var(--text-muted); font-size: var(--text-sm); }
 .duration strong { color: var(--text); font-size: var(--text-lg); margin-left: 4px; }
 @media (max-width: 420px) { .form { grid-template-columns: minmax(0, 1fr); } }

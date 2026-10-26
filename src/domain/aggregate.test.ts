@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allIntervals, dayTotals, intervalsOnDate, minutesByCourse, minutesByDay, minutesBySection, minutesInDates, weekTotals } from './aggregate';
+import { allIntervals, dayTotals, intervalsOnDate, minutesByCourse, minutesByDay, minutesBySection, minutesInDates, timecard, weekTotals } from './aggregate';
 import { at, data, entry, iso } from './fixtures';
 import { weekDates } from './time';
 
@@ -44,5 +44,24 @@ describe('aggregation', () => {
     expect(list).toHaveLength(1);
     expect(list[0].continuesBefore).toBe(true);
     expect(list[0].clipStart.getTime()).toBe(at(2026, 10, 28).getTime());
+  });
+});
+
+describe('timecard', () => {
+  it('rows, columns and grand total match the entries; cross-midnight split', () => {
+    const tc = timecard(allIntervals(data({ entries }), at(2026, 11, 3)), '2026-10-26', ['c9']);
+    const c1 = tc.rows.find((r) => r.courseId === 'c1')!;
+    expect(c1.days).toEqual([120, 0, 0, 0, 0, 0, 60]);
+    expect(c1.total).toBe(180);
+    expect(c1.sections).toHaveLength(1);
+    expect(c1.sections[0]).toMatchObject({ sectionId: 's1', total: 180 });
+    const c2 = tc.rows.find((r) => r.courseId === 'c2')!;
+    expect(c2.days).toEqual([0, 30, 30, 0, 0, 0, 0]);
+    expect(c2.sections[0].sectionId).toBeNull();
+    expect(tc.rows.find((r) => r.courseId === 'c9')?.total).toBe(0);
+    expect(tc.dayTotals).toEqual([120, 30, 30, 0, 0, 0, 60]);
+    expect(tc.total).toBe(240);
+    // The Sunday→Monday entry's Monday part lands in the next week.
+    expect(timecard(allIntervals(data({ entries }), at(2026, 11, 3)), '2026-11-02').total).toBe(60);
   });
 });

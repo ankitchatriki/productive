@@ -41,7 +41,7 @@
 }
 @media (max-width: 767px) {
   .goalRow { grid-template-columns: minmax(0, 1fr) auto; }
-  .goalRow > .field { grid-column: 1; }
+  .goalRow > :global(.field) { grid-column: 1; }
   .goalRow .target { grid-column: 1; }
   .goalRow > button { grid-column: 2; grid-row: 1; }
   .goalRow { padding-bottom: var(--space-3); border-bottom: var(--border-width) solid var(--border); }
