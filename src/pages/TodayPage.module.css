@@ -1,0 +1,71 @@
+.row1 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); }
+.row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); }
+.full { margin-bottom: var(--space-4); }
+
+/* Timer card */
+.timer { border-left: 4px solid var(--c); display: flex; flex-direction: column; gap: var(--space-4); }
+.eyebrowRunning { display: flex; align-items: center; gap: 6px; }
+.livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--ontrack); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.pickers { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); }
+.pickers .noteField { grid-column: 1 / -1; }
+.course { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.section { color: var(--text-muted); }
+.readout {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-display); line-height: var(--lh-display);
+  font-weight: var(--weight-medium); text-align: center; color: var(--text-subtle); letter-spacing: -0.01em;
+}
+.readout.running { color: var(--text); }
+.sub { text-align: center; color: var(--text-muted); margin-top: -12px; }
+.actions { display: flex; align-items: flex-start; justify-content: center; gap: var(--space-3); flex-wrap: wrap; }
+.actionCol { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.clockBtn { min-width: 180px; }
+.hint { font-size: var(--text-2xs); }
+
+/* Ring card */
+.ringCard { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); }
+.legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; font-size: var(--text-sm); }
+.legend li { display: flex; align-items: center; gap: 6px; }
+
+/* Entry list */
+.entries { display: flex; flex-direction: column; }
+.entry {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
+  padding: 8px 0; border-bottom: var(--border-width) solid var(--border);
+}
+.entry:last-child { border-bottom: 0; }
+.range { font-size: var(--text-sm); color: var(--text-muted); white-space: nowrap; }
+.what { display: flex; flex-direction: column; min-width: 0; border-left: 3px solid var(--c); padding-left: 8px; }
+.what .note { font-size: var(--text-xs); color: var(--text-muted); }
+.cont { font-size: var(--text-xs); color: var(--text-subtle); }
+.dur { font-weight: var(--weight-medium); }
+
+/* Week strip */
+.week { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-6); align-items: end; }
+.days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+.day { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); }
+.day.today { color: var(--accent-text); font-weight: var(--weight-semibold); }
+.col { width: 100%; max-width: 40px; height: 56px; background: var(--surface-3); border-radius: var(--radius-xs); position: relative; overflow: hidden; }
+.col.rest { background: var(--hatch), var(--surface-2); }
+.colFill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); }
+.colFill.hit { background: var(--ontrack); }
+.weekSum { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
+.weekSum .big { font-family: var(--font-mono); font-size: var(--text-xl); }
+
+@media (max-width: 999px) {
+  .row1 { grid-template-columns: minmax(0, 1fr); }
+  .row2 { grid-template-columns: minmax(0, 1fr); }
+  .ringCard { flex-direction: row; flex-wrap: wrap; }
+}
+@media (max-width: 767px) {
+  .readout { font-size: 44px; line-height: 52px; }
+  .actions { flex-direction: column; align-items: stretch; }
+  .actionCol { align-items: stretch; }
+  .clockBtn { width: 100%; }
+  .pickers { grid-template-columns: minmax(0, 1fr); }
+  .week { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+  .weekSum { align-items: flex-start; text-align: left; }
+  .entry { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .range { grid-column: 1 / -1; }
+}
+@media (max-width: 767px) { .hint { display: none; } }

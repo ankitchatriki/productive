@@ -208,3 +208,10 @@ table { border-collapse: separate; border-spacing: 0; }
   .page { padding: 0; max-width: none; }
   .card { border-color: #999; break-inside: avoid; }
 }
+@media (max-width: 767px) {
+  /* The phone top bar shows the page name; keep the h1 for screen readers. */
+  .page-header .page-title {
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .page-header .page-sub { margin-top: 0; }
+}

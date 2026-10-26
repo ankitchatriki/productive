@@ -77,7 +77,7 @@ export function Nav({ pill, idleSlot, onShowShortcuts }: NavProps) {
 
       <header className={styles.topbar} data-nav>
         <span className={styles.mark} aria-hidden="true"><Icon name="clock" size={14} /></span>
-        <h1>{pageTitleFor(pathname)}</h1>
+        <span className={styles.topTitle} aria-hidden="true">{pageTitleFor(pathname)}</span>
       </header>
 
       {pill && <div className={styles.phonePill} data-nav>{pill}</div>}

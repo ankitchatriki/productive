@@ -46,7 +46,7 @@
     padding: 0 var(--space-4); background: var(--surface); border-bottom: var(--border-width) solid var(--border);
     position: sticky; top: 0; z-index: 20;
   }
-  .topbar h1 { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+  .topTitle { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
   .tabbar {
     display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0;
     height: var(--tabbar-h); background: var(--surface); border-top: var(--border-width) solid var(--border); z-index: 30;
