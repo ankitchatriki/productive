@@ -1,12 +1,16 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import styles from './TodayPage.module.css';
 import { useDispatch, useStore } from '../state/store';
 import { useUi } from '../state/ui';
 import { useNow } from '../hooks/useNow';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { allIntervals, dayTotals, intervalsOnDate, minutesOnDate } from '../domain/aggregate';
-import { dailyGoalFor, isRestDate } from '../domain/plan';
+import { allIntervals, dayTotals, intervalsOnDate, minutesBySection, minutesOnDate } from '../domain/aggregate';
+import { adherence, createWeekPlan, dailyGoalFor, findCarryOver, isRestDate, shiftPlanFrom } from '../domain/plan';
+import { useToast } from '../hooks/useToast';
+import { useHotkeys } from '../hooks/useHotkeys';
+import { DayTimeline } from '../components/DayTimeline';
+import { ProgressBar } from '../components/ProgressBar';
 import { colorVar } from '../domain/colors';
 import { WEEKDAY_LETTER, formatClock, formatDay, formatDuration, formatElapsed, toDateKey, weekDates, weekStartOf } from '../domain/time';
 import { ProgressRing, type RingSegment } from '../components/ProgressRing';
@@ -22,7 +26,8 @@ export function TodayPage() {
   const dispatch = useDispatch();
   const ui = useUi();
   const now = useNow(1000);
-  void dispatch;
+  const toast = useToast();
+  const [dismissedTick, setDismissedTick] = useState(0);
 
   const today = toDateKey(now);
   const ws = weekStartOf(today);
@@ -57,6 +62,42 @@ export function TodayPage() {
   const weekGoal = weekDates(ws).reduce((s, d) => s + (isRestDate(d, data) ? 0 : dailyGoalFor(d, data)), 0);
   const weekTotal = week.reduce((a, b) => a + b, 0);
 
+  const plan = data.weekPlans[ws];
+  const todaySectionId = plan?.sectionByDay[today] ?? null;
+  const todaySection = todaySectionId ? sectionById.get(todaySectionId) : undefined;
+  const todaySectionCourse = todaySection ? courseById.get(todaySection.courseId) : undefined;
+  const sectionLogged = useMemo(() => (todaySectionId ? minutesBySection(intervals)[todaySectionId] ?? 0 : 0), [intervals, todaySectionId]);
+  const todayBlocks = (plan?.blocks ?? []).filter((b) => b.date === today).sort((a, b) => a.startMin - b.startMin);
+  const adh = adherence(plan?.blocks ?? [], intervals, [today]);
+
+  const carry = useMemo(() => findCarryOver(data, today), [data, today]);
+  const dismissKey = carry ? `productive:dismissed:${carry.sectionId}:${today}` : '';
+  let dismissed = false;
+  try { dismissed = !!dismissKey && sessionStorage.getItem(dismissKey) === '1'; } catch { /* storage blocked */ }
+  void dismissedTick;
+  const carrySection = carry ? sectionById.get(carry.sectionId) : undefined;
+
+  const markDone = (id: string, done: boolean) => {
+    dispatch({ type: 'section/setDone', id, done, now: new Date().toISOString() });
+    const title = sectionById.get(id)?.title ?? 'Section';
+    if (done) toast.show(`"${title}" marked done.`, { label: 'Undo', onClick: () => dispatch({ type: 'section/setDone', id, done: false, now: new Date().toISOString() }) });
+  };
+  const doItToday = () => {
+    if (!carry) return;
+    const base = plan ?? createWeekPlan(ws, data.settings, new Date().toISOString());
+    const { dropped } = shiftPlanFrom(base, today, carry.sectionId);
+    dispatch({ type: 'plan/shiftFrom', date: today, sectionId: carry.sectionId });
+    ui.setDraft(null);
+    if (dropped.length) toast.show(dropped.map((id) => `"${sectionById.get(id)?.title ?? 'Section'}"`).join(', ') + ' moved off this week.');
+    else toast.show(`"${carrySection?.title ?? 'Section'}" is today's section.`);
+  };
+  const dismissCarry = () => {
+    try { sessionStorage.setItem(dismissKey, '1'); } catch { /* ignore */ }
+    setDismissedTick((x) => x + 1);
+  };
+
+  useHotkeys({ d: () => { if (todaySection && !todaySection.completedAt) markDone(todaySection.id, true); } });
+
   const target = running ? { courseId: timer.courseId, sectionId: timer.sectionId, note: timer.note } : ui.effectiveTarget;
   const targetCourse = target ? courseById.get(target.courseId) : undefined;
   const targetSection = target?.sectionId ? sectionById.get(target.sectionId) : undefined;
@@ -82,6 +123,24 @@ export function TodayPage() {
           <button type="button" className="btn" onClick={() => ui.openEntry({ date: today })} disabled={!hasCourses}><Icon name="plus" /> Add entry</button>
         </div>
       </div>
+
+      {!plan && (
+        <div className="banner">
+          <Icon name="calendar" />
+          <span className="banner-text">No plan for this week.</span>
+          <Link to="/plan" className="btn btn-sm btn-primary">Plan it</Link>
+        </div>
+      )}
+
+      {carry && carrySection && !dismissed && (
+        <div className="banner banner-behind" role="region" aria-label="Unfinished section">
+          <Icon name="alert" />
+          <span className="banner-text">"{carrySection.title}" (planned for {formatDay(carry.date).slice(0, 3)}) isn't finished.</span>
+          <button type="button" className="btn btn-sm" onClick={doItToday}>Do it today</button>
+          <button type="button" className="btn btn-sm" onClick={() => markDone(carrySection.id, true)}>Mark done</button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={dismissCarry}>Dismiss</button>
+        </div>
+      )}
 
       {longRun && (
         <div className="banner banner-behind" role="alert">
@@ -158,8 +217,53 @@ export function TodayPage() {
         </section>
       </div>
 
+      <section className={`card ${styles.full} ${styles.sectionCard}`} aria-labelledby="section-heading" style={{ ['--c' as string]: colorVar(todaySectionCourse?.color) }}>
+        <h2 id="section-heading" className="eyebrow">Today's section</h2>
+        {todaySection ? (
+          <div className={styles.sectionBody}>
+            <div className={styles.sectionInfo}>
+              <div className={styles.course}>{todaySection.title}{todaySection.completedAt && <span className="chip chip-done" style={{ marginLeft: 8 }}>Done</span>}</div>
+              <div className={styles.section}>{todaySectionCourse?.name}</div>
+              <div className={styles.estimate}>
+                <span className="num small">{formatDuration(sectionLogged)}{todaySection.estimatedMinutes ? <span className="muted"> / ~{formatDuration(todaySection.estimatedMinutes)}</span> : <span className="muted"> logged</span>}</span>
+                {todaySection.estimatedMinutes ? <ProgressBar value={sectionLogged} max={todaySection.estimatedMinutes} color={colorVar(todaySectionCourse?.color)} warnOver label={`${formatDuration(sectionLogged)} of ${formatDuration(todaySection.estimatedMinutes)} estimate`} /> : null}
+              </div>
+            </div>
+            {todaySection.completedAt ? (
+              <button type="button" className="btn" onClick={() => markDone(todaySection.id, false)}>Mark not done</button>
+            ) : (
+              <div className={styles.actionCol}>
+                <button type="button" className="btn" onClick={() => markDone(todaySection.id, true)}><Icon name="check" /> Mark done</button>
+                <kbd className={styles.hint}>D</kbd>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="muted">No section assigned today. <Link to="/plan">Plan your week</Link></p>
+        )}
+      </section>
+
       <div className={styles.row2}>
-        <section className="card" aria-labelledby="logged-heading" style={{ gridColumn: '1 / -1' }}>
+        <section className="card" aria-labelledby="plan-heading">
+          <div className="card-head">
+            <h2 id="plan-heading" className="section-title">Today's plan</h2>
+            <Link to="/plan" className="small">Edit plan →</Link>
+          </div>
+          <DayTimeline
+            blocks={todayBlocks}
+            pieces={todayIntervals.map((i) => ({ ...i, key: i.entryId ?? 'running', running: !i.entryId }))}
+            startHour={data.settings.gridStartHour}
+            endHour={data.settings.gridEndHour}
+            now={now}
+            courses={courseById}
+            sections={sectionById}
+          />
+          <p className={`${styles.adherence} small`}>
+            Planned <span className="num">{formatDuration(adh.planned)}</span> · Actual <span className="num">{formatDuration(todayMinutes)}</span> · Adherence <span className="num">{adh.pct === null ? '—' : `${adh.pct}%`}</span>
+          </p>
+        </section>
+
+        <section className="card" aria-labelledby="logged-heading">
           <div className="card-head">
             <h2 id="logged-heading" className="section-title">Logged today</h2>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => ui.openEntry({ date: today })} disabled={!hasCourses}><Icon name="plus" /> Add entry</button>

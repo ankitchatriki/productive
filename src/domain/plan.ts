@@ -157,3 +157,30 @@ export function adherence(blocks: ScheduledBlock[], intervals: Interval[], dates
   const matched = Math.round(matchedMs / 60000);
   return { planned, matched, pct: planned > 0 ? Math.round((matched / planned) * 100) : null };
 }
+
+// ---------- Carry-over (§4.3) ----------
+
+export interface CarryOver { sectionId: Id; date: DateKey }
+
+/**
+ * Y = most recent date before today (looking back up to 7 days, across into the
+ * previous week) with a non-null assignment. Banner when Y's section is not done
+ * and is not assigned to today or a later day of the current week.
+ */
+export function findCarryOver(data: { weekPlans: Record<WeekKey, WeekPlan>; sections: Section[] }, today: DateKey): CarryOver | null {
+  for (let k = 1; k <= 7; k++) {
+    const d = addDays(today, -k);
+    const sid = planFor(data.weekPlans, d)?.sectionByDay[d];
+    if (!sid) continue;
+    const section = data.sections.find((s) => s.id === sid);
+    if (!section || section.completedAt) return null;
+    const current = data.weekPlans[weekStartOf(today)];
+    if (current) {
+      for (const day of weekDates(current.weekStart)) {
+        if (day >= today && current.sectionByDay[day] === sid) return null;
+      }
+    }
+    return { sectionId: sid, date: d };
+  }
+  return null;
+}

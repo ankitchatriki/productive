@@ -1,0 +1,21 @@
+.wrap { --gutter: 44px; }
+.lanesHead { display: grid; grid-template-columns: var(--gutter) 1fr 1fr; gap: 6px; font-size: var(--text-2xs); color: var(--text-subtle); text-transform: uppercase; letter-spacing: var(--tracking-caps); margin-bottom: 4px; }
+.tl {
+  position: relative; display: grid; grid-template-columns: var(--gutter) 1fr 1fr; gap: 6px;
+  background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px); background-size: 100% 32px;
+  border-bottom: var(--border-width) solid var(--border);
+}
+.gutter { position: relative; }
+.gutter span { position: absolute; left: 0; font-size: var(--text-2xs); color: var(--text-subtle); font-family: var(--font-mono); line-height: 1; padding-top: 2px; }
+.lane { position: relative; }
+.planned, .logged {
+  position: absolute; left: 0; right: 0; border-radius: var(--radius-xs); font-size: var(--text-2xs); line-height: 14px;
+  padding: 2px 6px; overflow: hidden; display: flex; flex-direction: column;
+}
+.planned { background: var(--hatch); border: 1px dashed var(--c); border-left: 3px solid var(--c); }
+.logged { background: var(--soft); border-left: 3px solid var(--c); box-shadow: var(--shadow-1); }
+.running { border-bottom: 2px solid var(--c); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+.cont { color: var(--text-muted); }
+.now { position: absolute; left: var(--gutter); right: 0; height: 2px; background: var(--accent); pointer-events: none; }
+.now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }

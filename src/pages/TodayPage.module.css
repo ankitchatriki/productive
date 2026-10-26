@@ -69,3 +69,9 @@
   .range { grid-column: 1 / -1; }
 }
 @media (max-width: 767px) { .hint { display: none; } }
+.sectionCard { border-left: 4px solid var(--c); display: flex; flex-direction: column; gap: var(--space-2); }
+.sectionBody { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.sectionInfo { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.estimate { display: flex; flex-direction: column; gap: 4px; max-width: 360px; margin-top: 4px; }
+.adherence { margin-top: var(--space-3); color: var(--text-muted); }
+.row2 { align-items: start; }

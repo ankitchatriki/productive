@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adherence, autoAssign, autoAssignStart, blocksOverlap, canPlaceBlock, copyBlocksFromPreviousWeek, copyGoalsFromPreviousWeek,
-  createWeekPlan, dailyGoalFor, defaultAutoAssignCourse, goalsAreDefault, plannedMinutes, shiftPlanFrom,
+  createWeekPlan, dailyGoalFor, defaultAutoAssignCourse, findCarryOver, goalsAreDefault, plannedMinutes, shiftPlanFrom,
 } from './plan';
 import { allIntervals } from './aggregate';
 import { course, data, entry, iso, section } from './fixtures';
@@ -115,5 +115,41 @@ describe('adherence', () => {
   });
   it('is null when nothing is planned', () => {
     expect(adherence([], [], [WS]).pct).toBeNull();
+  });
+});
+
+describe('findCarryOver', () => {
+  const mk = () => {
+    const d = data({ sections: [section('a', 'c1', 0), section('b', 'c1', 1), section('done', 'c1', 2, { completedAt: iso(2026, 10, 20) })] });
+    d.weekPlans['2026-10-19'] = createWeekPlan('2026-10-19', settings, iso(2026, 10, 19));
+    d.weekPlans[WS] = createWeekPlan(WS, settings, iso(2026, 10, 26));
+    return d;
+  };
+  it('finds yesterday’s unfinished section', () => {
+    const d = mk();
+    d.weekPlans[WS].sectionByDay['2026-10-28'] = 'a';
+    expect(findCarryOver(d, '2026-10-29')).toEqual({ sectionId: 'a', date: '2026-10-28' });
+  });
+  it('skips null days and looks into the previous week', () => {
+    const d = mk();
+    d.weekPlans['2026-10-19'].sectionByDay['2026-10-23'] = 'a';
+    expect(findCarryOver(d, '2026-10-27')).toEqual({ sectionId: 'a', date: '2026-10-23' });
+  });
+  it('none when the most recent assigned section is done', () => {
+    const d = mk();
+    d.weekPlans[WS].sectionByDay['2026-10-26'] = 'a';
+    d.weekPlans[WS].sectionByDay['2026-10-27'] = 'done';
+    expect(findCarryOver(d, '2026-10-28')).toBeNull();
+  });
+  it('none when already assigned to today or later this week', () => {
+    const d = mk();
+    d.weekPlans[WS].sectionByDay['2026-10-27'] = 'a';
+    d.weekPlans[WS].sectionByDay['2026-10-30'] = 'a';
+    expect(findCarryOver(d, '2026-10-28')).toBeNull();
+  });
+  it('none beyond 7 days back', () => {
+    const d = mk();
+    d.weekPlans['2026-10-19'].sectionByDay['2026-10-19'] = 'a';
+    expect(findCarryOver(d, '2026-10-27')).toBeNull();
   });
 });
