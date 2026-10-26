@@ -180,7 +180,7 @@ export function ReviewPage() {
                 const done = !!s?.completedAt && toDateKey(new Date(s.completedAt)) <= dates[6];
                 return (
                   <li key={date}>
-                    <span className={done ? styles.yes : styles.no} aria-label={done ? 'Done' : 'Not done'}>{done ? '✓' : '✗'}</span>
+                    <span className={done ? styles.yes : styles.no} aria-label={done ? 'Done' : date >= today ? 'Upcoming' : 'Not done'}>{done ? '✓' : date >= today ? '○' : '✗'}</span>
                     <span className="muted small">{formatDay(date).slice(0, 3)}</span>
                     <span className="truncate">{s?.title ?? 'Deleted section'}</span>
                     {carried(id, date) && <span className="chip">carried</span>}
