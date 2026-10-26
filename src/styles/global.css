@@ -187,7 +187,7 @@ table { border-collapse: separate; border-spacing: 0; }
   display: flex; flex-direction: column; align-items: center; text-align: center;
   max-width: 360px; margin: var(--space-8) auto; gap: var(--space-2); color: var(--text-muted);
 }
-.empty svg { color: var(--text-subtle); margin-bottom: var(--space-2); }
+.empty > svg { color: var(--text-subtle); margin-bottom: var(--space-2); }
 .empty-title { font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--text); }
 .empty .row { justify-content: center; margin-top: var(--space-2); }
 

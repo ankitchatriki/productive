@@ -3,6 +3,8 @@ import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import styles from './App.module.css';
 import { Nav } from './components/Nav';
 import { useStorageInfo } from './state/store';
+import { CoursesPage } from './pages/CoursesPage';
+import { CourseDetailPage } from './pages/CourseDetailPage';
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -29,15 +31,15 @@ function Layout() {
 
 export function App() {
   return (
-    <HashRouter>
+    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/welcome" element={<Placeholder title="Welcome" />} />
         <Route element={<Layout />}>
           <Route index element={<Placeholder title="Today" />} />
           <Route path="plan/:weekStart?" element={<Placeholder title="Plan week" />} />
           <Route path="timecard/:weekStart?" element={<Placeholder title="Timecard" />} />
-          <Route path="courses" element={<Placeholder title="Courses" />} />
-          <Route path="courses/:courseId" element={<Placeholder title="Course" />} />
+          <Route path="courses" element={<CoursesPage />} />
+          <Route path="courses/:courseId" element={<CourseDetailPage />} />
           <Route path="review/:weekStart?" element={<Placeholder title="Review" />} />
           <Route path="settings" element={<Placeholder title="Settings" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
