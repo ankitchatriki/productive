@@ -349,13 +349,13 @@ function PlanBody({ plan }: { plan: WeekPlan }) {
         <div className="card-head">
           <h2 id="blocks-h" className="card-title">Time blocks</h2>
           <div className="row">
-            {isPhone && <button type="button" className="btn btn-sm btn-primary" onClick={addBlockOnPhone}><Icon name="plus" /> Add block</button>}
+            <button type="button" className="btn btn-sm btn-primary" onClick={addBlockOnPhone}><Icon name="plus" /> Add block</button>
             <button type="button" className="btn btn-sm" onClick={() => (plan.blocks.length ? setConfirm('blocks') : copyBlocks())} disabled={!prevPlan}>
               <Icon name="copy" /> Copy last week's blocks
             </button>
           </div>
         </div>
-        {!isPhone && <p className="help" style={{ marginBottom: 12 }}>Drag on the grid to add a block (click adds one hour). Drag a block to move it, drag its bottom edge to resize, click it to edit.</p>}
+        {!isPhone && <p className="help" style={{ marginBottom: 12 }}>Drag on the grid to add a block (click adds one hour), or use Add block. Drag a block to move it, drag its bottom edge to resize, click it to edit. Focused blocks: arrows move, Shift+arrows resize, Enter edits, Delete removes.</p>}
         {(overcommit || heavyDay) && (
           <div className="banner banner-behind">
             <Icon name="alert" />
