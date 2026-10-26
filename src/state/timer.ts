@@ -51,7 +51,7 @@ export function useTimerActions() {
     const minutes = Math.round((Date.parse(result.entry.end) - Date.parse(result.entry.start)) / 60000);
     toast.show(`Logged ${formatDuration(minutes)} to ${courseName(t.courseId)}.`, {
       label: 'Undo',
-      onClick: () => dispatch({ type: 'data/replace', data: { ...data, activeTimer: t } }),
+      onClick: () => dispatch({ type: 'timer/restore', timer: t, removeEntryId: result.entry.id }),
     });
   }, [data, dispatch, toast, courseName]);
 

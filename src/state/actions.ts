@@ -1,4 +1,4 @@
-import type { ActiveTimer, AppData, Course, DateKey, Id, IsoInstant, ScheduledBlock, Section, Settings, TimeEntry, WeekKey, WeekPlan } from '../domain/types';
+import type { ActiveTimer, AppData, Course, DateKey, Goal, Id, IsoInstant, ScheduledBlock, Section, Settings, TimeEntry, WeekKey, WeekPlan } from '../domain/types';
 
 export type Action =
   | { type: 'settings/update'; patch: Partial<Settings> }
@@ -22,4 +22,18 @@ export type Action =
   | { type: 'plan/shiftFrom'; date: DateKey; sectionId: Id }
   | { type: 'block/upsert'; weekStart: WeekKey; block: ScheduledBlock }
   | { type: 'block/delete'; weekStart: WeekKey; id: Id }
-  | { type: 'data/replace'; data: AppData };                // import, reset, undo-restore, cross-tab sync
+  | { type: 'data/replace'; data: AppData }
+  // Targeted undo actions (reverse only their own change; see review R1).
+  | { type: 'timer/restore'; timer: ActiveTimer; removeEntryId: Id | null }
+  | { type: 'section/restore'; record: SectionDeleteRecord }
+  | { type: 'plan/insertGoal'; weekStart: WeekKey; goal: Goal; index: number; now: IsoInstant }
+  | { type: 'plan/fillDays'; weekStart: WeekKey; sectionByDay: Record<DateKey, Id | null> };
+
+/** What a section delete changed, so Undo can put back exactly that. */
+export interface SectionDeleteRecord {
+  section: Section;
+  entryIds: Id[];
+  blocks: Array<{ weekStart: WeekKey; blockId: Id }>;
+  days: Array<{ weekStart: WeekKey; date: DateKey }>;
+  timer: boolean;
+}                // import, reset, undo-restore, cross-tab sync

@@ -125,8 +125,9 @@ function PlanBody({ plan }: { plan: WeekPlan }) {
     update({ goals: [...plan.goals, g] });
   };
   const removeGoal = (g: Goal) => {
+    const index = plan.goals.findIndex((x) => x.id === g.id);
     update({ goals: plan.goals.filter((x) => x.id !== g.id) });
-    toast.show('Goal removed.', { label: 'Undo', onClick: () => dispatch({ type: 'plan/update', weekStart, patch: { goals: plan.goals }, now: stamp() }) });
+    toast.show('Goal removed.', { label: 'Undo', onClick: () => dispatch({ type: 'plan/insertGoal', weekStart, goal: g, index, now: stamp() }) });
   };
   const copyGoals = () => {
     if (!prevPlan || prevPlan.goals.length === 0) { toast.show("Last week has no goals to copy."); return; }
@@ -150,7 +151,7 @@ function PlanBody({ plan }: { plan: WeekPlan }) {
     const before = plan.sectionByDay;
     const cleared = Object.fromEntries(dates.map((d) => [d, null]));
     update({ sectionByDay: cleared });
-    toast.show('Section plan cleared.', { label: 'Undo', onClick: () => dispatch({ type: 'plan/update', weekStart, patch: { sectionByDay: before }, now: stamp() }) });
+    toast.show('Section plan cleared.', { label: 'Undo', onClick: () => dispatch({ type: 'plan/fillDays', weekStart, sectionByDay: before }) });
   };
 
   // ---------- Blocks ----------

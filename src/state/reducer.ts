@@ -1,6 +1,6 @@
 // Pure reducer. Receives `now` inside actions; never reads the clock itself.
 import type { AppData, Id, WeekPlan } from '../domain/types';
-import type { Action } from './actions';
+import type { Action, SectionDeleteRecord } from './actions';
 import { entryFromTimer } from '../domain/entries';
 import { normalizeOrder, reorder } from '../domain/sections';
 import { createWeekPlan, shiftPlanFrom } from '../domain/plan';
@@ -30,6 +30,25 @@ function clearSectionRefs(plan: WeekPlan, sectionIds: Set<Id>): WeekPlan {
     return b;
   });
   return changed ? { ...plan, sectionByDay, blocks } : plan;
+}
+
+/** Record what deleting section `id` will change (for a precise Undo). */
+export function sectionDeleteRecord(state: AppData, id: Id): SectionDeleteRecord | null {
+  const section = state.sections.find((s) => s.id === id);
+  if (!section) return null;
+  const blocks: SectionDeleteRecord['blocks'] = [];
+  const days: SectionDeleteRecord['days'] = [];
+  for (const p of Object.values(state.weekPlans)) {
+    for (const b of p.blocks) if (b.sectionId === id) blocks.push({ weekStart: p.weekStart, blockId: b.id });
+    for (const [d, sid] of Object.entries(p.sectionByDay)) if (sid === id) days.push({ weekStart: p.weekStart, date: d });
+  }
+  return {
+    section,
+    entryIds: state.entries.filter((e) => e.sectionId === id).map((e) => e.id),
+    blocks,
+    days,
+    timer: state.activeTimer?.sectionId === id,
+  };
 }
 
 export function reducer(state: AppData, action: Action): AppData {
@@ -144,6 +163,60 @@ export function reducer(state: AppData, action: Action): AppData {
 
     case 'data/replace':
       return action.data;
+
+    case 'timer/restore': {
+      if (state.activeTimer) return state; // a newer timer is running; don't clobber it
+      return {
+        ...state,
+        entries: action.removeEntryId ? state.entries.filter((e) => e.id !== action.removeEntryId) : state.entries,
+        activeTimer: action.timer,
+      };
+    }
+
+    case 'section/restore': {
+      const r = action.record;
+      if (state.sections.some((s) => s.id === r.section.id)) return state;
+      if (!state.courses.some((c) => c.id === r.section.courseId)) return state;
+      const shifted = state.sections.map((s) => (s.courseId === r.section.courseId && s.order >= r.section.order ? { ...s, order: s.order + 1 } : s));
+      const sections = normalizeOrder([...shifted, r.section], r.section.courseId);
+      const entryIds = new Set(r.entryIds);
+      const weekPlans = { ...state.weekPlans };
+      for (const ref of r.blocks) {
+        const p = weekPlans[ref.weekStart];
+        if (!p) continue;
+        weekPlans[ref.weekStart] = { ...p, blocks: p.blocks.map((b) => (b.id === ref.blockId && b.sectionId === null && b.courseId === r.section.courseId ? { ...b, sectionId: r.section.id } : b)) };
+      }
+      for (const ref of r.days) {
+        const p = weekPlans[ref.weekStart];
+        if (!p || p.sectionByDay[ref.date] !== null) continue;
+        weekPlans[ref.weekStart] = { ...p, sectionByDay: { ...p.sectionByDay, [ref.date]: r.section.id } };
+      }
+      const t = state.activeTimer;
+      return {
+        ...state,
+        sections,
+        entries: state.entries.map((e) => (entryIds.has(e.id) && e.sectionId === null && e.courseId === r.section.courseId ? { ...e, sectionId: r.section.id } : e)),
+        weekPlans,
+        activeTimer: r.timer && t && t.sectionId === null && t.courseId === r.section.courseId ? { ...t, sectionId: r.section.id } : t,
+      };
+    }
+
+    case 'plan/insertGoal':
+      return withPlan(state, action.weekStart, (p) => {
+        if (p.goals.some((g) => g.id === action.goal.id)) return p;
+        const goals = [...p.goals];
+        goals.splice(Math.min(action.index, goals.length), 0, action.goal);
+        return { ...p, goals, updatedAt: action.now };
+      });
+
+    case 'plan/fillDays':
+      return withPlan(state, action.weekStart, (p) => {
+        const sectionByDay = { ...p.sectionByDay };
+        for (const [d, sid] of Object.entries(action.sectionByDay)) {
+          if (d in sectionByDay && sectionByDay[d] === null && sid && state.sections.some((s) => s.id === sid)) sectionByDay[d] = sid;
+        }
+        return { ...p, sectionByDay };
+      });
 
     default:
       return state;

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import styles from './CourseDetailPage.module.css';
 import { useDispatch, useStore } from '../state/store';
+import { sectionDeleteRecord } from '../state/reducer';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { allIntervals, minutesBySection, minutesInDates } from '../domain/aggregate';
@@ -68,10 +69,10 @@ export function CourseDetailPage() {
     setBulkOpen(false);
   };
   const deleteSection = (s: Section) => {
-    const snapshot = data;
+    const record = sectionDeleteRecord(data, s.id);
     dispatch({ type: 'section/delete', id: s.id });
     setPendingSectionDelete(null);
-    toast.show(`Section "${s.title}" deleted.`, { label: 'Undo', onClick: () => dispatch({ type: 'data/replace', data: snapshot }) });
+    toast.show(`Section "${s.title}" deleted.`, record ? { label: 'Undo', onClick: () => dispatch({ type: 'section/restore', record }) } : undefined);
   };
   const requestDeleteSection = (s: Section) => {
     if (data.entries.some((e) => e.sectionId === s.id)) setPendingSectionDelete(s);

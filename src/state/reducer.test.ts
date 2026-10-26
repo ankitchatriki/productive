@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reducer } from './reducer';
+import { reducer, sectionDeleteRecord } from './reducer';
 import { course, data, entry, iso, section } from '../domain/fixtures';
 import { createWeekPlan } from '../domain/plan';
 import type { AppData, ScheduledBlock } from '../domain/types';
@@ -165,5 +165,50 @@ describe('reducer: plans and blocks', () => {
   it('data/replace swaps state', () => {
     const next = data();
     expect(reducer(seed(), { type: 'data/replace', data: next })).toBe(next);
+  });
+});
+
+describe('targeted undo (review R1)', () => {
+  const timer = { courseId: 'c1', sectionId: 's1', startedAt: iso(2026, 10, 28, 9), note: '' };
+  it('timer/restore removes only the clock-out entry and keeps later work', () => {
+    let s = reducer({ ...seed(), activeTimer: timer }, { type: 'timer/stop', now: iso(2026, 10, 28, 10), newEntryId: 'out' });
+    const manual = entry('m', 'c2', iso(2026, 10, 28, 6), iso(2026, 10, 28, 7));
+    s = reducer(s, { type: 'entry/add', entry: manual });
+    s = reducer(s, { type: 'timer/restore', timer, removeEntryId: 'out' });
+    expect(s.activeTimer).toEqual(timer);
+    expect(s.entries.map((e) => e.id).sort()).toEqual(['e1', 'm']);
+  });
+  it('timer/restore does not clobber a newer running timer', () => {
+    const newer = { ...timer, startedAt: iso(2026, 10, 28, 11) };
+    const s0 = { ...seed(), activeTimer: newer };
+    expect(reducer(s0, { type: 'timer/restore', timer, removeEntryId: null })).toBe(s0);
+  });
+  it('section/restore puts back only what the delete changed', () => {
+    const s0 = seed();
+    s0.activeTimer = { courseId: 'c1', sectionId: 's2', startedAt: NOW, note: '' };
+    const record = sectionDeleteRecord(s0, 's2')!;
+    expect(record).toMatchObject({ entryIds: ['e1'], timer: true });
+    let s = reducer(s0, { type: 'section/delete', id: 's2' });
+    // Later, unrelated work: a new entry and a new section.
+    s = reducer(s, { type: 'entry/add', entry: entry('later', 'c1', iso(2026, 10, 28, 6), iso(2026, 10, 28, 7)) });
+    s = reducer(s, { type: 'section/addMany', sections: [section('s9', 'c1', 2)] });
+    s = reducer(s, { type: 'section/restore', record });
+    expect(s.entries.find((e) => e.id === 'later')?.sectionId).toBeNull();
+    expect(s.entries.find((e) => e.id === 'e1')?.sectionId).toBe('s2');
+    expect(s.weekPlans[WS].sectionByDay['2026-10-28']).toBe('s2');
+    expect(s.weekPlans[WS].blocks[0].sectionId).toBe('s2');
+    expect(s.activeTimer?.sectionId).toBe('s2');
+    expect(s.sections.filter((x) => x.courseId === 'c1').sort((a, b) => a.order - b.order).map((x) => x.id)).toEqual(['s1', 's2', 's3', 's9']);
+  });
+  it('plan/insertGoal re-inserts at its index; plan/fillDays fills only empty days', () => {
+    const s0 = seed();
+    const goal = s0.weekPlans[WS].goals[0];
+    let s = reducer(s0, { type: 'plan/update', weekStart: WS, patch: { goals: s0.weekPlans[WS].goals.slice(1) }, now: NOW });
+    s = reducer(s, { type: 'plan/insertGoal', weekStart: WS, goal, index: 0, now: NOW });
+    expect(s.weekPlans[WS].goals[0]).toEqual(goal);
+    s = reducer(s, { type: 'plan/assignSection', weekStart: WS, date: '2026-10-29', sectionId: 's3' });
+    s = reducer(s, { type: 'plan/fillDays', weekStart: WS, sectionByDay: { '2026-10-29': 's1', '2026-10-30': 's1' } });
+    expect(s.weekPlans[WS].sectionByDay['2026-10-29']).toBe('s3');
+    expect(s.weekPlans[WS].sectionByDay['2026-10-30']).toBe('s1');
   });
 });
