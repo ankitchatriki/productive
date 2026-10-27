@@ -1,0 +1,11 @@
+.shell { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+.main { min-width: 0; }
+@media (min-width: 768px) and (max-width: 1199px) {
+  .shell { grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr); }
+}
+@media (max-width: 767px) {
+  .shell { display: block; }
+  .main { padding-bottom: calc(var(--tabbar-h) + 8px); }
+  .main.withPill { padding-bottom: calc(var(--tabbar-h) + 56px); }
+}
+@media print { .shell { display: block; } .main { padding: 0; } }

@@ -1,0 +1,8 @@
+.fig { margin: 0; min-width: 0; }
+.svg { width: 100%; display: block; overflow: visible; }
+.labels { display: grid; text-align: center; font-size: var(--text-2xs); color: var(--text-subtle); margin-top: 4px; }
+.labels span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hl { color: var(--accent-text); font-weight: var(--weight-semibold); }
+.axis { display: flex; justify-content: space-between; gap: 8px; font-size: var(--text-2xs); color: var(--text-subtle); margin-top: 6px; font-family: var(--font-mono); }
+.clickable { cursor: pointer; }
+@media (max-width: 767px) { .dense span:nth-child(even) { visibility: hidden; } }

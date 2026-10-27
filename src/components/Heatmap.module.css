@@ -1,0 +1,23 @@
+.wrap { min-width: 0; }
+.scroller { overflow-x: auto; padding: 2px; }
+.grid { display: grid; grid-auto-rows: 12px; gap: 3px; width: max-content; }
+.row { display: contents; }
+.rowLabel { font-size: var(--text-2xs); line-height: 12px; color: var(--text-subtle); }
+.cell {
+  width: 12px; height: 12px; padding: 0; border: 0; border-radius: 2px; position: relative; display: inline-grid; place-items: center;
+  outline: 1px solid var(--border); outline-offset: -1px; cursor: pointer;
+}
+.cell:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.future { outline: 1px dashed var(--border); cursor: default; }
+.today { outline: 1.5px solid var(--text); }
+.rest { background: var(--hatch), var(--surface-2) !important; }
+.met { width: 3px; height: 3px; border-radius: 50%; background: var(--surface); }
+.legend { display: flex; align-items: center; justify-content: flex-end; gap: 3px; font-size: var(--text-2xs); color: var(--text-subtle); margin-top: 8px; }
+.legend .cell { cursor: default; }
+@media (max-width: 767px) {
+  .grid { grid-auto-rows: 10px; }
+  .cell { width: 10px; height: 10px; }
+}
+.months { display: grid; gap: 3px; width: max-content; font-size: var(--text-2xs); color: var(--text-subtle); margin-bottom: 4px; }
+.months span { white-space: nowrap; overflow: visible; width: 12px; }
+@media (max-width: 767px) { .months { gap: 3px; } }
