@@ -114,6 +114,15 @@
 
 @media (max-width: 767px) {
   .top { padding: max(16px, env(safe-area-inset-top)) 16px 0; }
+}
+@media (max-width: 479px) {
+  /* Review S2: the course label gets its own line under the buttons instead of truncating to "OR…". */
+  .top { flex-wrap: wrap; row-gap: 4px; }
+  .topBtns { margin-left: auto; }
+  .label { order: 2; flex-basis: 100%; white-space: normal; text-align: center; line-height: 1.35; }
+  .label small { display: block; margin-left: 0; }
+}
+@media (max-width: 767px) {
   .keys { display: none; }
 }
 @media (max-height: 480px) and (orientation: landscape) {
@@ -131,7 +140,7 @@
 @media (max-aspect-ratio: 9/10) {
   .overlay[data-scene="sisyphus"] .readoutBox,
   .overlay[data-scene="sisyphus"][data-sticky="true"] .readoutBox {
-    left: 0; right: 0; top: 13vh; bottom: auto; align-items: center; text-align: center; padding: 16px 0;
+    left: 0; right: 0; top: calc(13vh + 16px); bottom: auto; align-items: center; text-align: center; padding: 16px 0;
     background: radial-gradient(ellipse 60vw 50% at 50% 50%, rgba(0, 0, 0, 0.22), transparent 70%);
   }
 }

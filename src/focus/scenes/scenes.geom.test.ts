@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STOPS, palette, mixRGB, grade, hex, lum, NIGHT } from './palette';
-import { PATHS, boulderS, buildPath, easeProgress, layoutFor, startS, summitS, sunPosition } from './path';
+import { FIGURE_H, PATHS, boulderS, buildPath, easeProgress, layoutFor, startS, summitS, sunPosition } from './path';
 import { BODY, footTarget, hipH, leanDeg, solvePush, solveSit, solveStand, surge, twoBoneIK, boulderCentre, handTarget, handAngles } from './rig';
 
 describe('palette', () => {
@@ -36,8 +36,8 @@ describe('slope path', () => {
     const land = buildPath(PATHS.landscape), port = buildPath(PATHS.portrait);
     expect(land.length).toBeGreaterThan(1.30 * 0.95);
     expect(land.length).toBeLessThan(1.30 * 1.05);
-    expect(port.length).toBeGreaterThan(0.77 * 0.95);
-    expect(port.length).toBeLessThan(0.77 * 1.05);
+    expect(port.length).toBeGreaterThan(0.77 * 0.82 * 0.95);
+    expect(port.length).toBeLessThan(0.77 * 0.82 * 1.05);
     expect(Math.abs(land.angleAt(0) - 22)).toBeLessThan(1);
     expect(Math.abs(land.angleAt(0.999) - 36)).toBeLessThan(1.5);
     expect(Math.abs(port.angleAt(0) - 28)).toBeLessThan(1);
@@ -47,7 +47,7 @@ describe('slope path', () => {
     const p = buildPath(PATHS.landscape);
     for (const s of [0.1, 0.4, 0.8]) { const pt = p.at(s); expect(Math.abs(p.groundY(pt.x) - pt.y)).toBeLessThan(1e-3); }
     expect(p.at(1).x).toBeCloseTo(1.24, 3);
-    expect(p.at(p.plateauEndS).x).toBeCloseTo(1.36, 3);
+    expect(p.at(p.plateauEndS).x).toBeCloseTo(1.50, 3);
   });
   it('layout rule', () => {
     expect(layoutFor(1440, 900).layout).toBe('landscape');
@@ -55,6 +55,18 @@ describe('slope path', () => {
     const l = layoutFor(1440, 900);
     expect(l.S).toBe(900);
     expect(l.ox).toBeCloseTo((1440 - 1.6 * 900) / 2);
+    expect(l.oy).toBe(0);
+  });
+  it('portrait lifts the climb above the control bar (review S2)', () => {
+    const l = layoutFor(390, 844);
+    const path = buildPath(PATHS.portrait);
+    const baseFromBottom = l.oy + path.at(0).y * l.S;
+    expect(baseFromBottom).toBeGreaterThan(0.2 * 844);
+    const summitFromTop = 844 - l.oy - path.at(1).y * l.S;
+    expect(summitFromTop).toBeGreaterThan(0.3 * 844); // below the readout band
+    expect(FIGURE_H.portrait * l.S).toBeGreaterThanOrEqual(70);
+    // the stone resting on the plateau stays on screen
+    expect(l.ox + 0.75 * l.S).toBeLessThanOrEqual(390); // standing px on a 390 px phone
   });
 });
 
@@ -92,7 +104,7 @@ describe('rig', () => {
   for (const layout of ['landscape', 'portrait'] as const) {
     it(`${layout}: hands on the stone, feet on the slope, knees uphill, lean in range through the cycle`, () => {
       const path = buildPath(PATHS[layout]);
-      const H = layout === 'landscape' ? 0.1 : 0.12;
+      const H = FIGURE_H[layout];
       const R = BODY.boulderR * H;
       for (const p of [0, 0.25, 0.5, 0.9, 1]) {
         const sB = boulderS(p, H, R, path.length);
@@ -126,12 +138,16 @@ describe('rig', () => {
   }
   it('stand and sit poses keep feet on the ground', () => {
     const path = buildPath(PATHS.landscape);
-    const H = 0.085, R = BODY.boulderR * H;
-    const plateauMid = 1 + (path.plateauEndS - 1) / 2;
+    const H = FIGURE_H.landscape, R = BODY.boulderR * H;
+    const plateauMid = 1 + (0.02 + 0.2 * H + R) / path.length;
     const bc = boulderCentre(path, plateauMid, R);
-    const st = solveStand(path, H, bc.x - R - 0.12 * H, bc, { sway: 0, breath: 1 });
+    const st = solveStand(path, H, bc.x - R - 0.14 * H, bc, { sway: 0, breath: 1 });
     for (const l of st.legs) expect(Math.abs(l.end.y - path.groundY(l.end.x)) * 900).toBeLessThan(1);
+    // review S4/S5: both feet (standing) and the seat (sitting) are on the plateau, not the slope
+    for (const l of st.legs) expect(l.end.x).toBeGreaterThanOrEqual(path.spec.p3.x);
+    expect(bc.x + R).toBeLessThanOrEqual(path.spec.plateauEnd.x);
     const sit = solveSit(path, H, bc, 1);
+    expect(sit.pelvis.x).toBeGreaterThanOrEqual(path.spec.p3.x - 0.02);
     expect(sit.facing).toBe(-1);
     expect(sit.pelvis.y - path.groundY(sit.pelvis.x)).toBeLessThan(0.1 * H);
   });

@@ -6,18 +6,26 @@ export type Layout = 'landscape' | 'portrait';
 export interface PathSpec { p0: V; p1: V; p2: V; p3: V; plateauEnd: V }
 
 export const PATHS: Record<Layout, PathSpec> = {
-  landscape: { p0: { x: 0.10, y: 0.12 }, p1: { x: 0.62, y: 0.33 }, p2: { x: 0.94, y: 0.52 }, p3: { x: 1.24, y: 0.74 }, plateauEnd: { x: 1.36, y: 0.755 } },
-  portrait: { p0: { x: 0.04, y: 0.10 }, p1: { x: 0.30, y: 0.24 }, p2: { x: 0.48, y: 0.40 }, p3: { x: 0.64, y: 0.58 }, plateauEnd: { x: 0.73, y: 0.59 } },
+  // Plateaus are long enough for the figure to stand (and sit) on top beside the stone (review S4/S5).
+  landscape: { p0: { x: 0.10, y: 0.12 }, p1: { x: 0.62, y: 0.33 }, p2: { x: 0.94, y: 0.52 }, p3: { x: 1.24, y: 0.74 }, plateauEnd: { x: 1.50, y: 0.755 } },
+  // Portrait climb is the design curve scaled 0.82 about P0 (same angles) to leave room for the plateau.
+  portrait: { p0: { x: 0.04, y: 0.10 }, p1: { x: 0.253, y: 0.215 }, p2: { x: 0.401, y: 0.346 }, p3: { x: 0.532, y: 0.494 }, plateauEnd: { x: 0.73, y: 0.504 } },
 };
 
 export const WORLD: Record<Layout, { w: number; h: number }> = { landscape: { w: 1.6, h: 1 }, portrait: { w: 0.75, h: 1 } };
 
-/** Layout rule: landscape when w/h ≥ 0.9. Returns the world-to-screen transform. */
-export function layoutFor(w: number, h: number): { layout: Layout; S: number; ox: number } {
+/** Figure standing height in world units per layout. */
+export const FIGURE_H: Record<Layout, number> = { landscape: 0.13, portrait: 0.135 };
+
+/** Layout rule: landscape when w/h ≥ 0.9. Returns the world-to-screen transform: x = ox + wx·S, y = h − oy − wy·S.
+ *  Portrait lifts the world by 19% of the height so the climb sits above the control bar (review S2). */
+export function layoutFor(w: number, h: number): { layout: Layout; S: number; ox: number; oy: number } {
   const layout: Layout = w / h >= 0.9 ? 'landscape' : 'portrait';
   const S = layout === 'landscape' ? Math.min(h, w / 1.5) : Math.min(0.9 * h, w / 0.72);
-  const ox = (w - WORLD[layout].w * S) / 2;
-  return { layout, S, ox };
+  // Portrait keeps the plateau (and the stone resting on it) on screen when the phone is narrower than the world.
+  const ox = layout === 'portrait' ? Math.min((w - WORLD[layout].w * S) / 2, w - 0.75 * S) : (w - WORLD[layout].w * S) / 2;
+  const oy = layout === 'portrait' ? Math.round(0.19 * h) : 0;
+  return { layout, S, ox, oy };
 }
 
 function bez(a: V, b: V, c: V, d: V, t: number): V {

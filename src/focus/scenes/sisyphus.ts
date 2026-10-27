@@ -2,7 +2,7 @@
 // up a dusk-lit mountain. Boulder position on the slope = block progress.
 import type { SceneEngine, SceneInitOptions, ScenePhase } from './types';
 import { NIGHT, PREDAWN, css, darken, desaturate, gradePalette, lighten, mixPalette, mixRGB, palette, type Palette, type RGB } from './palette';
-import { PATHS, WORLD, boulderS, buildPath, layoutFor, startS, summitS, sunPosition, type Layout, type SlopePath, type V } from './path';
+import { FIGURE_H, PATHS, WORLD, boulderS, buildPath, layoutFor, startS, summitS, sunPosition, type Layout, type SlopePath, type V } from './path';
 import {
   BODY, DEG, blendPose, boulderCentre, easeInOut, easeOut, hipH, leanDeg, pelvisOffset, solvePush, solveSit, solveStand,
   surge as surgeCurve, type Limb, type Pose,
@@ -26,7 +26,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
   let w = 0, h = 0, scale = 1, hostDpr = 1, quality = 1;
-  let layout: Layout = 'landscape', S = 1, ox = 0;
+  let layout: Layout = 'landscape', S = 1, ox = 0, oy = 0;
   let path: SlopePath = buildPath(PATHS.landscape);
   let Hw = 0.085, Rw = BODY.boulderR * 0.085;
   let reduced = false, running = false, raf = 0, mounted = false;
@@ -63,19 +63,20 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let fpsCount = 0, fpsWindow = 0;
 
   const mk = (cw: number, ch: number) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(cw)); c.height = Math.max(1, Math.round(ch)); return c; };
-  const toS = (v: V): V => ({ x: ox + v.x * S, y: h - v.y * S });
+  const toS = (v: V): V => ({ x: ox + v.x * S, y: h - oy - v.y * S });
   const Hpx = () => Hw * S;
   const s0 = () => startS(Hw, Rw, path.length);
   const s1 = () => summitS(Rw, path.length);
-  const plateauMid = () => 1 + (path.plateauEndS - 1) * 0.38;
+  /** Boulder rest point on the plateau: far enough from the lip that the figure's back foot is on top (review S4/S5). */
+  const plateauMid = () => Math.min(path.plateauEndS - Rw / path.length, 1 + (0.02 + 0.2 * Hw + Rw) / path.length);
   const nowS = () => performance.now() / 1000;
 
   // ---------- sizing ----------
   function layoutWorld() {
     const l = layoutFor(w, h);
-    layout = l.layout; S = l.S; ox = l.ox;
+    layout = l.layout; S = l.S; ox = l.ox; oy = l.oy;
     path = buildPath(PATHS[layout]);
-    Hw = layout === 'landscape' ? 0.1 : 0.12;
+    Hw = FIGURE_H[layout];
     Rw = BODY.boulderR * Hw;
   }
 
@@ -97,7 +98,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   interface SkyState { pal: Palette; sun: V | null; sunVis: number; glow: number; moon: V | null; moonVis: number; starVis: number; predawn: number }
 
   function skyState(t: number): SkyState {
-    const horizonPx = h - HORIZON_Y * S;
+    const horizonPx = h - oy - HORIZON_Y * S;
     const summitPx = toS(path.at(1));
     const moonPath = (q: number): V => {
       const A = { x: 0.08 * w, y: horizonPx }, C = { x: 0.32 * w, y: 0.12 * h }, B = { x: 0.62 * w, y: 0.18 * h };
@@ -124,8 +125,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     // focus / open / paused (and the roll-back into a new climb)
     let p = progress;
     let palP = 0.86 * p;
-    if (seq && seq.kind === 'rollback') { p = 0; palP = 0.86 * (1 - smoothstep(0, ROLLBACK_DUR, t - seq.t0)); }
-    const base = palette(palP);
+    let base = palette(palP);
+    if (seq && seq.kind === 'rollback') {
+      p = 0;
+      base = mixPalette(rollFrom ?? palette(0.86), palette(0), smoothstep(0, ROLLBACK_DUR, t - seq.t0));
+    }
     const sun = sunPosition(p, w, h, horizonPx, summitPx, layout);
     return { pal: base, sun, sunVis: 1, glow: 1, moon: null, moonVis: 0, starVis: smoothstep(0.93, 1.0, p) * 0.25, predawn: 0 };
   }
@@ -134,7 +138,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   function buildStars() {
     stars = [];
     const cell = Math.min(w, h) / 140;
-    const horizonPx = h - HORIZON_Y * S;
+    const horizonPx = h - oy - HORIZON_Y * S;
     for (let gy = 0; gy * cell < horizonPx - 10; gy++) {
       for (let gx = 0; gx * cell < w; gx++) {
         const b = hash2(gx, gy);
@@ -232,7 +236,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (!sky || sky.width !== cw || sky.height !== ch) sky = mk(cw, ch);
     const g = sky.getContext('2d')!;
     g.setTransform(scale, 0, 0, scale, 0, 0);
-    const horizonPx = h - HORIZON_Y * S;
+    const horizonPx = h - oy - HORIZON_Y * S;
     const grad = g.createLinearGradient(0, 0, 0, horizonPx);
     grad.addColorStop(0, css(pal.zenith));
     grad.addColorStop(0.55, css(mixRGB(pal.zenith, pal.horizon, 0.45)));
@@ -294,7 +298,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       for (let x = 0; x <= w + 6; x += 6) {
         const wx = (x - ox) / S;
         const y = bases[i] + amps[i] * ridged(wx * freqs[i] + 13.7 * (i + 1));
-        l.lineTo(x, h - y * S);
+        l.lineTo(x, h - oy - y * S);
       }
       l.lineTo(w, h); l.closePath(); l.fill();
     }
@@ -584,7 +588,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
 
   function drawParticles(g: CanvasRenderingContext2D) {
-    const dust = lighten(pal.rockLit, 0.2);
+    const dust = pal.rockLit; // review S14: tinted, not bright white dots
     for (const p of particles) {
       if (!p.live) continue;
       const k = p.age / p.life;
@@ -596,7 +600,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       } else {
         const v = toS({ x: p.x, y: p.y });
         const r = p.r * S * (1 + 1.5 * k);
-        g.fillStyle = css(p.kind === 'grit' ? pal.rockShade : dust, (p.kind === 'grit' ? 0.8 : 0.35) * (1 - k));
+        g.fillStyle = css(p.kind === 'grit' ? pal.rockShade : dust, (p.kind === 'grit' ? 0.8 : 0.22) * (1 - k));
         g.beginPath(); g.arc(v.x, v.y, r, 0, Math.PI * 2); g.fill();
       }
     }
@@ -685,6 +689,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   // ---------- frame ----------
   let lastSky: SkyState | null = null;
+  let rollFrom: Palette | null = null;
 
   function sceneFrame(t: number, dt: number) {
     if (!ctx || !canvas) return;
@@ -729,7 +734,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     }
     // Clouds
     if (clouds.length && quality > 0.5) {
-      const band0 = h - (HORIZON_Y + 0.45) * S, band1 = h - (HORIZON_Y + 0.12) * S;
+      const band0 = h - oy - (HORIZON_Y + 0.45) * S, band1 = h - oy - (HORIZON_Y + 0.12) * S;
       clouds.forEach((c, i) => {
         const cw = c.width / scale, ch = c.height / scale;
         const span = w + cw;
@@ -843,6 +848,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   function startSeq(kind: SeqKind, t: number, from?: Mode) {
     const dur = kind === 'summit' ? SUMMIT_DUR : kind === 'mini' ? MINI_DUR : kind === 'rollback' ? ROLLBACK_DUR : kind === 'standup' ? STANDUP_DUR : kind === 'fadein' ? FADEIN_DUR : CROSSFADE_DUR;
     seq = { kind, t0: t, dur, from };
+    // Review S6: the roll-back cross-fades from the sky as it is now to dawn, instead of scrubbing back through noon.
+    if (kind === 'rollback') rollFrom = lastSky ? lastSky.pal : null;
     if (reduced && kind !== 'crossfade') { seq = null; }
     ensureLoop();
   }
@@ -922,6 +929,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     setProgress(p: number) {
       const q = Math.min(1, Math.max(0, p));
       if (phase === 'open' && q < lastProgress - 0.5 && !seq && mode === 'climb') startSeq('mini', nowS());
+      // Review S5: when the break runs out, the figure stands up beside the stone (1 s).
+      if (phase === 'break' && q >= 1 && progress < 1 && mode === 'sit' && phaseSet) {
+        mode = 'stand';
+        if (!reduced) { startSeq('standup', nowS()); }
+      }
       lastProgress = q;
       progress = q;
       if (reduced && mounted) {
