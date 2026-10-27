@@ -12,7 +12,7 @@ import type { V } from './path';
 import { RIG, holdDForStone, solveSit, stepToStand, type Pose } from './rig';
 import { PREFIX_LEN } from '../../domain/mountain';
 import { Gait } from './gait';
-import { drawFigureArt, lastDetailMs, type FigureFrame } from './figureArt';
+import { drawFigureArt, figureTier, lastDetailMs, type FigureFrame } from './figureArt';
 import { makeChain, solveRest, stepChain, type Chain } from './chain';
 import { wind } from './gait';
 import { birdSchedule, birdsAt, type BirdGroup } from './ambient';
@@ -28,7 +28,7 @@ const R = RIG.boulderR; // H units
 const ROLL_DIR = 1;
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number; camY?: number; figureMs?: number; detailMs?: number; tier?: number; pelvisH?: number; clothDeg?: number; clock?: number; u?: number; figBox?: number[] }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number; camY?: number; figureMs?: number; detailMs?: number; tier?: number; pelvisH?: number; clothDeg?: number; clock?: number; u?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; detailAvg?: number; settling?: boolean }
 
 interface Grit { live: boolean; x: number; y: number; vx: number; vy: number; age: number }
 
@@ -571,7 +571,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
   let renderCam = { pos: { x: 0, y: 0 }, anchor: { x: 0, y: 0 }, zoom: 1 };
   let ffS = NaN, ffV = 0, ffA = 0, corr = 0, corrV = 0, corrA = 0;
-  let frMode = 'trudge', frStrainT = -1, tierFree = true;
+  let frMode = 'trudge', frStrainT = -1, tierFree = true, settling = false;
 
   function sceneFrame(t: number, dt: number) {
     if (!ctx || !canvas) return;
@@ -594,6 +594,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     // Figure state.
     const still = reduced || phase === 'paused';
     let pose: Pose, centre: V, rot: number, sB: number;
+    settling = false; tierFree = true;
     if (mode === 'climb') {
       if (!still) gait.step(dt, dTarget(t), trail, { climbing: !seq && (phase === 'focus' || phase === 'open'), lenH: lenH(), idles: quality >= 1 });
       else gait.settle(sTarget(), trail, reduced);
@@ -617,15 +618,21 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         gait.step(dt, target, trail, { climbing: false, lenH: lenH(), speed: 1.0, idles: false });
         const fr = gait.pose(trail);
         pose = fr.pose; centre = fr.centre; rot = fr.rot; sB = fr.sB;
+        tierFree = fr.mode !== 'trudge' || gait.u < 0.3;
         if (gait.events.stepEnd && rng() < 0.6) spawnGrit(trail.at(sB), 1);
         // arrived: at rest in the hold for 0.8 s (the pelvis has settled), so the step-through starts from stillness
         const arrived = gait.mode === 'hold' && gait.holdT >= 0.8 && Math.abs(D1 - gait.D) < 0.5 * sigmaAt(trail.angleAt(gait.D));
         if ((st > 0.8 && arrived) || st > 14) { sw.standT0 = t; sw.hold = fr.pose; sw.centre = fr.centre; sw.sB = fr.sB; sw.rot = fr.rot; }
       } else {
-        centre = sw.centre!; sB = sw.sB; rot = sw.rot;
-        const k = (t - sw.standT0) / STAND_DUR;
+        // §5.3 summit settle: released on the ledge, the stone rocks on a damped spring (±0.01 H, ζ 0.35, two
+        // oscillations) and turns with its travel, in phase (rot = centreArc/R holds); the palm rides it
+        const ts = t - sw.standT0, wn = (2 * Math.PI) / 0.55, z = 0.35;
+        const off = ts < STAND_DUR ? 0.01 * Math.exp(-z * wn * ts) * Math.sin(wn * Math.sqrt(1 - z * z) * ts) : 0;
+        sB = sw.sB + off; centre = off === 0 ? sw.centre! : trail.centreAt(sB, R); rot = sw.rot + (trail.centreArc(sB, R) - trail.centreArc(sw.sB, R)) / R;
+        settling = ts < STAND_DUR;
+        const k = ts / STAND_DUR;
         pose = stepToStand(trail, sw.hold!, centre, Math.min(1, k), 1 + 0.015 * Math.sin(ambientT * 1.85));
-        if (k >= 1) { standCache = { hold: sw.hold!, centre, sB, rot, D: gait.D }; summitWalk = null; mode = 'stand'; }
+        if (k >= 1) { standCache = { hold: sw.hold!, centre: sw.centre!, sB: sw.sB, rot: sw.rot, D: gait.D }; summitWalk = null; mode = 'stand'; }
       }
     } else {
       const sc = standState();
@@ -687,7 +694,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     fig = { pose, centre, R, Hpx: lay.Hpx * cam.zoom, toS: S, chains, trail, facing: pose.facing, quality, veins: pose.veins ?? 0, tierFree };
     const tF = performance.now();
     drawFigureArt(g, fig, scale);
-    stats.figureMs = performance.now() - tF; stats.detailMs = lastDetailMs;
+    stats.figureMs = performance.now() - tF; stats.detailMs = lastDetailMs; stats.tier = figureTier();
+    stats.figureAvg = stats.frames ? (stats.figureAvg ?? stats.figureMs) * 0.95 + stats.figureMs * 0.05 : stats.figureMs;
+    stats.detailAvg = stats.frames ? (stats.detailAvg ?? lastDetailMs) * 0.95 + lastDetailMs * 0.05 : lastDetailMs;
+    stats.settling = settling;
     stepGrit(dt);
     drawGrit(g);
 
@@ -710,9 +720,16 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     }
     stats.slopeFrac = below / 16;
     stats.zoom = cam.zoom; stats.rangesDrawn = drawnRanges; stats.cloudsDrawn = drawnClouds; stats.stripBuilds = stripBuilds;
+    {
+      // the figure's screen bounds (every joint, hand and foot point) and a crop box with the stone (capture tools)
+      const pts = [pose.pelvis, pose.shoulder, pose.head, ...pose.legs.flatMap((l) => [l.joint, l.end]), ...pose.arms.flatMap((a) => [a.joint, a.end]), ...pose.feet!.flatMap((f) => [f.heel, f.toe])].map(S);
+      const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+      stats.figBounds = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+      const c0 = S({ x: centre.x - R, y: centre.y + R }), c1 = S({ x: centre.x + R, y: centre.y - R });
+      stats.figBox = [Math.min(stats.figBounds[0], c0.x) - 30, Math.min(stats.figBounds[1], c0.y) - 30, Math.max(stats.figBounds[2], c1.x) + 30, Math.max(stats.figBounds[3], c1.y) + 20];
+    }
     cam.pos = keepPos;
     stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS(); stats.camY = renderCam.pos.y; stats.clock = t; stats.u = gait.u;
-    { const a = S(pose.feet![1].heel), b = S({ x: centre.x + R, y: centre.y + R }), c = S(pose.head); stats.figBox = [Math.min(a.x, c.x) - 40, Math.min(b.y, c.y) - 30, b.x + 30, Math.max(a.y, S(pose.feet![0].toe).y) + 20]; }
     stats.pelvisH = pose.pelvis.y - trail.groundY(pose.pelvis.x);
     if (chains) { const c = chains[0].p, tip = c[c.length - 1]; stats.clothDeg = (Math.atan2(tip.x - c[0].x, c[0].y - tip.y) * 180) / Math.PI; }
     stats.gait = mode === 'climb' ? frMode : mode; stats.strainT = mode === 'climb' ? frStrainT : -1;
@@ -827,7 +844,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (typeof window === 'undefined') return;
     window.clearTimeout(reducedTimer);
     if (!reduced || !mounted || !running) return;
-    reducedTimer = window.setTimeout(() => { drawNow(); scheduleReducedRedraw(); }, 15000);
+    // §4.9: while climbing, the key pose is re-posed once a second at the target (no breath, cloth or beard motion)
+    reducedTimer = window.setTimeout(() => { drawNow(); scheduleReducedRedraw(); }, mode === 'climb' && (phase === 'focus' || phase === 'open') ? 1000 : 15000);
   }
 
   return {

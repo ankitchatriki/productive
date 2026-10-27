@@ -24,7 +24,7 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
       const rows: Array<{ sB: number; rot: number; tag: string }> = [];
       const rec = (s: Record<string, unknown>) => {
         const st = s.strainT as number;
-        rows.push({ sB: s.sB as number, rot: stub.rotates[stub.rotates.length - 1], tag: st >= 1.4 && st < 2.6 ? 'slip' : (s.gait as string) });
+        rows.push({ sB: s.sB as number, rot: stub.rotates[stub.rotates.length - 1], tag: s.settling ? 'settle' : st >= 1.4 && st < 2.6 ? 'slip' : (s.gait as string) });
       };
       for (let k = 0; k < 85; k++) {
         focused += 1;
@@ -32,7 +32,9 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
         run(1, rec, e.stats as unknown as Record<string, unknown>);
       }
       e.setClimb!(climb(lenM, true)); e.setProgress(0); e.setPhase('complete');
-      run(10, rec, e.stats as unknown as Record<string, unknown>);
+      // through the summit heave (≈ 2 H at the trudge's pace), the step-through and the stone's settle on the ledge
+      run(20, rec, e.stats as unknown as Record<string, unknown>);
+      expect(rows.some((r) => r.tag === 'settle')).toBe(true);
       expect(rows.length).toBeGreaterThan(2500); // the scene renders at 30 fps (60 during set pieces)
 
       let slipBack = 0, strainNet = 0, inStrain = false, sawSlip = false, maxStep = 0;
@@ -44,7 +46,7 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
         expect(Math.abs(dR - dA / R)).toBeLessThan(1e-6);
         if (Math.abs(dA) > 1e-7) expect(Math.sign(dR)).toBe(Math.sign(dA));
         // the ratchet: never back outside a slip
-        if (b.tag !== 'slip' && a.tag !== 'slip') expect(dA).toBeGreaterThanOrEqual(-1e-9);
+        if (b.tag !== 'slip' && a.tag !== 'slip' && b.tag !== 'settle' && a.tag !== 'settle') expect(dA).toBeGreaterThanOrEqual(-1e-9);
         if (b.tag === 'slip' && dR < 0) { sawSlip = true; slipBack += dR; }
         const strainNow = b.tag === 'slip' || b.tag === 'strain';
         if (strainNow) { strainNet += dR; inStrain = true; } else if (inStrain) { expect(Math.abs(strainNet)).toBeLessThan(1e-4); strainNet = 0; inStrain = false; }
@@ -59,7 +61,7 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
       // relative to the centre: while the stone moves forward the top of the disc moves forward (rightwards)
       for (const i of [100, 400, 900]) {
         const a = rows[i], b = rows[i + 10];
-        if (b.sB > a.sB + 1e-4 && a.tag !== 'slip' && b.tag !== 'slip') expect(Math.sin(b.rot - a.rot)).toBeGreaterThan(0);
+        if (b.sB > a.sB + 1e-4 && a.tag !== 'slip' && b.tag !== 'slip' && b.tag !== 'settle') expect(Math.sin(b.rot - a.rot)).toBeGreaterThan(0);
       }
       e.destroy();
     }, 30_000);

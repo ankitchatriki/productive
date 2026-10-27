@@ -286,6 +286,8 @@ for (const ln of DETAIL) {
 
 /** Level of detail from the on-screen figure size and quality, with ±8 px hysteresis (§6.6). */
 let currentTier: Tier = 3;
+/** The level of detail the last figure was drawn at. */
+export const figureTier = (): Tier => currentTier;
 export function tierFor(Hz: number, quality: number, prev: Tier = currentTier): Tier {
   if (quality < 0.5) return 1;
   // thresholds 200 px (L3) and 130 px (L2), each with ±8 px of hysteresis
