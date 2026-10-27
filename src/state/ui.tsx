@@ -1,6 +1,6 @@
 // App-wide UI: entry dialog, switch picker, shortcuts overlay, timer draft and global hotkeys.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useStore } from './store';
 import { BlockPicker } from '../focus/BlockPicker';
 import { FocusController } from '../focus/FocusController';
@@ -32,6 +32,8 @@ interface UiValue {
   openBlockPicker: (mode?: 'start' | 'attach') => void;
   /** Re-open the focus overlay for the current session. */
   enterFocus: () => void;
+  /** Start straight away with this block choice (Today's inline chips; no picker). */
+  startWithChoice: (choice: BlockChoice) => void;
 }
 
 const UiContext = createContext<UiValue | null>(null);
@@ -39,6 +41,7 @@ const UiContext = createContext<UiValue | null>(null);
 export function AppUiProvider({ children }: { children: ReactNode }) {
   const data = useStore();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const toast = useToast();
   const { clockIn, clockOut, switchTo, startFocus, resume, nextBlock } = useTimerActions();
   const dispatch = useDispatch();
@@ -95,7 +98,8 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     if (!data.activeTimer && data.focus?.phase === 'break') { primeAudio(); nextBlock(); setAnnouncement('Block started.'); return; }
     if (!data.activeTimer && effectiveTarget) {
       const fs = data.settings.focus;
-      if (fs.askBlockEachTime) openBlockPicker('start');
+      // On Today the inline chips are the picker: Space starts with the selected chip.
+      if (fs.askBlockEachTime && pathname !== '/') openBlockPicker('start');
       else startFromChoice(fs.lastChoice, fs.scene, false, 'start');
       return;
     }
@@ -112,7 +116,7 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     clockIn(effectiveTarget);
     setDraft((d) => (d ? { ...d, note: '' } : d));
     setAnnouncement('Clocked in.');
-  }, [data.activeTimer, data.focus?.phase, data.settings.focus, effectiveTarget, clockIn, clockOut, resume, nextBlock, openBlockPicker, startFromChoice, toast, navigate]);
+  }, [pathname, data.activeTimer, data.focus?.phase, data.settings.focus, effectiveTarget, clockIn, clockOut, resume, nextBlock, openBlockPicker, startFromChoice, toast, navigate]);
 
   const openSwitch = useCallback(() => { if (data.activeTimer) setSwitchOpen(true); }, [data.activeTimer]);
 
@@ -133,7 +137,8 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     announce: setAnnouncement,
     openBlockPicker,
     enterFocus: () => dispatch({ type: 'focus/setImmersive', immersive: true }),
-  }), [openSwitch, draft, effectiveTarget, toggleTimer, openBlockPicker, dispatch]);
+    startWithChoice: (choice: BlockChoice) => startFromChoice(choice, data.settings.focus.scene, false, 'start'),
+  }), [openSwitch, draft, effectiveTarget, toggleTimer, openBlockPicker, dispatch, startFromChoice, data.settings.focus.scene]);
 
   const pickerTarget = picker === 'attach' && data.activeTimer ? data.activeTimer : effectiveTarget;
   const pickerLabel = pickerTarget

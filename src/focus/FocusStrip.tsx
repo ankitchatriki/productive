@@ -1,6 +1,4 @@
-import { useStore } from '../state/store';
 import { focusView } from '../state/selectors';
-import { useNow } from '../hooks/useNow';
 import { formatCountdown } from '../domain/focus';
 import type { BlockChoice } from '../domain/types';
 
@@ -18,20 +16,3 @@ export function focusStateText(v: NonNullable<ReturnType<typeof focusView>>): st
   return v.breakOver ? 'Break over' : `Break ${formatCountdown(v.breakRemainingMs)}`;
 }
 
-/** Slim block progress bar on Today's timer card while a session exists. */
-export function FocusStrip() {
-  const data = useStore();
-  const now = useNow(1000);
-  const v = focusView(data, now);
-  if (!v) return null;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} aria-label={`Focus: ${focusStateText(v)}`}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-        <span>◐ {v.blockLabel}</span><span className="num">{focusStateText(v)}</span>
-      </div>
-      <div className="bar" role="progressbar" aria-label="Block progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v.progress * 100)}>
-        <div className="bar-fill" style={{ width: `${v.progress * 100}%`, background: v.phase === 'break' ? 'var(--text-subtle)' : 'var(--accent)' }} />
-      </div>
-    </div>
-  );
-}

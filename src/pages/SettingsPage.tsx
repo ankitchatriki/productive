@@ -15,6 +15,7 @@ import { downloadText } from '../utils/download';
 import { DurationInput } from '../components/DurationInput';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Icon } from '../components/Icon';
+import { FocusSettingsCard } from './FocusSettingsCard';
 
 function hourLabel(h: number) {
   if (h === 24) return 'Midnight';
@@ -111,6 +112,8 @@ export function SettingsPage() {
             </div>
           </div>
         </section>
+
+        <FocusSettingsCard />
 
         <section className={styles.group} aria-labelledby="g-display">
           <h2 id="g-display" className="section-title">Week grid</h2>

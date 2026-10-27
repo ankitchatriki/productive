@@ -50,6 +50,12 @@ export function PlanPage() {
         </div>
         <WeekNav weekStart={weekStart} currentWeek={currentWeek} go={go} />
       </div>
+      {plan && plan.blocks.length === 0 && Object.values(plan.sectionByDay).every((v) => !v) && (
+        <div className="banner">
+          <Icon name="calendar" />
+          <span className="banner-text">No plan for this week yet. Set your goals, pick a section for each day and block out time below.</span>
+        </div>
+      )}
       {plan && <PlanBody key={weekStart} plan={plan} />}
     </div>
   );

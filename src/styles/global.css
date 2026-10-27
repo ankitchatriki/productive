@@ -218,3 +218,8 @@ table { border-collapse: separate; border-spacing: 0; }
 @media print {
   .page-actions, .banner, .empty { display: none !important; }
 }
+
+/* Segmented progress bar (Today) */
+.segbar { display: flex; height: 10px; border-radius: var(--radius-full); background: var(--surface-2); overflow: hidden; gap: 1px; }
+.segbar > span { display: block; height: 100%; min-width: 2px; }
+.segbar > span:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
