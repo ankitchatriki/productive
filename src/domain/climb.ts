@@ -18,6 +18,8 @@ export interface Climb {
   summits: number;
   altM: number;
   stageStartAltM: number;
+  /** The climber stands on this climb's summit (block complete, or a +N extension from it). */
+  atSummit: boolean;
 }
 
 const cache = new Map<string, StageGeom>();
@@ -62,7 +64,7 @@ export function liveClimb(m: MountainState, s: FocusSession, now: Date): Climb {
   const lenM = lenFor(s);
   if (blockMs(s) !== null) {
     const posM = m.stageStartM + Math.min(f, blockMs(s)!) * PACE_M / 1000;
-    return { stage: m.stage, stageStartM: m.stageStartM, stageLenM: lenM, posM, fromSummit: m.fromSummit, summits: m.summits, stageStartAltM: m.stageStartAltM, altM: altitudeOn(m.stage, m.stageStartM, m.stageStartAltM, lenM, m.fromSummit, posM) };
+    return { stage: m.stage, stageStartM: m.stageStartM, stageLenM: lenM, posM, fromSummit: m.fromSummit, summits: m.summits, stageStartAltM: m.stageStartAltM, altM: altitudeOn(m.stage, m.stageStartM, m.stageStartAltM, lenM, m.fromSummit, posM), atSummit: false };
   }
   const k = Math.floor(f / OPEN_LOOP_MS);
   let start = m.stageStartM, startAlt = m.stageStartAltM, from = m.fromSummit;
@@ -72,17 +74,19 @@ export function liveClimb(m: MountainState, s: FocusSession, now: Date): Climb {
     start = col; from = true;
   }
   const posM = start + (f - k * OPEN_LOOP_MS) * PACE_M / 1000;
-  return { stage: m.stage + k, stageStartM: start, stageLenM: lenM, posM, fromSummit: from, summits: m.summits + k, stageStartAltM: startAlt, altM: altitudeOn(m.stage + k, start, startAlt, lenM, from, posM) };
+  return { stage: m.stage + k, stageStartM: start, stageLenM: lenM, posM, fromSummit: from, summits: m.summits + k, stageStartAltM: startAlt, altM: altitudeOn(m.stage + k, start, startAlt, lenM, from, posM), atSummit: false };
 }
 
 /** Persist the live position (clock out, pause, a break mid-block, the 60 s save): progress is kept, never lost. */
 export function foldClimb(m: MountainState, s: FocusSession, now: Date): MountainState {
+  if (m.atSummit) return m; // an extension from the summit: he stays on it (overtime and extensions add no distance)
   const c = liveClimb(m, s, now);
   return { ...m, stage: c.stage, stageStartM: c.stageStartM, stageStartAltM: roundM(c.stageStartAltM), fromSummit: c.fromSummit, summits: c.summits, posM: roundM(c.posM), altM: roundM(c.altM), atSummit: false };
 }
 
 /** The block completed: the climber is at this climb's end (the summit). */
 export function summitClimb(m: MountainState, s: FocusSession): MountainState {
+  if (m.atSummit) return m; // an extension from the summit ending: this summit was already counted
   const lenM = lenFor(s);
   const posM = m.stageStartM + lenM;
   return { ...m, posM: roundM(posM), altM: roundM(altitudeOn(m.stage, m.stageStartM, m.stageStartAltM, lenM, m.fromSummit, posM)), atSummit: true, summits: m.summits + 1 };
@@ -90,7 +94,8 @@ export function summitClimb(m: MountainState, s: FocusSession): MountainState {
 
 /** The climb a scene should draw now (complete/break show the reached summit; no session shows where he stands). */
 export function climbFor(m: MountainState, s: FocusSession | null, now: Date): Climb {
-  if (s && (s.phase === 'focus' || s.phase === 'paused')) return liveClimb(m, s, now);
+  if (s && (s.phase === 'focus' || s.phase === 'paused') && !m.atSummit) return liveClimb(m, s, now);
+  // At the summit (complete, overtime, a +N extension from it, a break): the reached climb, unchanged.
   const lenM = m.atSummit ? Math.max(0.9, m.posM - m.stageStartM) : s ? lenFor(s) : Math.max(0.9, m.posM - m.stageStartM);
-  return { stage: m.stage, stageStartM: m.stageStartM, stageLenM: lenM, posM: m.posM, fromSummit: m.fromSummit, summits: m.summits, altM: m.altM, stageStartAltM: m.stageStartAltM };
+  return { stage: m.stage, stageStartM: m.stageStartM, stageLenM: lenM, posM: m.posM, fromSummit: m.fromSummit, summits: m.summits, altM: m.altM, stageStartAltM: m.stageStartAltM, atSummit: m.atSummit };
 }

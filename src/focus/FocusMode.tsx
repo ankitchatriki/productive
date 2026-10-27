@@ -204,7 +204,7 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
   chromeHiddenRef.current = chromeHidden;
   const label = [view.courseName, view.sectionTitle].filter(Boolean).join(' · ');
   const climb = climbFor(data.mountain, s, now);
-  const climbNo = climb.summits + (phase === 'complete' || (phase === 'break' && data.mountain.atSummit) ? 0 : 1);
+  const climbNo = climb.summits + (climb.atSummit ? 0 : 1);
 
   return createPortal(
     <div

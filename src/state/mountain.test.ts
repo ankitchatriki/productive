@@ -68,10 +68,21 @@ describe('mountain bookkeeping (schema v3)', () => {
     expect(next.mountain.stageStartAltM).toBeGreaterThan(0);
   });
 
-  it('keep going from overtime by extending un-reaches the summit', () => {
+  it('+5 from the summit keeps him on it: no new crest, no distance from overtime or the extension (U2)', () => {
     const done = run(base(), start(T(0)), { type: 'focus/complete', at: T(25) });
-    const x = run(done, { type: 'focus/extend', now: T(27), minutes: 5 });
-    expect(x.mountain).toMatchObject({ atSummit: false, summits: 0, stage: 1 });
+    const atTop = climbFor(done.mountain, done.focus, new Date(T(33)));
+    const x = run(done, { type: 'focus/extend', now: T(33), minutes: 5 });
+    expect(x.mountain).toEqual(done.mountain);
+    for (const m of [33, 34.5, 36, 38]) {
+      const c = climbFor(x.mountain, x.focus, new Date(T(m)));
+      expect(c).toMatchObject({ stage: atTop.stage, stageStartM: atTop.stageStartM, stageLenM: atTop.stageLenM, posM: atTop.posM, atSummit: true });
+    }
+    // saves, pauses and the extension ending change nothing; the next block starts in the col beyond this summit
+    const y = run(x, { type: 'mountain/sync', now: T(35) }, { type: 'focus/complete', at: T(38) });
+    expect(y.mountain).toEqual(done.mountain);
+    const n = run(y, { type: 'focus/nextBlock', now: T(39) });
+    expect(n.mountain.stageStartM).toBeCloseTo(done.mountain.posM + SUMMIT_TO_COL * M_PER_H, 2);
+    expect(n.mountain.summits).toBe(1);
   });
 
   it('open-ended blocks climb a summit every 60 focused minutes; clock out folds them in', () => {

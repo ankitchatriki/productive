@@ -207,9 +207,9 @@ export function reducer(state: AppData, action: Action): AppData {
         // While focusing, +N adds to what's left; from overtime it means N minutes from now.
         const from = s.phase === 'focus' ? blockMs(s)! : focusedMs(s, new Date(action.now));
         const targetMs = Math.min(MAX_BLOCK_MINUTES * 60_000, from + action.minutes * 60_000);
-        // From the summit (overtime), the climb simply gets longer: the summit is no longer reached.
-        const mountain = s.phase === 'complete' && state.mountain.atSummit ? { ...state.mountain, atSummit: false, summits: Math.max(0, state.mountain.summits - 1) } : state.mountain;
-        return { ...state, mountain, focus: { ...s, targetMs, extendedMinutes: (s.extendedMinutes ?? 0) + action.minutes, phase: 'focus', completedAt: null } };
+        // From the summit (overtime) he stays on it until the extension ends: no next summit is shown and no
+        // distance is added (review U2); the next block climbs on from the col.
+        return { ...state, focus: { ...s, targetMs, extendedMinutes: (s.extendedMinutes ?? 0) + action.minutes, phase: 'focus', completedAt: null } };
       });
 
     case 'focus/nextBlock':

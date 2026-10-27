@@ -172,11 +172,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   function skyState(t: number): SkyState {
     const moonPath = (q: number): V => ({ x: (0.08 + 0.5 * q) * w, y: (0.30 - 0.18 * Math.sin(Math.PI * q)) * h });
-    if (phase === 'complete') {
+    if (phase === 'complete' || ((mode === 'stand' || mode === 'summit') && phase !== 'break')) {
       const st = seq && seq.kind === 'summit' ? Math.min(SUMMIT_DUR, t - seq.t0) : SUMMIT_DUR;
       const k = smoothstep(1.0, 4.0, st);
       let s = artStop(0.86 + 0.14 * k);
-      const night = Math.min(1, progress * 6);
+      const night = phase === 'complete' ? Math.min(1, progress * 6) : 0; // a +N extension from the summit: dusk
       if (night > 0) s = mixStop(s, NIGHT, night);
       const sinkK = smoothstep(1.0, 4.0, st);
       const sun = sinkK < 1 ? summitSunPos(sinkK) : null;
@@ -468,7 +468,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   function updateCamera(t: number, dt: number, target: V) {
     const sf = summitFrame();
     let zoomK = 0;
-    if (phase === 'complete' || phase === 'break') {
+    if (phase === 'complete' || phase === 'break' || mode === 'stand' || mode === 'sit' || mode === 'summit') {
       zoomK = seq?.kind === 'summit' ? smoothstep(0.5, 4.0, t - seq.t0) : 1;
       if (reduced) zoomK = 1;
     }
@@ -751,10 +751,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       ensureTrail();
       if (first || opts?.instant) {
         seq = null; summitWalk = null; nextRoll = null;
-        mode = next === 'complete' ? 'stand' : next === 'break' ? (progress >= 1 ? 'stand' : 'sit') : 'climb';
+        mode = next === 'complete' ? 'stand' : next === 'break' ? (progress >= 1 ? 'stand' : 'sit') : climb.atSummit ? 'stand' : 'climb';
         desatK = desatTarget;
         chains = null;
         if (mode === 'climb') gait.snap(sTarget(), trail); else stageAtSummit = climb.stage;
+      } else if (next === 'complete' && mode === 'stand') {
+        // a +N extension from the summit ended: he is still standing on it
       } else if (next === 'complete' && (prev === 'focus' || prev === 'open' || prev === 'paused')) {
         stageAtSummit = climb.stage;
         if (reduced) { crossfade(t); mode = 'stand'; }
@@ -763,9 +765,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         crossfade(t);
         seq = null; summitWalk = null;
         mode = 'sit';
+      } else if ((next === 'focus' || next === 'open') && (prev === 'complete' || prev === 'break') && climb.atSummit) {
+        // +N from the summit: the summit scene holds until the extension ends (never a second crest, U2)
+        if (mode === 'sit') { crossfade(t); mode = 'stand'; }
       } else if ((next === 'focus' || next === 'open') && (prev === 'complete' || prev === 'break')) {
         beginNext(t, climb.stage === stageAtSummit);
-      } else if (mode !== 'climb' && (next === 'focus' || next === 'open' || next === 'paused')) {
+      } else if (mode !== 'climb' && !climb.atSummit && (next === 'focus' || next === 'open' || next === 'paused')) {
         mode = 'climb'; summitWalk = null; gait.snap(sTarget(), trail);
       }
       if (reduced) drawNow(); else ensureLoop();

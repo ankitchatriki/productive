@@ -74,7 +74,7 @@ export function SceneCanvas({ sceneId, phase, progress, completedAt, reducedMoti
 
   useEffect(() => { engineRef.current?.setProgress(shownProgress); }, [shownProgress]);
   // Before the phase effect: a new climb must be known when the phase changes (next climb vs. keep climbing).
-  const climbKey = shownClimb ? `${shownClimb.stage}|${shownClimb.stageStartM}|${shownClimb.stageLenM}|${shownClimb.posM.toFixed(3)}|${shownClimb.fromSummit}|${shownClimb.summits}` : '';
+  const climbKey = shownClimb ? `${shownClimb.stage}|${shownClimb.stageStartM}|${shownClimb.stageLenM}|${shownClimb.posM.toFixed(3)}|${shownClimb.fromSummit}|${shownClimb.summits}|${shownClimb.atSummit}` : '';
   useEffect(() => { if (shownClimb) engineRef.current?.setClimb?.(shownClimb); }, [climbKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const live = phase !== 'complete' || !completedAt || Date.now() - Date.parse(completedAt) <= 6000;

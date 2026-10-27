@@ -18,6 +18,8 @@ export interface ClimbInput {
   posM: number;
   fromSummit: boolean;
   summits: number;
+  /** The climber stands on this climb's summit (also during a +N extension from it). */
+  atSummit?: boolean;
 }
 
 export interface SceneEngine {
