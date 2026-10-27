@@ -1,4 +1,5 @@
-// Sisyphus figure rig (STRUGGLEMORE §3.4): keyframed pelvis/spine + analytic two-bone IK. Pure, world units, y up.
+// Black-figure Sisyphus rig (ROUND3_ART §3.1, §3.6): heroic 8-head proportions, two-bone IK, the hold (key) pose,
+// standing and sitting. Pure; world units are H (standing height = 1), y up.
 import type { SlopePath, V } from './path';
 
 export const DEG = Math.PI / 180;
@@ -7,38 +8,40 @@ const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 export const easeInOut = (u: number) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
 export const easeOut = (u: number) => 1 - (1 - u) * (1 - u);
 
-/** Proportions in units of standing height H. */
-export const BODY = {
-  headR: 0.072, neck: 0.105, torso: 0.3, shoulderW: 0.2, hipW: 0.15,
-  upperArm: 0.17, foreArm: 0.16, armW0: 0.075, armW1: 0.055,
-  thigh: 0.255, shin: 0.255, legW0: 0.11, legW1: 0.068,
-  footL: 0.12, footH: 0.04, handR: 0.036, boulderR: 0.56,
+const hu = 1 / 8; // one head unit
+/** Lengths between joint centres, in H. */
+export const RIG = {
+  head: 1.0 * hu, neck: 0.5 * hu, torso: 2.4 * hu,
+  upperArm: 1.5 * hu, foreArm: 1.3 * hu, wristToPalm: 0.4 * hu, handLen: 0.75 * hu,
+  thigh: 1.95 * hu, shin: 1.9 * hu, heelToBall: 0.75 * hu, ballToToe: 0.3 * hu, ankleH: 0.3 * hu,
+  boulderR: 4.5 * hu,
+  palm: 0.012,
 };
+export const ARM_CHAIN = RIG.upperArm + RIG.foreArm;
+export const LEG_CHAIN = RIG.thigh + RIG.shin;
 
 export interface Limb { root: V; joint: V; end: V }
+export interface FootPose { ball: V; ankle: V; heel: V; toe: V; angle: number /* rad, sole direction */ }
 export interface Pose {
   pelvis: V; shoulder: V; head: V;
   /** Torso lean from vertical, radians; positive leans toward +x. */
   lean: number;
   legs: [Limb, Limb];   // [near, far]
   arms: [Limb, Limb];   // [near, far]
-  /** +1 faces uphill (+x), −1 faces downhill. */
+  feet?: [FootPose, FootPose];
+  hands?: [V, V];       // palm centres
+  /** Head axis from vertical (rad): >0 tips forward (chin down). */
+  headAxis?: number;
   facing: 1 | -1;
-  breath: number;       // torso width scale
-  alpha: number;        // figure opacity
-  /** Heel lift per foot (rad) during the grip push. */
-  heel?: [number, number];
-  /** Push effort 0..1 (calf squash, hand spread). */
+  breath: number;
+  alpha: number;
   load?: number;
 }
 
-/**
- * Two-bone IK: joint position for a chain root→target with lengths a, b.
- * `pick` chooses between the two solutions (e.g. knee forward / elbow down).
- */
+/** Two-bone IK: joint position for root→target with lengths a, b. `pick` chooses between the two solutions. */
 export function twoBoneIK(root: V, target: V, a: number, b: number, pick: (c1: V, c2: V) => V): V {
   const dx = target.x - root.x, dy = target.y - root.y;
-  const d = clamp(Math.hypot(dx, dy), Math.abs(a - b) + 1e-6, 0.995 * (a + b));
+  const d = clamp(Math.hypot(dx, dy), Math.abs(a - b) + 1e-6, 0.9999 * (a + b));
   const base = Math.atan2(dy, dx);
   const cosA = clamp((a * a + d * d - b * b) / (2 * a * d), -1, 1);
   const off = Math.acos(cosA);
@@ -48,256 +51,207 @@ export function twoBoneIK(root: V, target: V, a: number, b: number, pick: (c1: V
 }
 
 /** Effective end point actually reached (target clamped to the chain's reach). */
-export function reach(root: V, target: V, a: number, b: number): V {
+export function reach(root: V, target: V, a: number, b: number, max = 0.9999): V {
   const dx = target.x - root.x, dy = target.y - root.y;
   const d = Math.hypot(dx, dy);
-  const max = 0.995 * (a + b);
-  if (d <= max) return target;
-  return { x: root.x + (dx / d) * max, y: root.y + (dy / d) * max };
+  const m = max * (a + b);
+  if (d <= m) return target;
+  return { x: root.x + (dx / d) * m, y: root.y + (dy / d) * m };
 }
 
-/** Foot target along the slope (in H) relative to the pelvis ground point, its lift and slip speed. */
-export function footTarget(phi: number): { u: number; lift: number; slip: number } {
-  const f = ((phi % 1) + 1) % 1;
-  // Swing arc peaks early (u = 0.4): the knee comes up and forward, then the foot reaches down (ROUND3 §3.7g).
-  if (f < 0.3) { const u = f / 0.3; return { u: lerp(-0.3, 0.16, easeInOut(u)), lift: 0.07 * Math.sin(Math.PI * Math.pow(u, 0.8)), slip: 0 }; }
-  if (f < 0.55) { const u = (f - 0.3) / 0.25; return { u: lerp(0.16, -0.04, easeOut(u)), lift: 0, slip: 1 - u }; }
-  const u = (f - 0.55) / 0.45;
-  return { u: lerp(-0.04, -0.3, u), lift: 0, slip: 0 };
+/** Leg from hip to ankle with the knee forward (uphill / along +tangent). */
+export function legIK(hip: V, ankle: V, forward: V): Limb {
+  const end = reach(hip, ankle, RIG.thigh, RIG.shin);
+  const mid = { x: (hip.x + end.x) / 2, y: (hip.y + end.y) / 2 };
+  const knee = twoBoneIK(hip, end, RIG.thigh, RIG.shin, (c1, c2) =>
+    ((c1.x - mid.x) * forward.x + (c1.y - mid.y) * forward.y) >= ((c2.x - mid.x) * forward.x + (c2.y - mid.y) * forward.y) ? c1 : c2);
+  return { root: hip, joint: knee, end };
 }
 
-export const hipH = (phi: number) => 0.38 - 0.015 * Math.cos(4 * Math.PI * phi);
-export const surge = (phi: number) => 0.018 * Math.max(0, Math.sin(4 * Math.PI * phi - 0.6));
-export const leanDeg = (phi: number) => 46 + 4 * Math.sin(4 * Math.PI * phi + Math.PI / 2);
-
-export interface PushParams {
-  path: SlopePath;
-  H: number;
-  /** Boulder centre arc-length fraction (already including any nudge). */
-  sB: number;
-  phi: number;
-  lean: number;        // degrees
-  hip: number;         // nominal hip height in H
-  surge: number;       // in H
-  tremor: number;      // in H, added to pelvis/hands
-  headTilt: number;    // degrees from vertical (neck direction)
-  breath: number;
-  alpha?: number;
-  /** Per-cycle stride / lift multipliers (micro-variation). */
-  strideMul?: number;
-  liftMul?: number;
-  /** Extra slide of the slipping foot (H), for the big slip. */
-  slipExtra?: number;
-  /** Shoulder rise (H): breathing and the shove. */
-  shoulderLift?: number;
+/** Arm from shoulder to wrist with the elbow bending downward. */
+export function armIK(shoulder: V, wrist: V): Limb {
+  const end = reach(shoulder, wrist, RIG.upperArm, RIG.foreArm);
+  const elbow = twoBoneIK(shoulder, end, RIG.upperArm, RIG.foreArm, (c1, c2) => (c1.y <= c2.y ? c1 : c2));
+  return { root: shoulder, joint: elbow, end };
 }
 
-export function boulderCentre(path: SlopePath, sB: number, R: number): V {
-  if (path.centreAt) return path.centreAt(sB, R);
-  const g = path.at(sB), n = path.normalAt(sB);
-  return { x: g.x + n.x * R, y: g.y + n.y * R };
-}
-
-/** Contact angles on the stone, relative to the local slope (208°/192° on the 22° base slope). Non-rotating with the texture. */
-export function handAngles(path: SlopePath, sB: number): [number, number] {
-  // Slope averaged over the figure's footprint (a chord), so the hands slide smoothly over a crest (ROUND3 §3.3.5).
-  const s = Math.min(sB, 0.999);
-  const p1 = path.at(s), p0 = path.at(s - 0.14 / path.length);
-  const a = Math.atan2(p1.y - p0.y, p1.x - p0.x) / DEG;
-  return [188 + a, 196 + a];
-}
-
-export function handTarget(bc: V, R: number, H: number, deg: number): V {
-  return { x: bc.x + (R + 0.008 * H) * Math.cos(deg * DEG), y: bc.y + (R + 0.008 * H) * Math.sin(deg * DEG) };
-}
-
-const LEG = () => BODY.thigh + BODY.shin;
-const ARM = () => BODY.upperArm + BODY.foreArm;
-
-const STRIDE_MIN = -0.3, STRIDE_MAX = 0.16;
-
-/**
- * Pelvis height: the nominal hip height, but never higher than lets the feet reach
- * the extremes of the stride on this slope (a per-position ceiling, so the body
- * doesn't bob with each step beyond the scripted hipH curve).
- */
-/** Shorter steps on steeper ground, so the back foot doesn't drop out of reach. */
-function strideScale(path: SlopePath, s: number): number {
-  return Math.cos(path.angleAt(Math.min(0.999, Math.max(0, s))) * DEG) / Math.cos(22 * DEG);
-}
-
-function pelvisY(path: SlopePath, pelvisS: number, gx: number, gy: number, hip: number, H: number): number {
-  let y = gy + hip * H;
-  const maxLeg = 0.96 * LEG() * H;
-  const k = strideScale(path, pelvisS);
-  for (const u of [STRIDE_MIN, STRIDE_MAX]) {
-    const f = path.at(pelvisS + (u * k * H) / path.length);
-    const dx = Math.abs(f.x - gx);
-    if (dx < maxLeg) y = Math.min(y, f.y + Math.sqrt(maxLeg * maxLeg - dx * dx));
-  }
-  return y;
-}
-
-function feetFor(path: SlopePath, pelvisS: number, phi: number, H: number, strideMul = 1, liftMul = 1, slipExtra = 0) {
-  const k = strideScale(path, pelvisS) * strideMul;
-  return [0, 0.5].map((off) => {
-    const t = footTarget(phi + off);
-    const extra = t.slip > 0 && off === 0 ? -slipExtra * (1 - t.slip) : 0;
-    const g = path.at(pelvisS + ((t.u * k + extra) * H) / path.length);
-    return { foot: { x: g.x, y: g.y + t.lift * liftMul * H }, slip: t.slip, lift: t.lift };
-  });
-}
-
-/** Distance behind the boulder contact point (world units, along the path) that puts the near hand at comfortable reach. */
-export function pelvisOffset(path: SlopePath, sB: number, H: number): number {
-  const R = BODY.boulderR * H;
-  const bc = boulderCentre(path, sB, R);
-  const hands = handAngles(path, sB).map((a) => handTarget(bc, R, H, a));
-  const want = 0.8 * ARM() * H;
-  const lean = 48 * DEG;
-  const distAt = (d: number) => {
-    const ps = sB - d / path.length;
-    const g = path.at(ps);
-    const py = pelvisY(path, ps, g.x, g.y, 0.455, H);
-    const sh = { x: g.x + BODY.torso * H * Math.sin(lean), y: py + BODY.torso * H * Math.cos(lean) };
-    return Math.max(...hands.map((hand) => Math.hypot(hand.x - sh.x, hand.y - sh.y)));
-  };
-  const maxDist = distAt;
-  // Distance is not monotone in d (on steep slopes the pelvis can pass under the hand),
-  // so find the closest approach first, then bisect on the behind side of it.
-  let best = 0.2 * H, bestDist = Infinity;
-  for (let d = 0.2 * H; d <= 3 * H; d += 0.1 * H) {
-    const v = maxDist(d);
-    if (v < bestDist) { bestDist = v; best = d; }
-  }
-  if (bestDist >= want) return best;
-  let lo = best, hi = 3 * H;
-  for (let i = 0; i < 16; i++) {
-    const mid = (lo + hi) / 2;
-    if (maxDist(mid) < want) lo = mid; else hi = mid;
-  }
-  return (lo + hi) / 2;
-}
-
-/** The straining push pose: feet on the slope, hands on the stone. */
-export function solvePush(p: PushParams, offset?: number): { pose: Pose; boulder: V; slips: number[]; feet: V[] } {
-  const { path, H } = p;
-  const R = BODY.boulderR * H;
-  const bc = boulderCentre(path, p.sB, R);
-  const d = offset ?? pelvisOffset(path, p.sB, H);
-  const pelvisS = p.sB - d / path.length;
-  const g = path.at(pelvisS);
-  const feetInfo = feetFor(path, pelvisS, p.phi, H, p.strideMul, p.liftMul, p.slipExtra);
-  const feet = feetInfo.map((f) => f.foot);
-  const px = g.x + p.surge * H;
-  const py = pelvisY(path, pelvisS, px, g.y, p.hip, H) + p.tremor * H;
-  const lean = p.lean * DEG;
-  const pelvis = { x: px, y: py };
-  let shoulder = { x: pelvis.x + BODY.torso * H * Math.sin(lean), y: pelvis.y + BODY.torso * H * Math.cos(lean) + (p.shoulderLift ?? 0) * H };
-  // If the stone is just out of reach (steep top of the climb), the body shifts toward it.
-  const targets = handAngles(path, p.sB).map((deg) => handTarget(bc, R, H, deg));
-  const maxArm = 0.99 * ARM() * H;
-  let deficit = 0, dir = { x: 0, y: 0 };
-  for (const t of targets) {
-    const dx = t.x - shoulder.x, dy = t.y - shoulder.y, dist = Math.hypot(dx, dy);
-    if (dist - maxArm > deficit) { deficit = dist - maxArm; dir = { x: dx / dist, y: dy / dist }; }
-  }
-  if (deficit > 0) {
-    const shift = Math.min(deficit, 0.08 * H);
-    pelvis.x += dir.x * shift; pelvis.y += dir.y * shift;
-    shoulder = { x: shoulder.x + dir.x * shift, y: shoulder.y + dir.y * shift };
-  }
-  const neck = p.headTilt * DEG;
-  const head = { x: shoulder.x + BODY.neck * H * Math.sin(neck), y: shoulder.y + BODY.neck * H * Math.cos(neck) };
-  const tangent = path.tangentAt(pelvisS);
-  const legs = feet.map((foot) => {
-    const end = reach(pelvis, foot, BODY.thigh * H, BODY.shin * H);
-    const mid = { x: (pelvis.x + end.x) / 2, y: (pelvis.y + end.y) / 2 };
-    const knee = twoBoneIK(pelvis, end, BODY.thigh * H, BODY.shin * H, (c1, c2) =>
-      ((c1.x - mid.x) * tangent.x + (c1.y - mid.y) * tangent.y) >= ((c2.x - mid.x) * tangent.x + (c2.y - mid.y) * tangent.y) ? c1 : c2);
-    return { root: pelvis, joint: knee, end };
-  }) as [Limb, Limb];
-  const arms = handAngles(path, p.sB).map((deg) => {
-    const t = handTarget(bc, R, H, deg);
-    const hand = reach(shoulder, { x: t.x, y: t.y + p.tremor * H * 0.5 }, BODY.upperArm * H, BODY.foreArm * H);
-    const elbow = twoBoneIK(shoulder, hand, BODY.upperArm * H, BODY.foreArm * H, (c1, c2) => (c1.y <= c2.y ? c1 : c2));
-    return { root: shoulder, joint: elbow, end: hand };
-  }) as [Limb, Limb];
+/** Foot from its ball point on the ground; `heel` (rad) lifts the heel by rotating the foot about the ball. */
+export function footAt(ball: V, groundRad: number, heel: number, facing: 1 | -1 = 1): FootPose {
+  const t = { x: Math.cos(groundRad) * facing, y: Math.sin(groundRad) * facing };
+  const n = { x: -Math.sin(groundRad), y: Math.cos(groundRad) };
+  const rot = (v: V, a: number): V => ({ x: v.x * Math.cos(a) - v.y * Math.sin(a), y: v.x * Math.sin(a) + v.y * Math.cos(a) });
+  const a = -heel * facing;
+  const heelV = rot({ x: -t.x * RIG.heelToBall, y: -t.y * RIG.heelToBall }, a);
+  const ankleV = rot({ x: -t.x * RIG.heelToBall * 0.78 + n.x * RIG.ankleH, y: -t.y * RIG.heelToBall * 0.78 + n.y * RIG.ankleH }, a);
   return {
-    pose: { pelvis, shoulder, head, lean, legs, arms, facing: 1, breath: p.breath, alpha: p.alpha ?? 1 },
-    boulder: bc,
-    slips: feetInfo.map((f) => f.slip),
-    feet,
+    ball, heel: { x: ball.x + heelV.x, y: ball.y + heelV.y }, ankle: { x: ball.x + ankleV.x, y: ball.y + ankleV.y },
+    toe: { x: ball.x + t.x * RIG.ballToToe, y: ball.y + t.y * RIG.ballToToe }, angle: groundRad + a,
   };
 }
 
-/** Standing on the plateau with a hand resting on top of the stone (summit). */
-export function solveStand(path: SlopePath, H: number, pelvisX: number, bc: V, opts: { sway: number; breath: number; leanDeg?: number; alpha?: number; handOnStone?: boolean; handDeg?: number }): Pose {
+/** Torso lean for a slope (deg): 17 + 0.30·(θ − 18), clamped 15–25 (§3.6). */
+export const lean0 = (thetaDeg: number) => clamp(17 + 0.3 * (thetaDeg - 18), 15, 25);
+/** Stride scale on a slope relative to 22°. */
+export const cosRatio = (thetaDeg: number) => Math.cos(thetaDeg * DEG) / Math.cos(22 * DEG);
+export const H0 = 0.395;
+
+/** Head centre from the shoulder: neck thrust 70° from vertical, head axis 100° (chin tucked). */
+export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {
+  const n = 70 * DEG, a = (100 + pitchDeg) * DEG;
+  const neckEnd = { x: shoulder.x + Math.sin(n) * RIG.neck, y: shoulder.y + Math.cos(n) * RIG.neck };
+  return { head: { x: neckEnd.x + Math.sin(a) * RIG.head * 0.5, y: neckEnd.y + Math.cos(a) * RIG.head * 0.5 }, axis: a };
+}
+
+/** Pelvis height ceiling: lower the pelvis so each given ankle is within 0.985·leg of the hip (never move a foot). */
+export function hipCeiling(base: V, up: V, h: number, ankles: V[], frac = 0.985): number {
+  let hh = h;
+  const max = frac * LEG_CHAIN;
+  for (let it = 0; it < 3; it++) {
+    for (const a of ankles) {
+      const hip = { x: base.x + up.x * hh, y: base.y + up.y * hh };
+      const d = Math.hypot(a.x - hip.x, a.y - hip.y);
+      if (d > max) {
+        // solve |base + up·x − a| = max for x (take the smaller root ≤ hh)
+        const bx = base.x - a.x, by = base.y - a.y;
+        const B = 2 * (bx * up.x + by * up.y), C = bx * bx + by * by - max * max;
+        const disc = B * B - 4 * C;
+        if (disc >= 0) hh = Math.min(hh, (-B + Math.sqrt(disc)) / 2);
+      }
+    }
+  }
+  return hh;
+}
+
+/** Boulder position: s on the trail where |centre(s) − shoulder| = A (bisection over [lo, hi]). */
+export function boulderSFor(path: SlopePath, shoulder: V, A: number, lo: number, hi: number, R: number): number {
+  const centre = (s: number) => (path.centreAt ? path.centreAt(s, R) : { x: path.at(s).x + path.normalAt(s).x * R, y: path.at(s).y + path.normalAt(s).y * R });
+  const f = (s: number) => { const c = centre(s); return Math.hypot(c.x - shoulder.x, c.y - shoulder.y) - A; };
+  let a = lo, b = hi;
+  if (f(a) > 0) return a;
+  for (let i = 0; i < 28; i++) { const m = (a + b) / 2; if (f(m) < 0) a = m; else b = m; }
+  return (a + b) / 2;
+}
+
+export interface ArmsResult { arms: [Limb, Limb]; hands: [V, V] }
+
+/** Arms to the stone: palms flat on its near face facing the shoulder, near/far hands offset across the arm axis. */
+export function armsToStone(shoulder: V, centre: V, R: number, regrip = 0): ArmsResult {
+  const dx = centre.x - shoulder.x, dy = centre.y - shoulder.y, d = Math.hypot(dx, dy) || 1;
+  const dir = { x: dx / d, y: dy / d }, perp = { x: -dir.y, y: dir.x };
+  const hands = [-0.015 - regrip, 0.02].map((o) => {
+    // palm on the surface at the point facing the shoulder (rotated around the stone by o/R)
+    const a = Math.atan2(-dir.y, -dir.x) + o / R;
+    return { x: centre.x + Math.cos(a) * (R + RIG.palm), y: centre.y + Math.sin(a) * (R + RIG.palm) };
+  }) as [V, V];
+  void perp;
+  const arms = hands.map((p) => {
+    const nx = (p.x - centre.x) / (R + RIG.palm), ny = (p.y - centre.y) / (R + RIG.palm);
+    const wrist = { x: p.x + nx * RIG.wristToPalm, y: p.y + ny * RIG.wristToPalm };
+    return armIK(shoulder, wrist);
+  }) as [Limb, Limb];
+  return { arms, hands };
+}
+
+/** The hold (key) pose at trail position sP (§3.6), with the boulder solved from the shoulders. Static, for tests and stills. */
+export function solveHoldStatic(path: SlopePath, sP: number, R = RIG.boulderR): { pose: Pose; centre: V; sB: number } {
+  const theta = path.angleAt(sP);
+  const k = cosRatio(theta);
+  const t = path.tangentAt(sP), n = path.normalAt(sP);
+  const base = path.at(sP);
+  const gA = (s: number) => path.angleAt(s) * DEG;
+  const sFront = sP + 0.10 * k, sRear = sP - 0.24 * k;
+  const front = footAt(path.at(sFront), gA(sFront), 0);
+  const rear = footAt(path.at(sRear), gA(sRear), 25 * DEG);
+  const up = { x: 0, y: 1 };
+  const hh = hipCeiling(base, up, H0, [front.ankle, rear.ankle]);
+  const pelvis = { x: base.x, y: base.y + hh };
+  const lean = lean0(theta) * DEG;
+  const shoulder = { x: pelvis.x + RIG.torso * Math.sin(lean) + t.x * 0.01, y: pelvis.y + RIG.torso * Math.cos(lean) + t.y * 0.01 };
+  const A = 0.995 * ARM_CHAIN + RIG.wristToPalm + R + RIG.palm;
+  const sB = boulderSFor(path, shoulder, A, sP + 0.5, sP + 3, R);
+  const centre = path.centreAt ? path.centreAt(sB, R) : { x: path.at(sB).x + n.x * R, y: path.at(sB).y + n.y * R };
+  const { arms, hands } = armsToStone(shoulder, centre, R);
+  const { head, axis } = headFrom(shoulder);
+  const legs: [Limb, Limb] = [legIK(pelvis, front.ankle, t), legIK(pelvis, rear.ankle, t)];
+  return { pose: { pelvis, shoulder, head, headAxis: axis, lean, legs, arms, hands, feet: [front, rear], facing: 1, breath: 1, alpha: 1 }, centre, sB };
+}
+
+/** Standing on the summit ledge with the near hand resting on the stone's upper flank (150°). */
+export function solveStand(path: SlopePath, _H: number, pelvisX: number, bc: V, opts: { sway: number; breath: number; leanDeg?: number; alpha?: number; handDeg?: number; chin?: number }): Pose {
   const gy = path.groundY(pelvisX);
-  const pelvis = { x: pelvisX + opts.sway * H, y: gy + 0.47 * H };
-  const lean = (opts.leanDeg ?? 4) * DEG;
-  const shoulder = { x: pelvis.x + BODY.torso * H * Math.sin(lean), y: pelvis.y + BODY.torso * H * Math.cos(lean) };
-  const head = { x: shoulder.x + BODY.neck * H * Math.sin(-8 * DEG + lean * 0.3), y: shoulder.y + BODY.neck * H * Math.cos(-8 * DEG) };
-  const feet = [pelvisX + 0.07 * H, pelvisX - 0.06 * H].map((x) => ({ x, y: path.groundY(x) }));
-  const legs = feet.map((foot) => {
-    const end = reach(pelvis, foot, BODY.thigh * H, BODY.shin * H);
-    const knee = twoBoneIK(pelvis, end, BODY.thigh * H, BODY.shin * H, (c1, c2) => (c1.x >= c2.x ? c1 : c2));
-    return { root: pelvis, joint: knee, end };
-  }) as [Limb, Limb];
-  const R = BODY.boulderR * H;
-  const nearT = opts.handOnStone === false
-    ? { x: shoulder.x + 0.05 * H, y: shoulder.y - 0.3 * H }
-    : handTarget(bc, R, H, opts.handDeg ?? 120);
-  const nearHand = reach(shoulder, nearT, BODY.upperArm * H, BODY.foreArm * H);
-  const nearElbow = twoBoneIK(shoulder, nearHand, BODY.upperArm * H, BODY.foreArm * H, (c1, c2) => (c1.y <= c2.y ? c1 : c2));
-  const hang = { x: shoulder.x - Math.sin(8 * DEG) * ARM() * H * 0.98, y: shoulder.y - Math.cos(8 * DEG) * ARM() * H * 0.98 };
-  const farElbow = twoBoneIK(shoulder, hang, BODY.upperArm * H, BODY.foreArm * H, (c1, c2) => (c1.x >= c2.x ? c1 : c2));
-  return {
-    pelvis, shoulder, head, lean, legs,
-    arms: [{ root: shoulder, joint: nearElbow, end: nearHand }, { root: shoulder, joint: farElbow, end: hang }],
-    facing: 1, breath: opts.breath, alpha: opts.alpha ?? 1,
-  };
+  const pelvis = { x: pelvisX + opts.sway, y: gy + 0.505 };
+  const lean = (opts.leanDeg ?? 3) * DEG;
+  const shoulder = { x: pelvis.x + RIG.torso * Math.sin(lean), y: pelvis.y + RIG.torso * Math.cos(lean) };
+  const chin = opts.chin ?? 0;
+  const neckEnd = { x: shoulder.x + Math.sin(12 * DEG) * RIG.neck, y: shoulder.y + Math.cos(12 * DEG) * RIG.neck };
+  const axis = (8 - 20 * chin) * DEG;
+  const head = { x: neckEnd.x + Math.sin(axis) * RIG.head * 0.5, y: neckEnd.y + Math.cos(axis) * RIG.head * 0.5 };
+  const g = (x: number) => Math.atan2(path.groundY(x + 0.01) - path.groundY(x - 0.01), 0.02);
+  const fx = [pelvisX + 0.07, pelvisX - 0.05];
+  const feet = fx.map((x) => footAt({ x: x + RIG.heelToBall * 0.4, y: path.groundY(x + RIG.heelToBall * 0.4) }, g(x), 0)) as [FootPose, FootPose];
+  const legs = feet.map((f) => legIK(pelvis, f.ankle, { x: 1, y: 0 })) as [Limb, Limb];
+  const R = RIG.boulderR;
+  const a = (opts.handDeg ?? 150) * DEG;
+  const palm = { x: bc.x + Math.cos(a) * (R + RIG.palm), y: bc.y + Math.sin(a) * (R + RIG.palm) };
+  const wrist = { x: palm.x + Math.cos(a) * RIG.wristToPalm, y: palm.y + Math.sin(a) * RIG.wristToPalm };
+  const near = armIK(shoulder, wrist);
+  const hang = { x: shoulder.x + Math.sin(-6 * DEG) * ARM_CHAIN * 0.97, y: shoulder.y - Math.cos(6 * DEG) * ARM_CHAIN * 0.97 };
+  const far = { root: shoulder, joint: twoBoneIK(shoulder, hang, RIG.upperArm, RIG.foreArm, (c1, c2) => (c1.x >= c2.x ? c1 : c2)), end: hang };
+  return { pelvis, shoulder, head, headAxis: axis, lean, legs, arms: [near, far], hands: [palm, hang], feet, facing: 1, breath: opts.breath, alpha: opts.alpha ?? 1 };
 }
 
-/** Sitting with the back against the stone, facing down the valley (break). */
-export function solveSit(path: SlopePath, H: number, bc: V, breath: number, alpha = 1): Pose {
-  const R = BODY.boulderR * H;
-  const px = bc.x - R * 0.95 - 0.04 * H;
+/** Sitting with the back against the stone, facing downhill (break): thighs 15° up, shins down, forearms on knees. */
+export function solveSit(path: SlopePath, _H: number, bc: V, breath: number, alpha = 1): Pose {
+  const R = RIG.boulderR;
+  const px = bc.x - R * 0.92 - 0.05;
   const gy = path.groundY(px);
-  const pelvis = { x: px, y: gy + 0.06 * H };
-  const lean = 18 * DEG; // leaning back into the stone (+x), figure faces −x
-  const shoulder = { x: pelvis.x + BODY.torso * H * Math.sin(lean), y: pelvis.y + BODY.torso * H * Math.cos(lean) };
-  const head = { x: shoulder.x - 0.04 * H, y: shoulder.y + BODY.neck * H * 0.95 };
-  const thighAng = 15 * DEG;
-  const legs = [0.01, -0.02].map((dx) => {
-    const knee = { x: pelvis.x - BODY.thigh * H * Math.cos(thighAng) + dx * H, y: pelvis.y + BODY.thigh * H * Math.sin(thighAng) };
-    const footX = knee.x - 0.05 * H;
-    const foot = { x: footX, y: path.groundY(footX) + BODY.footH * H * 0.5 };
-    const end = reach(knee, foot, BODY.shin * H, 0.0001);
+  const pelvis = { x: px, y: gy + 0.07 };
+  const lean = 14 * DEG; // leaning back into the stone (+x); faces −x
+  const shoulder = { x: pelvis.x + RIG.torso * Math.sin(lean), y: pelvis.y + RIG.torso * Math.cos(lean) };
+  const axis = -(10 + 8) * DEG;
+  const neckEnd = { x: shoulder.x - Math.sin(15 * DEG) * RIG.neck, y: shoulder.y + Math.cos(15 * DEG) * RIG.neck };
+  const head = { x: neckEnd.x + Math.sin(axis) * RIG.head * 0.5, y: neckEnd.y + Math.cos(axis) * RIG.head * 0.5 };
+  const th = 15 * DEG;
+  const legs = [0, -0.02].map((dx) => {
+    const knee = { x: pelvis.x - RIG.thigh * Math.cos(th) + dx, y: pelvis.y + RIG.thigh * Math.sin(th) };
+    const ankleX = knee.x - 0.04;
+    const ankle = { x: ankleX, y: path.groundY(ankleX) + RIG.ankleH };
+    const end = reach(knee, ankle, RIG.shin, 1e-4);
     return { root: pelvis, joint: knee, end };
   }) as [Limb, Limb];
+  const g = (x: number) => Math.atan2(path.groundY(x + 0.01) - path.groundY(x - 0.01), 0.02);
+  const feet = legs.map((l) => footAt({ x: l.end.x - RIG.heelToBall * 0.6, y: path.groundY(l.end.x - RIG.heelToBall * 0.6) }, g(l.end.x), 0, -1)) as [FootPose, FootPose];
   const arms = legs.map((l, i) => {
-    const hand = { x: l.joint.x - 0.02 * H - i * 0.01 * H, y: l.joint.y + 0.015 * H };
-    const end = reach(shoulder, hand, BODY.upperArm * H, BODY.foreArm * H);
-    const elbow = twoBoneIK(shoulder, end, BODY.upperArm * H, BODY.foreArm * H, (c1, c2) => (c1.y <= c2.y ? c1 : c2));
-    return { root: shoulder, joint: elbow, end };
+    const hand = { x: l.joint.x - 0.03 - i * 0.01, y: l.joint.y + 0.012 };
+    return armIK(shoulder, hand);
   }) as [Limb, Limb];
-  return { pelvis, shoulder, head, lean, legs, arms, facing: -1, breath, alpha };
+  return { pelvis, shoulder, head, headAxis: axis, lean, legs, arms, feet, facing: -1, breath, alpha };
 }
 
 const lv = (a: V, b: V, k: number): V => ({ x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k) });
 const ll = (a: Limb, b: Limb, k: number): Limb => ({ root: lv(a.root, b.root, k), joint: lv(a.joint, b.joint, k), end: lv(a.end, b.end, k) });
 
-/** Joint-space blend between two poses of the same facing. */
+/** Joint-space blend between two poses. */
 export function blendPose(a: Pose, b: Pose, k: number): Pose {
   if (k <= 0) return a;
   if (k >= 1) return b;
+  const feet = a.feet && b.feet ? (a.feet.map((f, i) => ({ ball: lv(f.ball, b.feet![i].ball, k), ankle: lv(f.ankle, b.feet![i].ankle, k), heel: lv(f.heel, b.feet![i].heel, k), toe: lv(f.toe, b.feet![i].toe, k), angle: lerp(f.angle, b.feet![i].angle, k) })) as [FootPose, FootPose]) : (k < 0.5 ? a.feet : b.feet);
   return {
     pelvis: lv(a.pelvis, b.pelvis, k), shoulder: lv(a.shoulder, b.shoulder, k), head: lv(a.head, b.head, k),
+    headAxis: lerp(a.headAxis ?? 0, b.headAxis ?? 0, k),
     lean: lerp(a.lean, b.lean, k),
     legs: [ll(a.legs[0], b.legs[0], k), ll(a.legs[1], b.legs[1], k)],
     arms: [ll(a.arms[0], b.arms[0], k), ll(a.arms[1], b.arms[1], k)],
+    hands: a.hands && b.hands ? [lv(a.hands[0], b.hands[0], k), lv(a.hands[1], b.hands[1], k)] : b.hands,
+    feet,
     facing: k < 0.5 ? a.facing : b.facing,
     breath: lerp(a.breath, b.breath, k), alpha: lerp(a.alpha, b.alpha, k),
   };
+}
+
+/** Interior angle at the joint (deg). */
+export function interior(l: Limb): number {
+  const a = { x: l.root.x - l.joint.x, y: l.root.y - l.joint.y }, b = { x: l.end.x - l.joint.x, y: l.end.y - l.joint.y };
+  const c = (a.x * b.x + a.y * b.y) / ((Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y)) || 1);
+  return Math.acos(clamp(c, -1, 1)) / DEG;
 }

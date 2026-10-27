@@ -1,11 +1,5 @@
-// Ambient layer (ROUND3_DESIGN §3.6): camera drift, bird groups, cloud band rules. Pure and seeded.
+// Ambient layer (ROUND3_DESIGN §3.6): bird groups (black strokes), rect helper. Pure and seeded.
 import { mulberry32 } from './noise';
-import type { V } from './path';
-
-/** Breathing camera drift in CSS px (≤ 0.4% of width, 0.2% of height): co-prime 47 s / 61 s periods. */
-export function cameraDrift(t: number, w: number, h: number): V {
-  return { x: 0.004 * w * Math.sin((2 * Math.PI * t) / 47), y: 0.002 * h * Math.sin((2 * Math.PI * t) / 61) };
-}
 
 export interface BirdGroup { start: number; dur: number; n: number; y: number; seed: number }
 
@@ -47,8 +41,3 @@ export function birdsAt(g: BirdGroup, t: number, w: number, h: number, S: number
 
 export interface Rect { x0: number; y0: number; x1: number; y1: number }
 export const rectsOverlap = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
-
-/** Cloud alpha target: fades to 0.25 when the cloud would sit behind the stone or the figure. */
-export function cloudTargetAlpha(base: number, cloud: Rect, avoid: Rect[]): number {
-  return avoid.some((r) => rectsOverlap(cloud, r)) ? Math.min(base, 0.25) : base;
-}

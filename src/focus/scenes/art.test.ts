@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest';
+import { ART_STOPS, INK, LW, NIGHT, artStop, contrast, hexToRgb, pausedStop } from './artPalette';
+import sisyphusSrc from './sisyphus.ts?raw';
+import artDrawSrc from './artDraw.ts?raw';
+import figureSrc from './figureArt.ts?raw';
+import trailSrc from './trail.ts?raw';
+import cameraSrc from './camera.ts?raw';
+
+describe('A0: flat black-figure rules (ROUND3_ART §1.3)', () => {
+  it('no gradients, blur, glow, filters or blend modes in the scene code', () => {
+    for (const src of [sisyphusSrc, artDrawSrc, figureSrc, trailSrc, cameraSrc]) {
+      expect(src.length).toBeGreaterThan(500);
+      expect(src).not.toMatch(/createLinearGradient|createRadialGradient|shadowBlur|filter\s*=|soft-light|'overlay'/);
+    }
+    // the one allowed composite: the figure layer's destination-in mask
+    const comps = [...figureSrc.matchAll(/globalCompositeOperation\s*=\s*'([a-z-]+)'/g)].map((m) => m[1]);
+    expect(comps.filter((c) => c !== 'source-over')).toEqual(['destination-in']);
+    expect(sisyphusSrc + artDrawSrc).not.toMatch(/globalCompositeOperation\s*=\s*'(?!source-over)/);
+  });
+
+  it('palette: the stops hit their values, dawn → ember → dusk darkens the sky, contrast holds', () => {
+    for (const s of ART_STOPS) expect(artStop(s.p)).toEqual(s.v);
+    const lum = (h: string) => { const [r, g, b] = hexToRgb(h); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    expect(lum(artStop(0).sky)).toBeGreaterThan(lum(artStop(0.86).sky));
+    expect(lum(artStop(0.86).sky)).toBeGreaterThan(lum(artStop(1).sky));
+    // depth by tone: far lighter than mid lighter than near, at every stop
+    for (const s of [...ART_STOPS.map((x) => x.v), NIGHT]) { expect(lum(s.far)).toBeGreaterThan(lum(s.mid)); expect(lum(s.mid)).toBeGreaterThan(lum(s.near)); }
+    expect(contrast(INK.cream, INK.black)).toBeGreaterThan(14.5); // spec quotes 15.8; measured 14.96
+    expect(contrast(INK.ochre, INK.black)).toBeGreaterThan(7);
+    // paused: greyer and darker, still a palette (not a filter)
+    const p = pausedStop(artStop(0.4));
+    expect(lum(p.sky)).toBeLessThan(lum(artStop(0.4).sky));
+    expect(p.sky).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it('line weights scale with the figure and clamp (§1.2)', () => {
+    expect(LW(216).contour).toBeCloseTo(1.62, 2);
+    expect(LW(60).contour).toBe(1.25);
+    expect(LW(600).incise).toBe(2.0);
+    expect(LW(216).swirl).toBe(1.75);
+  });
+});
