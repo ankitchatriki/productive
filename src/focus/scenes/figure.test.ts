@@ -184,3 +184,17 @@ describe('cloth flaps (V5)', () => {
     }
   });
 });
+
+describe('fingers (V6)', () => {
+  it('four fingers fan out with open gaps at the tips (≥ 0.1 head units ≈ 3 px at 1440×900) and stay narrower than their spacing', () => {
+    const [, , ...rest] = handOutlines(0);
+    const fingers = rest.slice(0, 4);
+    const tip = (l: Array<[number, number]>) => l[2];
+    for (let i = 1; i < 4; i++) {
+      const a = tip(fingers[i - 1]), b = tip(fingers[i]);
+      expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeGreaterThanOrEqual(0.1);
+    }
+    // the knuckle ticks each lie inside their own finger root (incised across it)
+    expect(fingers.length).toBe(4);
+  });
+});

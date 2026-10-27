@@ -165,7 +165,9 @@ export const HEAD_OUTLINE: Pt[] = (() => {
 /** Hand in the palm frame (x along the stone's surface toward "up the stone", y out of the stone; origin = palm centre). */
 export const PALM_SURFACE_Y = -RIG.palm / h; // the stone's surface, in head units below the palm centre
 const FINGERS: Array<{ y0: number; ang: number; len: number }> = [
-  { y0: -0.03, ang: 0, len: 0.42 }, { y0: 0.01, ang: -5, len: 0.46 }, { y0: 0.05, ang: -10, len: 0.44 }, { y0: 0.09, ang: -15, len: 0.36 },
+  // V6: four separate fingers fanned 0/9/18/27° away from the stone from staggered roots, narrower than their spacing,
+  // so each lobe keeps its own incised outline and the gaps open toward the tips (the old stack merged into a claw)
+  { y0: -0.05, ang: 0, len: 0.40 }, { y0: 0.02, ang: 9, len: 0.44 }, { y0: 0.09, ang: 18, len: 0.40 }, { y0: 0.15, ang: 27, len: 0.31 },
 ];
 function lobe(x0: number, y0: number, angDeg: number, len: number, w: number): Pt[] {
   const a = (angDeg * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
@@ -181,7 +183,7 @@ export function handOutlines(load = 0): Pt[][] {
   const wd = 1 + 0.06 * Math.min(1, Math.max(0, load));
   const palm: Pt[] = [[-0.22 * wd, -0.08], [0.20 * wd, -0.08], [0.24 * wd, 0.0], [0.20 * wd, 0.12], [-0.04, 0.15], [-0.20 * wd, 0.12]];
   const wrist: Pt[] = [[-0.13, 0.06], [0.11, 0.08], [0.09, 0.44], [-0.10, 0.44]];
-  const fingers = FINGERS.map((f) => lobe(0.17 * wd, f.y0, f.ang, f.len, 0.10));
+  const fingers = FINGERS.map((f, i) => lobe((0.17 - 0.03 * i) * wd, f.y0, f.ang, f.len, 0.072));
   const thumb = lobe(-0.12, 0.0, 192, 0.30, 0.09);
   return [palm, wrist, ...fingers, thumb];
 }
@@ -227,7 +229,7 @@ export const DETAIL: DetailLine[] = [
   ...[-0.07, 0.0, 0.07].map((y) => D('foreArm', [[0.915, y]], 'F', 2, { dot: 0.022 })),
   D('foreArm', [[0.25, 0.10], [0.45, 0.14], [0.62, 0.06], [0.85, 0.08]], 'V', 2, { strain: true }), // forearm vein
   // hand (palm frame)
-  ...FINGERS.map((f) => D('hand', [[0.12, f.y0 - 0.005], [0.18, f.y0 + 0.01]], 'F', 3)), // knuckle row
+  ...FINGERS.map((f, i) => D('hand', [[0.15 - 0.03 * i, f.y0 - 0.022], [0.17 - 0.03 * i, f.y0 + 0.022]], 'F', 3)), // knuckle ticks across each finger root
   D('hand', [[0.0, 0.03], [0.17, 0.02]], 'F', 1), D('hand', [[0.0, 0.09], [0.17, 0.08]], 'F', 1), // mitten lines (L1)
   // thigh
   D('thigh', [[0.12, 0.30], [0.50, 0.40], [0.80, 0.27]], 'C', 2),                 // quadriceps front
