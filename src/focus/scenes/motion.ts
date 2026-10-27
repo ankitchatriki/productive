@@ -146,6 +146,9 @@ export class Motion {
     return Math.max(a(this.phi), a(this.phi + 0.5));
   }
 
+  /** A big exhale now (summit heave). */
+  exhale(t: number) { this.exhaleUntil = t + 0.5; }
+
   strainK(t: number): number {
     if (this.strainUntil <= t) return 0;
     return Math.min(smoothstep(this.strainStart, this.strainStart + 0.4, t), 1 - smoothstep(this.strainUntil - 0.3, this.strainUntil, t));

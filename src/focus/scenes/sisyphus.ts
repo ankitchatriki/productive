@@ -26,7 +26,7 @@ const HORIZON_Y = 0.30;
 const SUMMIT_DUR = 6.0, MINI_DUR = 1.4, ROLLBACK_DUR = 2.8, STANDUP_DUR = 1.0, FADEIN_DUR = 0.6, CROSSFADE_DUR = 1.0;
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; rebuilds?: number; gapMs?: number }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; rebuilds?: number; gapMs?: number; stages?: number[] }
 
 export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let canvas: HTMLCanvasElement | null = null;
@@ -66,6 +66,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let detail: HTMLCanvasElement | null = null, fgLayer: HTMLCanvasElement | null = null;
   let skyB: HTMLCanvasElement | null = null, landB: HTMLCanvasElement | null = null, gradeB: HTMLCanvasElement | null = null, fgB: HTMLCanvasElement | null = null;
   let rebuild: Generator<void, void, void> | null = null, rebuildKey = '';
+  let stageIdx = 0;
   let clouds: HTMLCanvasElement[] = [];
   let boulderTex: HTMLCanvasElement | null = null;
   let boulderOutline: Path2D | null = null;
@@ -122,6 +123,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     buildStars();
     buildBoulderShape();
     buildDetail();
+    buildCloudMasks();
     palKey = '';
     lastCacheAt = -1e9;
     sky = null; land = null; rebuild = null;
@@ -145,7 +147,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       if (night > 0) base = mixPalette(base, NIGHT, night * 0.85);
       const sun = sunPosition(1, w, h, horizonPx, summitPx, layout);
       sun.y += 0.06 * h * k;
-      const glow = st > 1 && st < 3 ? 1 + 0.6 * Math.sin(((st - 1) / 2) * Math.PI) : 1;
+      // Light burst: ×1 → ×2.2 (ease-out 1.2 s), then back toward ×1.5 (ROUND3 §3.10).
+      const glow = seq?.kind === 'crossfade' ? 1 : st < 1.2 ? 1 : st < 2.4 ? 1 + 1.2 * easeOut((st - 1.2) / 1.2) : 2.2 - 0.7 * smoothstep(2.4, 4.0, st);
       const starVis = seq?.kind === 'crossfade' ? 1 : smoothstep(2.5, 5.0, st);
       let light = lightState(0.86 + 0.14 * k);
       if (night > 0) light = mixLight(light, NIGHT_LIGHT, night * 0.85);
@@ -251,11 +254,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     boulderTex = c;
   }
 
-  /** Clouds v2 (ROUND3 §3.6): five noise-built sprites, lit tops (sun) and shaded bottoms, rebuilt with the tint. */
-  function buildClouds(light: LightKey) {
-    const top = lighten(mixRGB(pal.horizon, light.key, 0.6), 0.1), bottom = mixRGB(mixRGB(pal.zenith, light.ambient, 0.4), pal.horizon, 0.55);
+  /** Cloud shapes (resize-only): five fBm alpha masks with an elliptical falloff. */
+  let cloudMasks: HTMLCanvasElement[] = [];
+  function buildCloudMasks() {
     const res = Math.min(1, scale);
-    clouds = [0, 1, 2, 3, 4].map((i) => {
+    cloudMasks = [0, 1, 2, 3, 4].map((i) => {
       const cw = Math.max(8, Math.round(240 * res * (S / 900))), ch = Math.max(4, Math.round(80 * res * (S / 900)));
       const c = mk(cw, ch);
       const g = c.getContext('2d')!;
@@ -264,23 +267,47 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
         const ex = (x / cw - 0.5) * 2, ey = (y / ch - 0.55) * 2;
         const fall = Math.max(0, 1 - (ex * ex + ey * ey * 1.6));
+        if (fall <= 0) continue;
         const n = fbm2(x / (40 * res * S / 900) + i * 13.7, y / (22 * res * S / 900) + i * 5.1, 4);
         const a = smoothstep(0.45, 0.70, n * (0.55 + 0.75 * fall)) * fall;
-        const k = smoothstep(0.25, 0.5, y / ch); // top 35% lit
-        const col = mixRGB(top, bottom, k);
         const j = (y * cw + x) * 4;
-        d[j] = col[0] * 255; d[j + 1] = col[1] * 255; d[j + 2] = col[2] * 255; d[j + 3] = a * 255;
+        d[j] = d[j + 1] = d[j + 2] = 255; d[j + 3] = a * 255;
       }
       g.putImageData(img, 0, 0);
       return c;
     });
   }
 
-  function vignette(g: CanvasRenderingContext2D) {
+  /** Clouds v2 (ROUND3 §3.6): tint the masks: lit tops (sun), shaded bottoms. Cheap, runs with the tint. */
+  function buildClouds(light: LightKey) {
+    const top = lighten(mixRGB(pal.horizon, light.key, 0.6), 0.1), bottom = mixRGB(mixRGB(pal.zenith, light.ambient, 0.4), pal.horizon, 0.55);
+    clouds = cloudMasks.map((m, i) => {
+      const c = clouds[i] && clouds[i].width === m.width && clouds[i].height === m.height ? clouds[i] : mk(m.width, m.height);
+      const g = c.getContext('2d')!;
+      g.globalCompositeOperation = 'source-over';
+      g.clearRect(0, 0, c.width, c.height);
+      g.drawImage(m, 0, 0);
+      g.globalCompositeOperation = 'source-in';
+      const gr = g.createLinearGradient(0, 0, 0, c.height);
+      gr.addColorStop(0, css(top)); gr.addColorStop(0.35, css(top)); gr.addColorStop(0.6, css(bottom)); gr.addColorStop(1, css(bottom));
+      g.fillStyle = gr; g.fillRect(0, 0, c.width, c.height);
+      g.globalCompositeOperation = 'source-over';
+      return c;
+    });
+  }
+
+  /** Summit vignette deepening 0..1 (2.5–5 s into the beat, held in overtime). */
+  function summitVig(): number {
+    if (phase !== 'complete') return 0;
+    if (seq?.kind === 'summit') return smoothstep(2.5, 5.0, nowS() - seq.t0);
+    return seq?.kind === 'crossfade' ? 0 : 1;
+  }
+
+  function vignette(g: CanvasRenderingContext2D, strength = 0.28) {
     const r = Math.hypot(w, h) * 0.62;
     const grad = g.createRadialGradient(w / 2, h / 2, r * 0.35, w / 2, h / 2, r);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.28)');
+    grad.addColorStop(1, `rgba(0,0,0,${strength})`);
     g.fillStyle = grad;
     g.fillRect(0, 0, w, h);
   }
@@ -335,9 +362,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     gl.setTransform(1, 0, 0, 1, 0, 0); gl.clearRect(0, 0, cw, ch);
     gl.setTransform(scale, 0, 0, scale, 0, 0);
     const warm = ss.light.warmth;
+    const vigK = summitVig();
     gl.fillStyle = warm >= 0 ? css(ss.light.key, 0.06 * warm) : css([0.45, 0.5, 0.75], -0.06 * warm);
     gl.fillRect(0, 0, w, h);
-    vignette(gl);
+    vignette(gl, 0.28 + 0.10 * vigK);
 
     // Land (ROUND3_DESIGN §3.3): peaked range layers with snow and haze, then the main mountain.
     yield;
@@ -690,7 +718,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   function maybeRebuild(t: number, ss: SkyState) {
     const key = [ss.pal.zenith, ss.pal.horizon, ss.pal.rockLit].map((c) => c.map((v) => Math.round(v * 200)).join(',')).join('|')
-      + `|${benchesLit}|${Math.round(ss.light.rim * 20)}|${Math.round(ss.light.warmth * 20)}|${ss.moon ? Math.round(ss.moon.x / 3) : ''}|${Math.round(ss.glow * 20)}|${Math.round(desatK * 10)}|${Math.round(ss.predawn * 20)}`;
+      + `|${Math.round(summitVig() * 10)}|${benchesLit}|${Math.round(ss.light.rim * 20)}|${Math.round(ss.light.warmth * 20)}|${ss.moon ? Math.round(ss.moon.x / 3) : ''}|${Math.round(ss.glow * 20)}|${Math.round(desatK * 10)}|${Math.round(ss.predawn * 20)}`;
     const minGap = seq || (desatK !== desatTarget) ? 0.1 : 2;
     if (!sky || !land) {
       // First paint (or after a resize): build synchronously.
@@ -700,11 +728,17 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       return;
     }
     if (rebuild) {
-      if (rebuild.next().done) { rebuild = null; palKey = rebuildKey; }
+      const t0 = performance.now();
+      const done = rebuild.next().done;
+      const ms = performance.now() - t0;
+      stageIdx++;
+      const st = (stats.stages ??= []);
+      st[stageIdx] = Math.max(st[stageIdx] ?? 0, Math.round(ms));
+      if (done) { rebuild = null; palKey = rebuildKey; }
       return;
     }
     if (key !== palKey && t - lastCacheAt >= minGap) {
-      rebuild = rebuildCaches(ss); rebuildKey = key; lastCacheAt = t; stats.rebuilds = (stats.rebuilds ?? 0) + 1;
+      rebuild = rebuildCaches(ss); rebuildKey = key; lastCacheAt = t; stats.rebuilds = (stats.rebuilds ?? 0) + 1; stageIdx = 0;
       if (rebuild.next().done) { rebuild = null; palKey = key; }
     }
   }
@@ -713,10 +747,22 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   const cam = { cs: 1, dx: 0, dy: 0, cx: 0, cy: 0, zoom: 1 };
   /** CSS-px transform for a layer with parallax depth factor (0 = sky, 1 = mountain + figure). */
   function setCam(g: CanvasRenderingContext2D, factor: number) {
-    const cs = factor > 0 ? cam.cs * (factor >= 1 ? cam.zoom : 1) : 1;
-    g.setTransform(scale * cs, 0, 0, scale * cs, scale * (cam.cx * (1 - cs) + cam.dx * factor), scale * (cam.cy * (1 - cs) + cam.dy * factor));
+    const cs = factor > 0 ? cam.cs : 1;
+    const z = factor >= 1 ? cam.zoom : 1;
+    // drift/overscan about the screen centre, then the summit zoom about the summit point
+    const zc = toS(path.spec.plateauEnd);
+    const tx = z * (cam.cx * (1 - cs) + cam.dx * factor) + zc.x * (1 - z);
+    const ty = z * (cam.cy * (1 - cs) + cam.dy * factor) + zc.y * (1 - z);
+    g.setTransform(scale * cs * z, 0, 0, scale * cs * z, scale * tx, scale * ty);
   }
-  function updateCamera() {
+  function updateCamera(t: number, dt: number) {
+    // Summit camera (ROUND3 §3.10): ease in to 1.04 about the summit, hold in overtime, ease back when the user acts.
+    if (phase === 'complete' && seq?.kind === 'summit') cam.zoom = 1 + 0.04 * easeInOut(Math.min(1, Math.max(0, (t - seq.t0 - 0.5) / 3.5)));
+    else {
+      const target = phase === 'complete' && !reduced && seq?.kind !== 'crossfade' ? 1.04 : 1;
+      cam.zoom += (target - cam.zoom) * Math.min(1, dt / 1.3);
+      if (reduced) cam.zoom = target;
+    }
     const drift = !reduced && phase !== 'paused' && quality > 0.5;
     const d = drift ? cameraDrift(ambientT, w, h) : { x: 0, y: 0 };
     cam.dx = d.x; cam.dy = d.y;
@@ -811,6 +857,27 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     g.fillStyle = gg; g.fillRect(ss.sun.x - glowR, ss.sun.y - glowR, glowR * 2, glowR * 2);
     g.fillStyle = css(lighten(sunCol, 0.2), ss.sunVis);
     g.beginPath(); g.arc(ss.sun.x, ss.sun.y, r, 0, Math.PI * 2); g.fill();
+    // Summit rays: 7 soft wedges fanning from the sun behind the summit, α 0 → .10 → .05, turning 0.3°/s.
+    if (phase === 'complete' && seq?.kind === 'summit') {
+      const st = nowS() - seq.t0;
+      const a = quality >= 0.75 ? (st < 1.2 ? 0 : st < 2.0 ? 0.10 * smoothstep(1.2, 2.0, st) : 0.10 - 0.05 * smoothstep(2.0, 4.0, st)) : 0.05;
+      if (a > 0.002) {
+        const len = 0.7 * h, rot0 = (st * 0.3 * Math.PI) / 180;
+        g.save();
+        g.translate(ss.sun.x, ss.sun.y);
+        for (let i = 0; i < 7; i++) {
+          const ang = Math.PI * (0.55 + (i / 6) * 0.9) + rot0;
+          const rg = g.createLinearGradient(0, 0, Math.cos(ang) * len, Math.sin(ang) * len);
+          rg.addColorStop(0, css(ss.light.key, a * ss.sunVis * 1.6)); rg.addColorStop(1, css(ss.light.key, 0));
+          g.fillStyle = rg;
+          g.beginPath(); g.moveTo(0, 0);
+          g.lineTo(Math.cos(ang - 0.05) * len, Math.sin(ang - 0.05) * len);
+          g.lineTo(Math.cos(ang + 0.05) * len, Math.sin(ang + 0.05) * len);
+          g.closePath(); g.fill();
+        }
+        g.restore();
+      }
+    }
   }
 
   /** Unit vector toward the sun in screen space (or straight up when there's no sun). */
@@ -1130,6 +1197,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   // ---------- hair and cloth chains (ROUND3 §3.5) ----------
   let chains: { hair: Chain[]; cloth: Chain[] } | null = null;
   let chainAcc = 0;
+  let summitGust = 1;
 
   function chainAnchors(pose: Pose) {
     const H = Hw;
@@ -1156,7 +1224,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       rest = true;
     }
     const grav = 0.9 * H * 9;
-    const w = wind(t) * H * 6;
+    const w = wind(t) * H * 6 * summitGust;
     const hairDir = { x: a.back.x * 0.6, y: 0.4 }, clothDir = { x: 0, y: -1 };
     if (rest) {
       chains.hair.forEach((c, i) => solveRest(c, a.hair[i], hairDir, grav * 0.4, w));
@@ -1215,7 +1283,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   function advanceGait(dt: number, t: number) {
     const still = phase === 'paused' || reduced;
-    const speed = (seq?.kind === 'summit' || seq?.kind === 'mini' ? 1.2 : 1) * (1 - 0.6 * beatK(t));
+    const sst = seq ? t - seq.t0 : 0;
+    const speed = (seq?.kind === 'summit' ? (sst < 0.5 ? 0 : 1.4) : seq?.kind === 'mini' ? 1.2 : 1) * (1 - 0.6 * beatK(t));
     const climb = Math.min(1, Math.max(0, (sMap(progress) - s0()) / (s1() - s0())));
     motion.step(t, dt, { still, climb, speed, climbing: mode === 'climb' && !seq });
     if (still || mode !== 'climb') return;
@@ -1234,11 +1303,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (motion.events.heaveStart) gritAt(lastContactS, 2 + Math.floor(rng() * 2));
   }
 
-  function pushPose(sB: number, t: number, alpha = 1) {
+  function pushPose(sB: number, t: number, alpha = 1, forceStrain = 0, _speed = 1) {
+    void _speed;
     const still = phase === 'paused' || reduced;
     const m = motion.sample(t, still);
-    const ph = m.phi;
-    const k = m.strainK;
+    const ph = forceStrain > 0 ? 0.42 : m.phi;
+    const k = Math.max(m.strainK, forceStrain);
     // Look-ahead lean (anticipation): dig in before a steeper pitch, ease off toward a bench (§3.3.5).
     const thAhead = path.angleAt(Math.min(0.999, sB + (0.5 * Hw) / path.length));
     const fdt = Math.min(0.2, Math.max(0, t - leanT)); leanT = t;
@@ -1248,7 +1318,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     // Drag hierarchy: pelvis leads; the spine lags ~60 ms and the head ~120 ms behind it.
     const spineLean = still ? 48 : leanDeg(ph - 0.023) * (1 - k) + 51 * k;
     const lean = Math.max(36, Math.min(53, spineLean + ahead - 8 * bk + m.leanAdj));
-    const hip = (still ? 0.455 : hipH(ph)) - 0.02 * k + 0.02 * bk + m.hipAdj;
+    const hip = (still ? 0.455 : hipH(ph)) - 0.02 * k + 0.02 * bk + m.hipAdj - 0.02 * forceStrain;
     const sg = still ? 0 : surgeCurve(ph) * m.heave * m.surgeMul * (1 - bk);
     const tremor = k > 0 ? 0.006 * Math.sin(2 * Math.PI * 5 * t) * k : 0;
     const headLag = still ? 30 : (leanDeg(ph - 0.046) + ahead - 18) * (1 - k) + (lean - 4) * k;
@@ -1269,7 +1339,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     return { pose: r.pose, boulderC: r.boulder, rot: ((sB + nudge) * path.length) / Rw, tremor };
   }
 
-  function standPose(t: number, alpha = 1) {
+  function standPose(t: number, alpha = 1, chin = 0, deep = 0) {
     const sB = plateauMid();
     const bc = boulderCentre(path, sB, Rw);
     let sway = 0;
@@ -1278,8 +1348,14 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const st = t - swayStart;
       sway = st < 1.2 ? 0.01 * Math.sin((st / 1.2) * Math.PI) : 0;
     }
-    const breath = 1 + (reduced ? 0 : 0.012 * Math.sin((2 * Math.PI * t) / 3.2));
-    return { pose: solveStand(path, Hw, bc.x - Rw - 0.14 * Hw, bc, { sway, breath, alpha }), boulderC: bc, rot: (sB * path.length) / Rw };
+    const breath = 1 + (reduced ? 0 : 0.012 * Math.sin((2 * Math.PI * t) / 3.2)) + 0.03 * deep;
+    const pose = solveStand(path, Hw, bc.x - Rw - 0.14 * Hw, bc, { sway, breath, alpha });
+    if (chin > 0) {
+      // Chin lifts toward the sun: the head tips back a little (appeal: he looks out, not down).
+      const a = -12 * DEG * chin, dx = pose.head.x - pose.shoulder.x, dy = pose.head.y - pose.shoulder.y;
+      pose.head = { x: pose.shoulder.x + dx * Math.cos(a) - dy * Math.sin(a), y: pose.shoulder.y + dx * Math.sin(a) + dy * Math.cos(a) };
+    }
+    return { pose, boulderC: bc, rot: (sB * path.length) / Rw };
   }
 
   function sitPose(t: number, alpha = 1) {
@@ -1309,7 +1385,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       desatK = desatTarget > desatK ? Math.min(desatTarget, desatK + step) : Math.max(desatTarget, desatK - step);
     }
     ambientT += dt * (phase === 'paused' ? 0.25 : 1);
-    updateCamera();
+    updateCamera(t, dt);
     advanceGait(dt, t);
     stepParticles(dt, t);
     const ss = skyState(t);
@@ -1354,18 +1430,43 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     let fig2: { pose: Pose } | null = null;
     const sq = seq;
     const st = sq ? t - sq.t0 : 0;
-    if (sq && (sq.kind === 'summit' || sq.kind === 'mini')) {
-      const pushEnd = sq.kind === 'mini' ? 1.0 : 1.2;
+    if (sq && sq.kind === 'mini') {
       const sB = st < 1.4 ? s1() + (plateauMid() - s1()) * easeOut(Math.min(1, st / 1.4)) : plateauMid();
       const push = pushPose(Math.min(sB, plateauMid()), t);
       const stand = standPose(t);
-      const k = easeInOut(smoothstep(pushEnd, sq.kind === 'mini' ? 1.4 : 2.6, st));
+      const k = easeInOut(smoothstep(1.0, 1.4, st));
       const pose = blendPose(push.pose, stand.pose, k);
-      // Spring rock after arriving
       const rock = st > 1.4 ? 3 * DEG * Math.exp(-(st - 1.4) * 2.2) * Math.sin((st - 1.4) * 9) : 0;
       boulderC = k < 1 ? push.boulderC : stand.boulderC;
       rot = (sB * path.length) / Rw + rock;
       if (st > 1.38 && st < 1.42 + dt && !reduced) dustAt(path.at(plateauMid() - Rw / path.length), 10);
+      fig = { pose, boulderC, rot };
+    } else if (sq && sq.kind === 'summit') {
+      // Summit v2 (ROUND3 §3.10): last strain → heave over the lip → settle → stand with follow-through → chin up.
+      const top = plateauMid(), lip = s1();
+      const back = (0.01 * Hw) / path.length;
+      let sB: number, settle = 0;
+      if (st < 0.5) sB = lip - back * easeInOut(st / 0.5);
+      else if (st < 1.6) { const u = (st - 0.5) / 1.1; sB = lip - back + (top - lip + back) * easeInOut(u); }
+      else { const u = st - 1.6; settle = Math.exp(-u * 0.35 * 7) * Math.sin(u * 7); sB = top + (settle * 0.01 * Hw) / path.length; }
+      const push = pushPose(Math.min(sB, top), t, 1, st < 0.5 ? smoothstep(0, 0.25, st) : 0, st >= 0.5 && st < 1.6 ? 1.4 : 1);
+      const chin = smoothstep(2.8, 4.0, st), deep = Math.sin(Math.min(1, Math.max(0, (st - 2.8) / 2)) * Math.PI);
+      const stand = standPose(t, 1, chin, deep);
+      const k = easeInOut(smoothstep(1.2, 2.8, st));
+      const pose = blendPose(push.pose, stand.pose, k);
+      // Follow-through: the head arrives ~150 ms after the torso.
+      const kh = easeInOut(smoothstep(1.35, 2.95, st));
+      pose.head = { x: push.pose.head.x + (stand.pose.head.x - push.pose.head.x) * kh, y: push.pose.head.y + (stand.pose.head.y - push.pose.head.y) * kh };
+      boulderC = k < 1 ? push.boulderC : stand.boulderC;
+      rot = (sB * path.length) / Rw + 3 * DEG * settle;
+      if (st > 1.58 && st < 1.62 + dt && !reduced) {
+        // Large juice: a dust ring from the contact point and two pebbles back down the slope.
+        const c = path.at(top - Rw / path.length);
+        for (let i = 0; i < 12; i++) { const a2 = (i / 12) * Math.PI * 2; spawn('dust', c.x + Math.cos(a2) * Rw * 0.8, c.y + Math.abs(Math.sin(a2)) * 0.01 * Hw, Math.cos(a2) * 0.3 * Hw, Math.abs(Math.sin(a2)) * 0.1 * Hw, (0.014 + rng() * 0.01) * Hw, 1.2 + rng() * 0.5); }
+        for (let i = 0; i < 2; i++) spawn('pebble', 0, 0, -0.08 * Hw - rng() * 0.05 * Hw, 0.03 * Hw, (0.012 + rng() * 0.008) * Hw, 5, lip - 0.02 - i * 0.01);
+        motion.exhale(t);
+      }
+      summitGust = st > 2.8 && st < 4.0 ? 1.8 : 1;
       fig = { pose, boulderC, rot };
     } else if (sq && sq.kind === 'rollback') {
       // 0–0.4 tip back, 0.4–2.0 roll down under gravity, 2.0–2.4 hops, figure fades
@@ -1582,6 +1683,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         seq = null;
         mode = next === 'complete' ? 'stand' : next === 'break' ? (progress >= 1 ? 'stand' : 'sit') : 'climb';
         desatK = desatTarget;
+        cam.zoom = next === 'complete' && !reduced ? 1.04 : 1;
+        chains = null;
       } else if (next === 'complete' && (prev === 'focus' || prev === 'open' || prev === 'paused')) {
         mode = 'stand';
         if (reduced) { takeSnapshot(); seq = { kind: 'crossfade', t0: t, dur: CROSSFADE_DUR }; ensureLoop(); }
