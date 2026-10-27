@@ -302,3 +302,42 @@ Method: mask the ochre texture inside the stone, search for the screen rotation 
 - The belt, hem and leg linework are period-appropriate.
 - Summit is never visible during a block, the next climb continues, controls auto-hide and Today is unaffected (round 4 touched only `src/focus/scenes/`).
 - The spec's skill application is thorough, and the vendored skill is exactly upstream.
+
+---
+
+## Resolution (coder, fix round)
+
+Branch `round4`, commits `3126228` → `c0a5103`. 346 tests pass, `tsc` and `npm run build` are clean. Every check
+below runs on the gait's rendered frames or on the engine (stub canvas at the engine's own frame rate), not on a
+static solve.
+
+| Finding | Outcome | Commit | Regression check |
+|---|---|---|---|
+| **V1** face hidden by the arm | **Fixed.** The head (outline, face, beard, fillet, curls) is its own group, drawn last. The neck runs forward under the near arm (90°) and the head is less bowed (axis 78°), so the profile sits just below the arm. | 3126228 | `rendered.test.ts`: eye, brow, nose, moustache and beard clear of the near-arm silhouette on 97% of 3,360 frames (≥ 90%); the head is last in `ORDER`. `figure.test.ts`: the head sits 0.015 H under the arm line. |
+| **V2** rear leg never straightens | **Fixed.** The pelvis rides the pushing leg's reach at a keyed knee angle. The rear knee is held at 164° through the press and eased to 150° by toe-off. The stance knee is walked open from its toe-off angle to 164° by the step boundary, with C2 hand-overs. A soft knee limit sits inside a slightly longer reach (`LEG_MAX` 0.9985). | 3126228, 3d84fc7 | `rendered.test.ts`: every step's drive leg opens to ≥ 165°; the rear knee is ≥ 158° through the press (was 139° median, max 145°); the front knee is 98–128°. |
+| **V3** off screen ~5 s, 15 s walk-up | **Fixed.** The summit beat opens with a 400 ms cross-fade cut to the heave, two steps before the hold spot, with the camera on him. ×1.1 cadence, 0.4 s settle, 1.2 s step-through. | 0896551 | `setpieces.test.ts`, 1440×900 and 390×844: figure bounds inside the viewport on every frame; stand arrives 5.9 s after the chime (≤ 7 s). `summit-sequence.png`. |
+| **V4** hand off its wrist | **Fixed.** `reachablePalm` slides the palm around the stone toward the shoulder until the wrist is within reach; the arm's IK ends at that wrist (stand and step-through). | 0896551 | `setpieces.test.ts`: hand–wrist gap ≤ 2 px through the heave and stand. |
+| **V5** icicle flaps | **Fixed.** Taper 0.34 → 0.26 h with a rounded hem (the reviewer's change plus the cap). | 2c1a18e | `figure.test.ts`: flap end ≥ 0.2 head units wide, hem ≤ 0.12 beyond. |
+| **V6** claw hand | **Fixed.** Four fingers fanned 0/9/18/27° away from the stone from staggered roots, narrower than their spacing, each keeping its own incised outline; knuckle ticks across each root. | cc75c6b | `figure.test.ts`: neighbouring fingertips ≥ 0.1 head units apart (≈ 3 px at 1440×900). |
+| **V7** push-off over the climbing limits | **Fixed.** C2 toe-off hand-over (±0.16 of the cycle), C2 knee ramps, a softer drawn-pose knee limit, and 164° press knee for headroom. | 3d84fc7 | `engine.motion.test.ts`, engine at 30 fps, 60 s, trudge frames: pelvis \|a\| 1.48 H/s², \|j\| 11.9 H/s³, head 0.38°, elbow 0.63° per 60 Hz frame (limits 1.6, 12, 0.5, 0.8). |
+| **V8** stall after a strain beat | **Fixed.** The cadence eases up over 0.3 s (was 0.9 s). | 4223d0c, 3d84fc7 | `gait.test.ts`: ≤ 0.2 s under 0.35 v̄ after every beat (fails at 0.43 s with the old ease). |
+| **V9** ~80 px drift for ~10 s | **Fixed.** Through a strain beat the camera's feed-forward eases to 25% of the pace; the correction saturates at ±12%; the slow pull is capped. | 85f1ae7 | `engine.motion.test.ts`: max drift ≤ 49 px including the ±25 px step surge; 0–10 px from the mark 5 s after the beat. Camera outside the beats: 0.90–1.14 v̄, \|Δv\| ≤ 0.0007 H/s, jerk ≤ 0.06 H/s³. |
+| **V10** figure over budget | **Improved, not under 3 ms in headless.** No offscreen layer, no destination-in mask, no drawImage copy (alpha < 1 only); one silhouette clip; no halos on the back limbs. | 7407c43 | `figure.test.ts` checks the draw structure. Headless software raster at 1440×900 @2 with the new `__flushTiming` hook: 6.0–6.7 → 5.0 ms; detail 0.5 ms; JS-side 0.6 ms. |
+| **V11** frozen stand | **Fixed.** Slow weight shift (±0.012 H) and a look-out every 8 s (chin +6°) on top of breathing; base chin up 12°. | 0896551 | `setpieces.test.ts`: the standing pelvis moves > 2 px over 24 s. |
+| **V12** head step at strain → trudge | **Fixed** by V1/V2 (the head nods only with the lagged bob): 1.37× the local median, was 1.9×. | c0a5103 | `motion.clean.test.ts` discontinuity check. |
+| **V13** torso scratch ticks | **Fixed.** Serratus ticks and spine groove dropped; latissimus edge set in as a fine line. | c0a5103 | L3 ≥ 60 strokes; details inside their parts. |
+
+**Measured lags:** head 117 ms, beard 183 ms (≤ 3.3°), cloth tip 333 ms (swing ≤ 3°, now a sprung swing driven by
+the bob).
+
+**Retaken** in `docs/screenshots/round4/`:
+- `focus-p0.5.png` and `phone-p0.5.png`;
+- `detail-4x.png` (1440×900) and `detail-1920-4x.png`;
+- `cycle-24.png`;
+- `summit-sequence.png` (every 0.5 s from the chime);
+- `round3-vs-round4-p0.5.png`.
+
+**Deviations, still open:**
+- The figure's raster cost is 5.0 ms in headless software against the 3.0 ms budget (V10). On a GPU-composited canvas it should be far lower; not measured here.
+- The rear knee runs 158–166° through the press, against the static key pose's 170°. The extra headroom is what keeps fast catch-up steps inside the jerk limit.
+- The summit heave is now a cut to two steps (≈ 6 s total) rather than a continuous walk from the block's end, which is about 2 H from the ledge.
