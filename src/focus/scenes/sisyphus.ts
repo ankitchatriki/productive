@@ -24,7 +24,7 @@ const MAX_GRIT = 12;
 const R = RIG.boulderR; // H units
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string }
 
 interface Grit { live: boolean; x: number; y: number; vx: number; vy: number; age: number }
 
@@ -519,7 +519,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = k; g.drawImage(snapshot, 0, 0); g.globalAlpha = 1;
     }
     cam.pos = keepPos;
-    stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS();
+    stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS(); stats.gait = mode === "climb" ? gait.mode : mode;
     void t0;
   }
 

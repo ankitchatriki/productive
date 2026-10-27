@@ -103,7 +103,7 @@ export const LEG_MAX = 0.996;
 
 /** Head centre from the shoulder: neck thrust 70° from vertical, head axis 100° (chin tucked). */
 export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {
-  const n = 70 * DEG, a = (100 + pitchDeg) * DEG;
+  const n = 95 * DEG, a = (115 + pitchDeg) * DEG; // thrust low so the face shows under the near arm
   const neckEnd = { x: shoulder.x + Math.sin(n) * RIG.neck, y: shoulder.y + Math.cos(n) * RIG.neck };
   return { head: { x: neckEnd.x + Math.sin(a) * RIG.head * 0.5, y: neckEnd.y + Math.cos(a) * RIG.head * 0.5 }, axis: a };
 }

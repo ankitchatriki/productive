@@ -41,13 +41,13 @@ export function keyCurve(xs: number[], ys: number[]): (x: number) => number {
 const U = [0, 0.10, 0.20, 0.45, 0.68, 0.80, 0.90, 1.0];
 export const KEY = {
   travel: keyCurve(U, [0, 0.03, 0.12, 0.55, 0.85, 0.95, 0.985, 1]),
-  hipDy: keyCurve(U, [0, -0.006, -0.004, 0.014, 0.004, -0.004, -0.016, 0]),
+  hipDy: keyCurve(U, [0, -0.008, -0.008, 0.014, 0.004, -0.004, -0.020, 0]),
   lean: keyCurve(U, [0, 1, 3, 1, 0, -1, -1.5, 0]),
   pitch: keyCurve(U, [0, -1, -3, -1, 0, 1, 2, 0]),
   drive: keyCurve(U, [0, 0.5, 1, 0.3, 0, 0, 0, 0]),
   swingThigh: keyCurve(U, [-24, -25, -27, 15, 42, 46, 45, 45]),
   swingKnee: keyCurve(U, [172, 174, 176, 85, 100, 90, 88, 92]),
-  swingPitch: keyCurve(U, [25, 32, 40, -15, -5, 0, 0, 0]),
+  swingPitch: keyCurve(U, [25, 34, 48, -15, -5, 0, 0, 0]),
   stanceHeel: keyCurve([0, 0.45, 0.68, 0.8, 0.9, 1], [0, 0, 8, 18, 22, 25]),
 };
 
@@ -92,6 +92,8 @@ export class Gait {
   private seed: number;
   /** Pelvis surge speed (H/s along the trail) last step(). */
   vel = 0;
+  private velPrev = 0;
+  private accF = 0;
 
   constructor(seed = 1) { this.seed = seed; this.rng = mulberry32(seed); }
 
@@ -107,7 +109,7 @@ export class Gait {
     this.plant((this.front ^ 1) as 0 | 1, D - REAR * k, trail, 25 * DEG);
     this.hist = [];
     this.lastPelvisS = D;
-    this.vel = 0;
+    this.vel = 0; this.velPrev = 0; this.accF = 0;
   }
 
   /** Reduced motion / paused: reduced snaps to the hold pose at the target; paused freezes. */
@@ -129,7 +131,7 @@ export class Gait {
     this.mode = 'step'; this.u = 0; this.pairLeft = pair;
     this.v = {
       sigma: sigmaAt(this.thetaF) * (1 + 0.06 * (2 * r() - 1)),
-      T: tStepAt(this.thetaF) * (1 + 0.05 * (2 * r() - 1)),
+      T: tStepAt(this.thetaF) * (1 + 0.03 * (2 * r() - 1)),
       clear: 1 + 0.15 * (2 * r() - 1),
       lean: 1.5 * (2 * r() - 1),
     };
@@ -152,11 +154,11 @@ export class Gait {
         this.holdT += dt;
         const v = PACE;
         if (this.idle) { this.idleT += dt; if (this.idleT >= 1.2) { this.idle = null; this.idleT = 0; } }
-        if (opts.climbing && this.holdT >= 0.35 && debt >= 1.5 * sig && !this.idle) this.startStep(2);
+        if (opts.climbing && this.holdT >= 0.35 && debt >= 1.4 * sig && !this.idle) this.startStep(2);
         else if (!opts.climbing && this.holdT >= 0.2 && debt >= 0.5 * sig && !this.idle) this.startStep(1);
-        else if (opts.climbing && !this.idle && this.strainDue(opts.lenH) && this.holdT >= 1.0 && debt < 1.2 * sig) {
+        else if (opts.climbing && !this.idle && this.strainDue(opts.lenH) && this.holdT >= 1.0 && debt < 0.9 * sig) {
           this.mode = 'strain'; this.strainT = 0; this.idle = null;
-        } else if ((opts.idles ?? true) && opts.climbing && !this.idle && this.holdT >= this.nextIdle && debt + 1.25 * v < 1.5 * sig) {
+        } else if ((opts.idles ?? true) && opts.climbing && !this.idle && this.holdT >= this.nextIdle && debt + 1.25 * v < 1.4 * sig) {
           const kinds: IdleKind[] = ['regrip', 'shift', 'heel', 'look'];
           let k = kinds[Math.floor(this.rng() * kinds.length)];
           if (k === this.lastIdle) k = kinds[(kinds.indexOf(k) + 1) % kinds.length];
@@ -202,7 +204,11 @@ export class Gait {
     const ps = this.pelvisS();
     this.vel = dt > 0 ? (ps - this.lastPelvisS) / dt : 0;
     this.lastPelvisS = ps;
-    const target = Math.min(0.03, Math.max(0, this.vel) * 0.024);
+    // driven by the surge (forward acceleration): the stone lags as the pelvis speeds up, then the arms re-lock
+    const v0 = this.velPrev; this.velPrev = this.vel;
+    const acc = dt > 0 ? (this.vel - v0) / dt : 0;
+    this.accF += (acc - this.accF) * Math.min(1, dt * 20);
+    const target = Math.min(13, Math.max(0, this.accF) * (5.5 * this.v.T * this.v.T / this.v.sigma)); // elbow give, degrees
     const a = -OMEGA_GIVE * OMEGA_GIVE * (this.give - target) - 2 * OMEGA_GIVE * this.giveV;
     this.giveV += a * dt; this.give = Math.max(0, this.give + this.giveV * dt);
     // raw channels for the lagged torso/head
@@ -321,15 +327,23 @@ export class Gait {
     } else swingLeg = legIK(pelvis, swingFoot.ankle, tan);
     const stanceLeg = legIK(pelvis, stanceFoot.ankle, tan);
     // Torso lean (lagged 50 ms) and shoulders.
-    const lean = (lean0(theta) + this.lagged('lean', 0.05) + this.v.lean * (stepping ? 1 : 0.5) + 1.5 * (noise1(this.t * 0.21 + this.seed) - 0.5) * 2 + st.lean) * DEG;
+    const leanBase = lean0(theta) + this.lagged('lean', 0.05) + this.v.lean * (stepping ? 1 : 0.5) + st.lean;
+    const leanDeg = leanBase + 0.25 * (noise1(this.t * 0.21 + this.seed) - 0.5) * 2;
     const drive = 0.01 * (1 + KEY.drive(k));
-    const sh0 = { x: pelvis.x + RIG.torso * Math.sin(lean) + tan.x * drive, y: pelvis.y + RIG.torso * Math.cos(lean) + tan.y * drive + 0.004 * b };
-    // Boulder from the shoulders: arms at extension e (elbow give / strain buckle).
-    const e = Math.max(0.94, EXT - this.give - st.ext);
+    // The shoulder comes from the pelvis without the idle weight shift or tremor (the torso tilts to absorb them),
+    // and the stone is solved from that shoulder: locked elbows are so sensitive that any other source of
+    // shoulder motion would make them wobble. The stone moves only with travel (and a slip).
+    const base0 = trail.at(pelvisS - id.shift);
+    const pelvis0 = { x: base0.x, y: base0.y + hh - st.tremor - 0.002 * b };
+    const shoulder = { x: pelvis0.x + RIG.torso * Math.sin(leanDeg * DEG) + tan.x * drive, y: pelvis0.y + RIG.torso * Math.cos(leanDeg * DEG) + tan.y * drive };
+    const lean = Math.atan2(shoulder.x - pelvis.x, shoulder.y - pelvis.y);
+    // elbow give in degrees from the locked 170° (the IK keeps both bones; extension follows from the angle)
+    const ua = RIG.upperArm, fa = RIG.foreArm, el = (170 - this.give) * DEG;
+    const eGive = Math.sqrt(ua * ua + fa * fa - 2 * ua * fa * Math.cos(el)) / ARM_CHAIN;
+    const e = Math.max(0.94, Math.min(eGive, EXT - st.ext));
     const A = e * ARM_CHAIN + RIG.wristToPalm + R + RIG.palm;
-    const sB = boulderSFor(trail, sh0, A, pelvisS + 0.3, pelvisS + 3, R);
+    const sB = boulderSFor(trail, shoulder, A, pelvisS + 0.3, pelvisS + 3, R);
     const centre = trail.centreAt(sB, R);
-    const shoulder = sh0;
     const dx = centre.x - shoulder.x, dy = centre.y - shoulder.y, dl = Math.hypot(dx, dy) || 1;
     const ux = dx / dl, uy = dy / dl;
     const handAt = (o: number): V => { const ang = Math.atan2(-uy, -ux) + o / R; return { x: centre.x + Math.cos(ang) * (R + RIG.palm), y: centre.y + Math.sin(ang) * (R + RIG.palm) }; };
@@ -347,7 +361,7 @@ export class Gait {
     const planted: [boolean, boolean] = nearIsFront ? [true, swingPlanted] : [swingPlanted, true];
     const rot = trail.centreArc(sB, R) / R;
     const elbow = Math.min(interiorDeg(arms[0]), interiorDeg(arms[1]));
-    const pose: Pose = { pelvis, shoulder, head, headAxis: axis, lean, legs, arms, hands, feet, facing: 1, breath: 1 + 0.015 * b, alpha: 1, load: this.give / 0.03 };
+    const pose: Pose = { pelvis, shoulder, head, headAxis: axis, lean, legs, arms, hands, feet, facing: 1, breath: 1 + 0.015 * b, alpha: 1, load: this.give / 13 };
     return { pose, centre, rot, sB, planted, elbow };
   }
 }
