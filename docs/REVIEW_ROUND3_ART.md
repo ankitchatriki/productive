@@ -195,3 +195,32 @@ The HUD strip is readable and calm (cream Plex on black, the Greek key filling c
 - The gait is a big step up: keyed, seeded, foot-locked and well tested (14 harness tests).
 - Performance is comfortably inside budget, and the first frame is down from about 250 ms to under 40 ms.
 - The old light model, textures and roll-back are deleted as planned.
+
+## Resolution
+
+Coder, fix round on `round3`. Every major and minor finding (U1–U13) is fixed. U14 is mostly fixed, and U15 is left for the planner. Each finding was checked in the real app (Playwright) or on the real trail before it was fixed. 314 tests pass, and `tsc` and `vite build` are clean.
+
+| # | Outcome | Commit |
+|---|---|---|
+| U1 | **Fixed.** The standing pose and every frame of the step-through lower the pelvis under the leg-reach ceiling, so each leg ends exactly at its foot (also through overtime). Test: leg end = ankle ≤ 1 px across the step-through and for hold positions around the ledge. | d09a422 |
+| U12 | **Fixed.** The far hand stays flat on the stone while the weight comes off it, then releases and drops; it spends ≤ 0.18 s near the stone (test). | d09a422 |
+| U2 | **Fixed. Decision: +5 from the summit keeps the summit until the extension ends.** The mountain state is untouched and the scene stays in the summit tableau (dusk). Pauses, saves and clock-outs add no distance, and the extension ending doesn't count the summit twice. The next block starts in the col beyond this summit, so no other crest is ever shown during an extension. Tests: in the reducer, the drawn climb is identical across 8 min of overtime and the +5; on the engine (stub canvas), the framing and position stay fixed and he stays standing through the extension and after it ends. | c1c541c |
+| U3, U11 | **Fixed (clean cut).** The next climb is a single-frame cut to the col: the climber is already braced behind the stone, the camera is on its tracking frame, and every cache is rebuilt for that frame. There's no pan through empty sky, no fade and no double exposure. Engine test: every drawn frame of the transition has the figure fully drawn and on screen, zoom 1, and the slope at 20–80 % of the frame. Pixel check in the app: the largest single colour in the transition frames is the slope black (46 %, the same as any climbing frame); no flat range fill dominates. The §5.4 forward roll is dropped in favour of the cut. | f7e2d2a |
+| U8 | **Fixed.** At each hour of an open-ended block the climb holds on its summit for 8 s while he heaves onto the ledge and stands, then cuts to the col. Domain and engine tests. | f7e2d2a |
+| U5 | **Fixed.** Reduced-motion stills count as frames and build every strip and cloud at once. Engine test: 3 ranges and ≥ 3 clouds drawn. | f7e2d2a |
+| U4 | **Fixed.** Ahead of the stone, each range column is limited against the *real* slope skyline with a soft minimum. Peaks keep their shape and sink behind the slope, with no shelves and no wedge, including at the col start. Strips rebuild when the stone or the skyline moves. Test: the soft cap is strictly increasing and never exceeds the limit. | 6dfb6f3 |
+| U10 + motion note | **Fixed.** The torso lean rises to 16° at 22° and the head goes back to 70°/100°. The stride is longer (+0.08 / −0.22 H, rear foot on the ball at 30°) and the rear leg is straight at 170°. The far shoulder and hand are offset so both arms read. Feet stay locked and hands stay on the stone: all harness checks hold. The pelvis is 0.36 H, because leg reach caps it with a longer stride. | cb762d4 |
+| U6 | **Fixed.** In the summit framing the ranges and cloud sea sink below the ledge, and the ledge moves left so the cairn and the back side clear the panel. | de4934b |
+| U7 | **Fixed.** In reduced motion the readout and climb strip stay visible (60 %) when the chrome hides. | de4934b |
+| U9 | **Fixed.** Paused greys the horizon band. | de4934b |
+| U13 | **Fixed.** Returning to a tab far behind re-plants the climber under a cross-fade. | de4934b |
+| U14 | **Partly fixed.** The rim and slope flecks are now uneven: dots and strokes of varied length. | this commit |
+| U15 | **Not changed.** The anchor follows the spec table; the planner should confirm. | — |
+
+Performance (headless, 1440×900 @2): about 4.4 ms on average while climbing. In the last ~20 s, when the end clamp engages, the range strips rebuild more often and the average rises to about 6.4 ms, still 28–30 fps.
+
+Retaken screenshots in `docs/screenshots/round3-art/`:
+- `focus-p0.5.png`, `phone-p0.5.png`, `reduced-p0.5.png`;
+- `push-01…12.png` and `push-sheet.png`;
+- `summit-reveal.png`;
+- `next-climb-sheet.png` (summit, then 5 frames after Keep going) and `next-col-start.png`.

@@ -80,7 +80,7 @@ export function detailsIn(sA: number, sB: number, startH: number): Detail[] {
   for (let i = Math.floor((startH + sA) * 14); i <= Math.ceil((startH + sB) * 14); i++) {
     const s = i / 14 - startH + (h(i) - 0.5) / 14;
     const r = h(i + 0.5);
-    out.push({ kind: 'fleck', s, depth: 0.02 + Math.pow(h(i + 0.3), 1.2) * 0.16, size: 0.02 + h(i + 0.7) * 0.04, salmon: r < 1 / 6, seed: i });
+    out.push({ kind: 'fleck', s, depth: 0.02 + Math.pow(h(i + 0.3), 1.2) * 0.16, size: h(i + 0.9) < 0.3 ? 0.006 : 0.012 + Math.pow(h(i + 0.7), 1.5) * 0.06, salmon: r < 1 / 6, seed: i });
   }
   // stones every ~1.4 H, tufts every ~3 H, cracks every ~4.5 H (cells with jitter)
   const cells = (every: number, kind: Detail['kind'], salt: number) => {

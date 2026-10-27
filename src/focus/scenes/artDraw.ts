@@ -180,8 +180,8 @@ export function buildBoulderSprite(Rpx: number, scale: number, seed = 31, lw = 1
     // denser on the lower half (the half that faces the slope in the sprite's rest frame)
     let a = r() * Math.PI * 2;
     if (Math.sin(a) < 0 && r() < 0.4) a = -a;
-    const inset = 1 + r() * 5;
-    const len = 3 + r() * 7;
+    const inset = 1 + r() * 6;
+    const len = r() < 0.25 ? 0.6 : 1.5 + Math.pow(r(), 1.6) * 9; // a speckle: dots and strokes of uneven length (U14)
     const rr = Rpx - inset;
     const t = { x: -Math.sin(a), y: Math.cos(a) };
     const p = { x: Math.cos(a) * rr, y: Math.sin(a) * rr };
