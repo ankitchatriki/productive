@@ -5,7 +5,7 @@ import { useToast } from '../hooks/useToast';
 import { entryFromTimer } from '../domain/entries';
 import { formatDuration, toDateKey, weekStartOf } from '../domain/time';
 import { newId } from '../domain/ids';
-import type { ActiveTimer, AppData, Id } from '../domain/types';
+import type { ActiveTimer, AppData, BlockChoice, Id, IsoInstant, SceneId } from '../domain/types';
 
 export interface TimerTarget { courseId: Id; sectionId: Id | null }
 
@@ -14,6 +14,18 @@ export function defaultTimerTarget(data: AppData, now: Date): TimerTarget | null
   const today = toDateKey(now);
   const sid = data.weekPlans[weekStartOf(today)]?.sectionByDay[today];
   const assigned = sid ? data.sections.find((s) => s.id === sid) : undefined;
+  // Round 2 (FOCUS_PLAN §3.2): a planned block containing now comes first.
+  const nowMin = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  const block = (data.weekPlans[weekStartOf(today)]?.blocks ?? [])
+    .filter((b) => b.date === today && b.startMin <= nowMin && nowMin < b.endMin)
+    .sort((a, b) => b.startMin - a.startMin)
+    .find((b) => data.courses.some((c) => c.id === b.courseId && !c.archived));
+  if (block) {
+    const bs = block.sectionId ? data.sections.find((s) => s.id === block.sectionId) : undefined;
+    if (bs && !bs.completedAt && bs.courseId === block.courseId) return { courseId: block.courseId, sectionId: bs.id };
+    if (assigned && assigned.courseId === block.courseId) return { courseId: block.courseId, sectionId: assigned.id };
+    return { courseId: block.courseId, sectionId: null };
+  }
   if (assigned && data.courses.some((c) => c.id === assigned.courseId && !c.archived)) return { courseId: assigned.courseId, sectionId: assigned.id };
   const last = [...data.entries].sort((a, b) => b.end.localeCompare(a.end)).find((e) => data.courses.some((c) => c.id === e.courseId && !c.archived));
   if (last) {
@@ -37,10 +49,14 @@ export function useTimerActions() {
     dispatch({ type: 'timer/start', timer });
   }, [data.activeTimer, dispatch]);
 
-  const clockOut = useCallback(() => {
+  /** Clock out (optionally at an earlier instant, e.g. the block end). Ends any focus session. */
+  const clockOut = useCallback((stopAt?: IsoInstant) => {
     const t = data.activeTimer;
-    if (!t) return;
-    const now = new Date().toISOString();
+    if (!t) {
+      if (data.focus) { dispatch({ type: 'focus/end' }); toast.show('Focus session ended.'); }
+      return;
+    }
+    const now = stopAt ?? new Date().toISOString();
     const id = newId();
     const result = entryFromTimer(t, now, id, data.entries);
     dispatch({ type: 'timer/stop', now, newEntryId: id });
@@ -70,5 +86,41 @@ export function useTimerActions() {
     }
   }, [data, dispatch, toast, courseName]);
 
-  return { clockIn, clockOut, switchTo };
+  // ---------- Focus (FOCUS_PLAN.md §5.4) ----------
+  const startFocus = useCallback((opts: { target: TimerTarget & { note?: string }; blockMinutes: number | null; choice: BlockChoice['kind']; scene: SceneId; immersive: boolean }) => {
+    dispatch({
+      type: 'focus/start', now: new Date().toISOString(), id: newId(),
+      target: { courseId: opts.target.courseId, sectionId: opts.target.sectionId, note: opts.target.note ?? '' },
+      blockMinutes: opts.blockMinutes, choice: opts.choice, scene: opts.scene, immersive: opts.immersive,
+    });
+  }, [dispatch]);
+
+  /** Returns a short message for the HUD when the stopped piece was discarded. */
+  const pause = useCallback((): string | null => {
+    const t = data.activeTimer;
+    if (!t || data.focus?.phase !== 'focus') return null;
+    const now = new Date().toISOString();
+    const id = newId();
+    const r = entryFromTimer(t, now, id, data.entries);
+    dispatch({ type: 'focus/pause', now, newEntryId: id });
+    return r.kind === 'discarded' ? 'Under a minute — not logged' : null;
+  }, [data, dispatch]);
+
+  const resume = useCallback(() => dispatch({ type: 'focus/resume', now: new Date().toISOString() }), [dispatch]);
+  const extend = useCallback((minutes: number) => dispatch({ type: 'focus/extend', now: new Date().toISOString(), minutes }), [dispatch]);
+  const keepGoing = useCallback(() => dispatch({ type: 'focus/nextBlock', now: new Date().toISOString() }), [dispatch]);
+  const nextBlock = useCallback((blockMinutes?: number | null) => dispatch({ type: 'focus/nextBlock', now: new Date().toISOString(), blockMinutes }), [dispatch]);
+  const extendBreak = useCallback((minutes: number) => dispatch({ type: 'focus/extendBreak', minutes }), [dispatch]);
+  const endSession = useCallback(() => dispatch({ type: 'focus/end' }), [dispatch]);
+
+  /** Start a break; `stopAtBlockEnd` bills only up to the block's end instant. */
+  const startBreak = useCallback((minutes: number, stopAtBlockEnd = false) => {
+    const s = data.focus;
+    if (!s) return;
+    const now = new Date().toISOString();
+    const stopAt = stopAtBlockEnd && s.completedAt ? s.completedAt : now;
+    dispatch({ type: 'focus/startBreak', now, stopAt, newEntryId: newId(), minutes });
+  }, [data.focus, dispatch]);
+
+  return { clockIn, clockOut, switchTo, startFocus, pause, resume, extend, keepGoing, nextBlock, extendBreak, endSession, startBreak };
 }

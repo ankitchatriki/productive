@@ -1,4 +1,4 @@
-import type { ActiveTimer, AppData, Course, DateKey, Goal, Id, IsoInstant, ScheduledBlock, Section, Settings, TimeEntry, WeekKey, WeekPlan } from '../domain/types';
+import type { ActiveTimer, AppData, BlockChoice, Course, DateKey, FocusSettings, FocusTarget, Goal, Id, IsoInstant, SceneId, ScheduledBlock, Section, Settings, TimeEntry, WeekKey, WeekPlan } from '../domain/types';
 
 export type Action =
   | { type: 'settings/update'; patch: Partial<Settings> }
@@ -27,7 +27,21 @@ export type Action =
   | { type: 'timer/restore'; timer: ActiveTimer; removeEntryId: Id | null }
   | { type: 'section/restore'; record: SectionDeleteRecord }
   | { type: 'plan/insertGoal'; weekStart: WeekKey; goal: Goal; index: number; now: IsoInstant }
-  | { type: 'plan/fillDays'; weekStart: WeekKey; sectionByDay: Record<DateKey, Id | null> };
+  | { type: 'plan/fillDays'; weekStart: WeekKey; sectionByDay: Record<DateKey, Id | null> }
+  // Focus mode (FOCUS_PLAN.md §5.2)
+  | { type: 'focus/start'; now: IsoInstant; id: Id; target: FocusTarget; blockMinutes: number | null;
+      choice: BlockChoice['kind']; scene: SceneId; immersive: boolean }
+  | { type: 'focus/pause'; now: IsoInstant; newEntryId: Id }
+  | { type: 'focus/resume'; now: IsoInstant }
+  | { type: 'focus/complete'; at: IsoInstant }
+  | { type: 'focus/extend'; now: IsoInstant; minutes: number }
+  | { type: 'focus/nextBlock'; now: IsoInstant; blockMinutes?: number | null }
+  | { type: 'focus/startBreak'; now: IsoInstant; stopAt: IsoInstant; newEntryId: Id; minutes: number }
+  | { type: 'focus/extendBreak'; minutes: number }
+  | { type: 'focus/setImmersive'; immersive: boolean }
+  | { type: 'focus/setScene'; scene: SceneId }
+  | { type: 'focus/end' }
+  | { type: 'focus/settings'; patch: Partial<FocusSettings> };
 
 /** What a section delete changed, so Undo can put back exactly that. */
 export interface SectionDeleteRecord {

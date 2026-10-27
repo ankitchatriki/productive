@@ -1,5 +1,6 @@
 // Pure reducer. Receives `now` inside actions; never reads the clock itself.
-import type { AppData, Id, WeekPlan } from '../domain/types';
+import type { AppData, FocusSession, Id, WeekPlan } from '../domain/types';
+import { MAX_BLOCK_MINUTES, focusedMs } from '../domain/focus';
 import type { Action, SectionDeleteRecord } from './actions';
 import { entryFromTimer } from '../domain/entries';
 import { normalizeOrder, reorder } from '../domain/sections';
@@ -51,6 +52,18 @@ export function sectionDeleteRecord(state: AppData, id: Id): SectionDeleteRecord
   };
 }
 
+/** Stop the running timer (entry per §4.7) without touching the focus session. */
+function stopTimerOnly(state: AppData, now: string, newEntryId: Id): AppData {
+  if (!state.activeTimer) return state;
+  const r = entryFromTimer(state.activeTimer, now, newEntryId, state.entries);
+  return { ...state, activeTimer: null, entries: r.kind === 'entry' ? [...state.entries, r.entry] : state.entries };
+}
+
+function withFocus(state: AppData, phases: FocusSession['phase'][], fn: (s: FocusSession) => AppData): AppData {
+  const s = state.focus;
+  return s && phases.includes(s.phase) ? fn(s) : state;
+}
+
 export function reducer(state: AppData, action: Action): AppData {
   switch (action.type) {
     case 'settings/update':
@@ -71,6 +84,7 @@ export function reducer(state: AppData, action: Action): AppData {
         courses: state.courses.filter((c) => c.id !== action.id),
         sections: state.sections.filter((s) => s.courseId !== action.id),
         activeTimer: state.activeTimer?.courseId === action.id ? null : state.activeTimer,
+        focus: state.focus?.target.courseId === action.id ? null : state.focus,
         weekPlans: mapPlans(state, (p) => {
           const cleared = clearSectionRefs(p, removedSections);
           return {
@@ -100,6 +114,7 @@ export function reducer(state: AppData, action: Action): AppData {
         sections: normalizeOrder(state.sections.filter((s) => s.id !== action.id), target.courseId),
         entries: state.entries.map((e) => (e.sectionId === action.id ? { ...e, sectionId: null } : e)),
         activeTimer: state.activeTimer?.sectionId === action.id ? { ...state.activeTimer, sectionId: null } : state.activeTimer,
+        focus: state.focus?.target.sectionId === action.id ? { ...state.focus, target: { ...state.focus.target, sectionId: null } } : state.focus,
         weekPlans: mapPlans(state, (p) => clearSectionRefs(p, ids)),
       };
     }
@@ -121,19 +136,100 @@ export function reducer(state: AppData, action: Action): AppData {
 
     case 'timer/start':
       if (state.activeTimer) return state;
-      return { ...state, activeTimer: action.timer };
+      return { ...state, activeTimer: action.timer, focus: state.focus && (state.focus.phase === 'paused' || state.focus.phase === 'break') ? null : state.focus };
 
     case 'timer/stop': {
       if (!state.activeTimer) return state;
-      const r = entryFromTimer(state.activeTimer, action.now, action.newEntryId, state.entries);
-      return { ...state, activeTimer: null, entries: r.kind === 'entry' ? [...state.entries, r.entry] : state.entries };
+      return { ...stopTimerOnly(state, action.now, action.newEntryId), focus: null };
     }
 
     case 'timer/switch': {
       if (!state.activeTimer) return state;
-      const stopped = reducer(state, { type: 'timer/stop', now: action.now, newEntryId: action.newEntryId });
-      return { ...stopped, activeTimer: { ...action.next, startedAt: action.now } };
+      const stopped = stopTimerOnly(state, action.now, action.newEntryId);
+      return {
+        ...stopped,
+        activeTimer: { ...action.next, startedAt: action.now },
+        focus: state.focus ? { ...state.focus, target: { courseId: action.next.courseId, sectionId: action.next.sectionId, note: action.next.note } } : null,
+      };
     }
+
+    // ---------- Focus mode ----------
+    case 'focus/start': {
+      if (state.focus) return state;
+      const t = state.activeTimer;
+      const target = t ? { courseId: t.courseId, sectionId: t.sectionId, note: t.note } : action.target;
+      if (!state.courses.some((c) => c.id === target.courseId)) return state;
+      const session: FocusSession = {
+        id: action.id, target, choice: action.choice, blockMinutes: action.blockMinutes,
+        blockStartedAt: action.now, focusedMsBefore: 0, segmentStartedAt: action.now, phase: 'focus',
+        completedAt: null, pausedAt: null, breakMinutes: null, breakStartedAt: null, breakEndsAt: null,
+        blocksCompleted: 0, scene: action.scene, immersive: action.immersive,
+      };
+      return { ...state, activeTimer: t ?? { ...target, startedAt: action.now }, focus: session };
+    }
+
+    case 'focus/pause':
+      return withFocus(state, ['focus'], (s) => ({
+        ...stopTimerOnly(state, action.now, action.newEntryId),
+        focus: { ...s, focusedMsBefore: focusedMs(s, new Date(action.now)), segmentStartedAt: null, phase: 'paused', pausedAt: action.now },
+      }));
+
+    case 'focus/resume':
+      return withFocus(state, ['paused'], (s) => ({
+        ...state,
+        activeTimer: { ...s.target, startedAt: action.now },
+        focus: { ...s, segmentStartedAt: action.now, pausedAt: null, phase: 'focus' },
+      }));
+
+    case 'focus/complete':
+      return withFocus(state, ['focus'], (s) => (s.blockMinutes === null ? state : { ...state, focus: { ...s, phase: 'complete', completedAt: action.at } }));
+
+    case 'focus/extend':
+      return withFocus(state, ['focus', 'complete'], (s) => {
+        if (s.blockMinutes === null) return state;
+        const blockMinutes = Math.min(MAX_BLOCK_MINUTES, Math.ceil(focusedMs(s, new Date(action.now)) / 60_000) + action.minutes);
+        return { ...state, focus: { ...s, blockMinutes, phase: 'focus', completedAt: null } };
+      });
+
+    case 'focus/nextBlock':
+      return withFocus(state, ['complete', 'break'], (s) => {
+        const next: FocusSession = {
+          ...s,
+          blocksCompleted: s.phase === 'complete' ? s.blocksCompleted + 1 : s.blocksCompleted,
+          blockMinutes: action.blockMinutes !== undefined ? action.blockMinutes : s.blockMinutes,
+          blockStartedAt: action.now, segmentStartedAt: action.now, focusedMsBefore: 0, phase: 'focus',
+          completedAt: null, pausedAt: null, breakMinutes: null, breakStartedAt: null, breakEndsAt: null,
+        };
+        if (s.phase === 'break') return { ...state, activeTimer: { ...s.target, startedAt: action.now }, focus: next };
+        return { ...state, focus: next };
+      });
+
+    case 'focus/startBreak':
+      return withFocus(state, ['focus', 'complete'], (s) => ({
+        ...stopTimerOnly(state, action.stopAt, action.newEntryId),
+        focus: {
+          ...s, blocksCompleted: s.blocksCompleted + 1, phase: 'break', breakMinutes: action.minutes, breakStartedAt: action.now,
+          breakEndsAt: new Date(Date.parse(action.now) + action.minutes * 60_000).toISOString(), segmentStartedAt: null, completedAt: null,
+        },
+      }));
+
+    case 'focus/extendBreak':
+      return withFocus(state, ['break'], (s) => ({
+        ...state,
+        focus: { ...s, breakEndsAt: new Date(Date.parse(s.breakEndsAt!) + action.minutes * 60_000).toISOString(), breakMinutes: (s.breakMinutes ?? 0) + action.minutes },
+      }));
+
+    case 'focus/setImmersive':
+      return state.focus && state.focus.immersive !== action.immersive ? { ...state, focus: { ...state.focus, immersive: action.immersive } } : state;
+
+    case 'focus/setScene':
+      return state.focus ? { ...state, focus: { ...state.focus, scene: action.scene } } : state;
+
+    case 'focus/end':
+      return state.focus ? { ...state, focus: null } : state;
+
+    case 'focus/settings':
+      return { ...state, settings: { ...state.settings, focus: { ...state.settings.focus, ...action.patch } } };
 
     case 'plan/ensure':
       if (state.weekPlans[action.weekStart]) return state;
@@ -170,6 +266,7 @@ export function reducer(state: AppData, action: Action): AppData {
         ...state,
         entries: action.removeEntryId ? state.entries.filter((e) => e.id !== action.removeEntryId) : state.entries,
         activeTimer: action.timer,
+        focus: state.focus && (state.focus.phase === 'paused' || state.focus.phase === 'break') ? null : state.focus,
       };
     }
 
