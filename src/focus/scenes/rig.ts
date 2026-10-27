@@ -185,16 +185,18 @@ export function solveHoldStatic(path: SlopePath, sP: number, R = RIG.boulderR): 
 /** Standing on the summit ledge with the near hand resting on the stone's upper flank (150°). */
 export function solveStand(path: SlopePath, _H: number, pelvisX: number, bc: V, opts: { sway: number; breath: number; leanDeg?: number; alpha?: number; handDeg?: number; chin?: number; feetX?: [number, number] }): Pose {
   const gy = path.groundY(pelvisX);
-  const pelvis = { x: pelvisX + opts.sway, y: gy + 0.505 };
+  const g = (x: number) => Math.atan2(path.groundY(x + 0.01) - path.groundY(x - 0.01), 0.02);
+  const fx = opts.feetX ?? [pelvisX + 0.07 + RIG.heelToBall * 0.4, pelvisX - 0.05 + RIG.heelToBall * 0.4];
+  const feet = fx.map((x) => footAt({ x, y: path.groundY(x) }, g(x), 0)) as [FootPose, FootPose];
+  // standing tall, but never taller than both legs reach: the feet stay on the legs (review U1)
+  const hh = hipCeiling({ x: pelvisX + opts.sway, y: gy }, { x: 0, y: 1 }, 0.505, feet.map((f) => f.ankle), 0.985);
+  const pelvis = { x: pelvisX + opts.sway, y: gy + hh };
   const lean = (opts.leanDeg ?? 3) * DEG;
   const shoulder = { x: pelvis.x + RIG.torso * Math.sin(lean), y: pelvis.y + RIG.torso * Math.cos(lean) };
   const chin = opts.chin ?? 0;
   const neckEnd = { x: shoulder.x + Math.sin(12 * DEG) * RIG.neck, y: shoulder.y + Math.cos(12 * DEG) * RIG.neck };
   const axis = (8 - 20 * chin) * DEG;
   const head = { x: neckEnd.x + Math.sin(axis) * RIG.head * 0.5, y: neckEnd.y + Math.cos(axis) * RIG.head * 0.5 };
-  const g = (x: number) => Math.atan2(path.groundY(x + 0.01) - path.groundY(x - 0.01), 0.02);
-  const fx = opts.feetX ?? [pelvisX + 0.07 + RIG.heelToBall * 0.4, pelvisX - 0.05 + RIG.heelToBall * 0.4];
-  const feet = fx.map((x) => footAt({ x, y: path.groundY(x) }, g(x), 0)) as [FootPose, FootPose];
   const legs = feet.map((f) => legIK(pelvis, f.ankle, { x: 1, y: 0 })) as [Limb, Limb];
   const R = RIG.boulderR;
   const a = (opts.handDeg ?? 150) * DEG;
@@ -291,7 +293,12 @@ export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, b
   const moving = footAt({ x: sx, y: path.groundY(sx) + lift }, g(sx), (1 - es) * 25 * DEG);
   const planted = footAt(front, g(front.x), 0);
   const feet = (fi === 0 ? [planted, moving] : [moving, planted]) as [FootPose, FootPose];
-  const legs = feet.map((f) => legIK(b.pelvis, f.ankle, { x: 1, y: 0 })) as [Limb, Limb];
+  const base = { x: b.pelvis.x, y: path.groundY(b.pelvis.x) };
+  const hh = hipCeiling(base, { x: 0, y: 1 }, b.pelvis.y - base.y, feet.map((f) => f.ankle), 0.985);
+  const pelvis = { x: b.pelvis.x, y: base.y + hh };
+  const dy = pelvis.y - b.pelvis.y;
+  b.pelvis = pelvis; b.shoulder = { x: b.shoulder.x, y: b.shoulder.y + dy }; b.head = { x: b.head.x, y: b.head.y + dy };
+  const legs = feet.map((f) => legIK(pelvis, f.ankle, { x: 1, y: 0 })) as [Limb, Limb];
   // near hand slides around the stone surface from the pushing face to 150°
   const a0 = Math.atan2(hold.hands![0].y - centre.y, hold.hands![0].x - centre.x);
   let a1 = 150 * DEG;
@@ -300,9 +307,21 @@ export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, b
   const an = a0 + (a1 - a0) * e;
   const palm = { x: centre.x + Math.cos(an) * (R + RIG.palm), y: centre.y + Math.sin(an) * (R + RIG.palm) };
   const near = armIK(b.shoulder, { x: palm.x + Math.cos(an) * RIG.wristToPalm, y: palm.y + Math.sin(an) * RIG.wristToPalm });
-  const farEnd = { x: hold.arms[1].end.x + (stand.arms[1].end.x - hold.arms[1].end.x) * e, y: hold.arms[1].end.y + (stand.arms[1].end.y - hold.arms[1].end.y) * e };
-  const far = armIK(b.shoulder, farEnd);
-  return { ...b, feet, legs, arms: [near, far], hands: [palm, farEnd] };
+  // far hand: stays flat on the stone while the weight comes off it, then releases and drops to hang (review U12)
+  const hf = hold.hands![1];
+  const fa = Math.atan2(hf.y - centre.y, hf.x - centre.x);
+  const onStone = { x: centre.x + Math.cos(fa) * (R + RIG.palm), y: centre.y + Math.sin(fa) * (R + RIG.palm) };
+  const rel = easeInOut(Math.min(1, Math.max(0, (k - 0.35) / 0.55)));
+  let farHand: V, far: Limb;
+  if (rel <= 0) {
+    farHand = onStone;
+    far = armIK(b.shoulder, { x: onStone.x + Math.cos(fa) * RIG.wristToPalm, y: onStone.y + Math.sin(fa) * RIG.wristToPalm });
+  } else {
+    const w0 = { x: onStone.x + Math.cos(fa) * RIG.wristToPalm, y: onStone.y + Math.sin(fa) * RIG.wristToPalm };
+    farHand = { x: w0.x + (stand.arms[1].end.x - w0.x) * rel, y: w0.y + (stand.arms[1].end.y - w0.y) * rel };
+    far = armIK(b.shoulder, farHand);
+  }
+  return { ...b, feet, legs, arms: [near, far], hands: [palm, rel <= 0 ? onStone : farHand] };
 }
 
 /** Pelvis position whose hold pose rests the stone at `stoneS` (the summit ledge's start), by fixed-point iteration. */

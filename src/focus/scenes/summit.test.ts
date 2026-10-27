@@ -27,16 +27,29 @@ for (const minutes of [25, 50]) {
     });
 
     it('stepping through to stand: feet planted or arcing above ground, only the resting palm on the stone', () => {
+      let hover = 0;
       for (let k = 0; k <= 1.0001; k += 0.05) {
         const p = stepToStand(trail, fr.pose, fr.centre, k);
         for (const f of p.feet!) for (const q of [f.ball, f.heel, f.toe]) expect((q.y - trail.groundY(q.x)) * HPX).toBeGreaterThanOrEqual(-1);
         for (const j of [p.pelvis, p.shoulder, p.head, ...p.legs.flatMap((l) => [l.joint, l.end]), ...p.arms.map((a) => a.joint), p.arms[1].end]) expect(dist(j, fr.centre)).toBeGreaterThan(RIG.boulderR + 0.02);
         expect(Math.abs(dist(p.hands![0], fr.centre) - RIG.boulderR - RIG.palm) * HPX).toBeLessThanOrEqual(2);
+        // the feet stay on the legs: each leg's IK end is its foot's ankle (review U1)
+        p.legs.forEach((l, i) => expect(dist(l.end, p.feet![i].ankle) * HPX).toBeLessThanOrEqual(1));
+        // the far hand is flat on the stone or clearly releasing (it never hovers just off it, U12)
+        const gapF = (dist(p.hands![1], fr.centre) - RIG.boulderR - RIG.palm) * HPX;
+        if (gapF > 2 && gapF < 12) hover++;
         for (const l of [...p.legs, ...p.arms]) { expect(interior(l)).toBeGreaterThanOrEqual(35); expect(interior(l)).toBeLessThanOrEqual(179.9); }
       }
+      expect(hover).toBeLessThanOrEqual(3); // ≤ 0.18 s of the 1.2 s stand passing through the near band
       const stand = stepToStand(trail, fr.pose, fr.centre, 1);
       expect(Math.abs((Math.atan2(stand.hands![0].y - fr.centre.y, stand.hands![0].x - fr.centre.x) * 180) / Math.PI - 150)).toBeLessThan(1);
       expect(stand.lean).toBeLessThan(0.1); // upright
+      // overtime: the standing pose holds with every foot on its leg for any hold position near the ledge
+      for (const dd of [-0.3, -0.15, 0.15]) {
+        const g2 = new Gait(9); g2.snap(D + dd, trail); const f2 = g2.pose(trail);
+        const st = stepToStand(trail, f2.pose, f2.centre, 1, 1.015);
+        st.legs.forEach((l, i) => expect(dist(l.end, st.feet![i].ankle) * HPX).toBeLessThanOrEqual(1));
+      }
     });
 
     it('break: seated against the stone on the ledge, facing downhill', () => {
