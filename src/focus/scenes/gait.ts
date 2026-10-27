@@ -314,8 +314,8 @@ export class Gait {
     let hh = h0(theta) + KEY.hipDy(k) + 0.004 * b * 0.5 + st.dy + st.tremor;
     const ankles = [stanceFoot.ankle];
     if (swingPlanted) ankles.push(swingFoot.ankle);
-    hh = hipCeiling(base, { x: 0, y: 1 }, hh, ankles, LEG_MAX);
-    const pelvis = { x: base.x, y: base.y + hh };
+    hh = hipCeiling(base, nrm, hh, ankles, LEG_MAX);
+    const pelvis = { x: base.x + nrm.x * hh, y: base.y + nrm.y * hh }; // along the slope normal (ROUND4 §3.4)
     // Swing leg in the air: keyed FK, blended to IK toward the plant target from u 0.62 to 0.80.
     let swingLeg: Limb;
     if (!swingPlanted && swingTarget) {
@@ -339,13 +339,14 @@ export class Gait {
     const stanceLeg = legIK(pelvis, stanceFoot.ankle, tan);
     // Torso lean (lagged 50 ms) and shoulders.
     const leanBase = lean0(theta) + this.lagged('lean', 0.05) + this.v.lean * (stepping ? 1 : 0.5) + st.lean;
-    const leanDeg = leanBase + 0.25 * (noise1(this.t * 0.21 + this.seed) - 0.5) * 2;
+    const leanDeg = leanBase + 0 * this.seed; // lean noise returns with the S2 trudge (it must not pump the stone ratchet)
     const drive = 0.01 * (1 + KEY.drive(k));
     // The shoulder comes from the pelvis without the idle weight shift or tremor (the torso tilts to absorb them),
     // and the stone is solved from that shoulder: locked elbows are so sensitive that any other source of
     // shoulder motion would make them wobble. The stone moves only with travel (and a slip).
     const base0 = trail.at(pelvisS - id.shift);
-    const pelvis0 = { x: base0.x, y: base0.y + hh - st.tremor - 0.002 * b };
+    const n0 = trail.normalAt(pelvisS - id.shift), h0n = hh - st.tremor - 0.002 * b;
+    const pelvis0 = { x: base0.x + n0.x * h0n, y: base0.y + n0.y * h0n };
     const shoulder = { x: pelvis0.x + RIG.torso * Math.sin(leanDeg * DEG) + tan.x * drive, y: pelvis0.y + RIG.torso * Math.cos(leanDeg * DEG) + tan.y * drive };
     const lean = Math.atan2(shoulder.x - pelvis.x, shoulder.y - pelvis.y);
     // elbow give in degrees from the locked 170° (the IK keeps both bones; extension follows from the angle)
@@ -362,12 +363,13 @@ export class Gait {
     const ux = dx / dl, uy = dy / dl;
     const handAt = (o: number): V => { const ang = Math.atan2(-uy, -ux) + o / R; return { x: centre.x + Math.cos(ang) * (R + RIG.palm), y: centre.y + Math.sin(ang) * (R + RIG.palm) }; };
     const hands: [V, V] = [handAt(HAND_NEAR - id.regrip), handAt(HAND_FAR)];
-    const arms = hands.map((p, i) => {
+    const wrists = hands.map((p) => {
       const nx = (p.x - centre.x) / (R + RIG.palm), ny = (p.y - centre.y) / (R + RIG.palm);
       const tr = { x: nx * st.tremor * 0.5, y: ny * st.tremor * 0.5 };
-      const wrist = { x: p.x + nx * RIG.wristToPalm + tr.x, y: p.y + ny * RIG.wristToPalm + tr.y };
-      return armIK(i === 1 ? farShoulder(shoulder, wrist) : shoulder, wrist);
-    }) as [Limb, Limb];
+      return { x: p.x + nx * RIG.wristToPalm + tr.x, y: p.y + ny * RIG.wristToPalm + tr.y };
+    });
+    const dNear = Math.hypot(wrists[0].x - shoulder.x, wrists[0].y - shoulder.y);
+    const arms = [armIK(shoulder, wrists[0]), armIK(farShoulder(shoulder, wrists[1], dNear), wrists[1])] as [Limb, Limb];
     const pitch = this.lagged('pitch', 0.15) + st.head + id.look;
     const { head, axis } = headFrom(shoulder, pitch);
     const nearIsFront = this.front === 0;

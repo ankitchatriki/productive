@@ -435,7 +435,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   // ---------- chains (loincloth flaps) ----------
   function updateChains(pose: Pose, dt: number, rest: boolean) {
     const anchors = clothAnchors(pose);
-    if (!chains) { chains = anchors.map((a) => makeChain(a, 3, 0.30 / 8, 30, 0.6)); rest = true; }
+    if (!chains) {
+      // front and back flaps (3 links; phone 2) and the belt knot's two tails (2 links) — ROUND4 §6.4
+      const flapLinks = lay.landscape ? 3 : 2;
+      chains = anchors.map((a, i) => (i < 2 ? makeChain(a, flapLinks, 0.24 / 8, 30, 0.6) : makeChain(a, 2, 0.16 / 8, 35, 0.9)));
+      rest = true;
+    }
     const grav = 9;
     const wx = wind(ambientT) * 6;
     if (rest) { chains.forEach((c, i) => solveRest(c, anchors[i], { x: 0, y: -1 }, grav, wx)); return; }
@@ -448,8 +453,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const l = Math.hypot(d.x, d.y) || 1;
     const up = { x: d.x / l, y: d.y / l };
     const front = { x: up.y * pose.facing, y: -up.x * pose.facing };
-    const low = 0.55 / 8;
-    return [1, -1].map((side) => ({ x: pose.pelvis.x + front.x * 0.06 * side - up.x * low, y: pose.pelvis.y + front.y * 0.06 * side - up.y * low }));
+    const low = 0.62 / 8;
+    const at = (f: number, dn: number) => ({ x: pose.pelvis.x + front.x * f - up.x * dn, y: pose.pelvis.y + front.y * f - up.y * dn });
+    // flaps hang from the wrap's hem at front and back; the knot tails from the belt knot at the front hip
+    return [at(0.055, low), at(-0.07, low), at(0.08, -0.01), at(0.085, -0.005)];
   }
 
   // ---------- sequences ----------

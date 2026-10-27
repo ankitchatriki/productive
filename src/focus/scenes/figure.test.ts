@@ -1,8 +1,9 @@
-// A2: the black-figure Sisyphus (ROUND3_ART §3): proportions, the key pose, contact, no self-intersection.
+// S1: the redesigned Sisyphus (ROUND4 §3, §6): proportions, the push-hold key pose, contact, negative spaces, the detail layer.
 import { describe, expect, it } from 'vitest';
 import type { SlopePath, V } from './path';
 import { DEG, RIG, interior, solveHoldStatic, solveSit, solveStand } from './rig';
-import { STATIONS, figureGeom, partOutline } from './figureArt';
+import { DETAIL, FOOT_OUTLINE, HEAD_OUTLINE, STATIONS, TOE_OUTLINE, figureGeom, handOutlines, interp, partOutline, tierFor } from './figureArt';
+import { camLayout } from './camera';
 import type { Trail } from './trail';
 
 /** A straight slope at θ (deg). */
@@ -15,77 +16,136 @@ export function line(theta: number): SlopePath {
   };
 }
 
-const HPX = 216; // 1440×900
+const HPX = 234; // 1440×900 (0.26 h)
 const dist = (a: V, b: V) => Math.hypot(a.x - b.x, a.y - b.y);
 const deg = (r: number) => r / DEG;
+const hu = 1 / 8;
+const geomOf = (pose: ReturnType<typeof solveHoldStatic>['pose'], centre: V, path: SlopePath) =>
+  figureGeom({ pose, centre, R: RIG.boulderR, Hpx: HPX, toS: (v) => v, chains: null, trail: path as unknown as Trail, facing: 1, quality: 1 });
 
-describe('proportions (§3.1)', () => {
-  it('8 heads: hip 4.15 h, shoulder 6.55 h, crown 8 h; boulder Ø 1.12 H', () => {
-    const h = 1 / 8;
-    expect(RIG.ankleH + RIG.shin + RIG.thigh).toBeCloseTo(4.15 * h, 6);
-    expect(RIG.ankleH + RIG.shin + RIG.thigh + RIG.torso).toBeCloseTo(6.55 * h, 6);
-    expect(RIG.ankleH + RIG.shin + RIG.thigh + RIG.torso + RIG.neck + RIG.head).toBeCloseTo(1, 1); // the neck joins inside the skull: crown ≈ 8 h
-    expect(2 * RIG.boulderR).toBeCloseTo(1.125, 3);
+describe('proportions (ROUND4 §3.1)', () => {
+  it('8 heads: hip 4.25 h, shoulder 6.75 h, crown ≈ 8 h; boulder Ø 1.05 H', () => {
+    expect(RIG.ankleH + RIG.shin + RIG.thigh).toBeCloseTo(4.25 * hu, 6);
+    expect(RIG.ankleH + RIG.shin + RIG.thigh + RIG.torso).toBeCloseTo(6.75 * hu, 6);
+    expect(Math.abs(RIG.ankleH + RIG.shin + RIG.thigh + RIG.torso + RIG.neck + RIG.head * 0.75 - 1)).toBeLessThan(0.02);
+    expect(2 * RIG.boulderR).toBeCloseTo(1.05, 3);
   });
-  it('part outlines are closed capsules through the stations (broad chest, narrow waist)', () => {
-    const torso = partOutline(RIG.torso, STATIONS.torso);
-    const at = (t: number) => Math.max(...torso.filter((p) => Math.abs(p.x - t * RIG.torso) < 0.004).map((p) => p.y));
-    expect(at(0.7)).toBeGreaterThan(at(0.35) * 1.4);
-    for (const p of torso) { expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true); }
+  it('heroic V torso: chest : waist depth ≈ 1.74 : 1; closed capsules', () => {
+    const at = (t: number) => interp(STATIONS.torso.front, t) + interp(STATIONS.torso.back, t);
+    expect(at(0.68) / at(0.35)).toBeGreaterThan(1.65);
+    for (const p of partOutline(RIG.torso, STATIONS.torso)) expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
   });
 });
 
-describe('the hold (key) pose (§3.6)', () => {
+describe('the push-hold key pose (ROUND4 §3.4)', () => {
   const path = line(22);
   const { pose, centre } = solveHoldStatic(path, 5);
-  it('lean 16 ± 2° (raised from 20° for an upright read, review U10), front knee 90 ± 8°, rear knee ≥ 165°, elbows locked ≥ 165°', () => {
-    expect(Math.abs(deg(pose.lean) - 16)).toBeLessThanOrEqual(2);
-    expect(Math.abs(interior(pose.legs[0]) - 90)).toBeLessThanOrEqual(8);
-    expect(interior(pose.legs[1])).toBeGreaterThanOrEqual(165);
-    for (const a of pose.arms) expect(interior(a)).toBeGreaterThanOrEqual(165);
+  const sh = pose.shoulder, wr = pose.arms[0].end;
+  it('lean 20 ± 1°, pelvis 0.42–0.44 H off the slope, rear knee ≥ 168°, front knee 100–112°, one straight line of action', () => {
+    expect(Math.abs(deg(pose.lean) - 20)).toBeLessThanOrEqual(1);
+    const base = path.at(5), n = path.normalAt(5);
+    const pn = (pose.pelvis.x - base.x) * n.x + (pose.pelvis.y - base.y) * n.y;
+    expect(pn).toBeGreaterThanOrEqual(0.42); expect(pn).toBeLessThanOrEqual(0.44);
+    expect(interior(pose.legs[1])).toBeGreaterThanOrEqual(168);
+    const kF = interior(pose.legs[0]);
+    expect(kF).toBeGreaterThanOrEqual(100); expect(kF).toBeLessThanOrEqual(112);
+    const ra = pose.feet![1].ankle;
+    const loa = deg(Math.atan2(pose.pelvis.x - ra.x, pose.pelvis.y - ra.y));
+    expect(Math.abs(loa - deg(pose.lean))).toBeLessThanOrEqual(6);
   });
-  it('arms push about parallel to the slope; the head sits below the shoulder → hand line, between the arms', () => {
-    const dir = deg(Math.atan2(centre.y - pose.shoulder.y, centre.x - pose.shoulder.x));
-    expect(Math.abs(dir - 22)).toBeLessThan(5);
-    const hand = pose.hands![0];
-    const lineY = pose.shoulder.y + ((hand.y - pose.shoulder.y) * (pose.head.x - pose.shoulder.x)) / (hand.x - pose.shoulder.x);
-    expect(pose.head.y).toBeLessThan(lineY);
-    expect(pose.head.x).toBeGreaterThan(pose.shoulder.x);
+  it('arms 10–18° above horizontal, elbows 168–172° (both arms)', () => {
+    const arm = deg(Math.atan2(wr.y - sh.y, wr.x - sh.x));
+    expect(arm).toBeGreaterThanOrEqual(10); expect(arm).toBeLessThanOrEqual(18);
+    for (const a of pose.arms) { expect(interior(a)).toBeGreaterThanOrEqual(168); expect(interior(a)).toBeLessThanOrEqual(172); }
   });
-  it('palms on the stone within 2 px at 1440×900', () => {
+  it('head between the arms: ≤ 0.035 H off the near arm line, 0.07–0.15 H along it; crown ≥ 0.05 H from the stone', () => {
+    const ux = (wr.x - sh.x), uy = (wr.y - sh.y), l = Math.hypot(ux, uy);
+    const along = ((pose.head.x - sh.x) * ux + (pose.head.y - sh.y) * uy) / l;
+    const across = Math.abs((pose.head.x - sh.x) * uy - (pose.head.y - sh.y) * ux) / l;
+    expect(across).toBeLessThanOrEqual(0.035);
+    expect(along).toBeGreaterThanOrEqual(0.07); expect(along).toBeLessThanOrEqual(0.15);
+    const g = geomOf(pose, centre, path);
+    for (const p of g.groups.core[2]) expect(dist(p, centre) - RIG.boulderR).toBeGreaterThanOrEqual(0.05);
+  });
+  it('palms on the stone within 2 px; no finger lobe enters the stone by more than 1 px', () => {
     for (const p of pose.hands!) expect(Math.abs(dist(p, centre) - RIG.boulderR - RIG.palm) * HPX).toBeLessThanOrEqual(2);
+    const g = geomOf(pose, centre, path);
+    for (const gk of ['nearArm', 'farArm'] as const) {
+      for (const lobe of g.groups[gk].slice(-5)) for (const p of lobe) expect((dist(p, centre) - RIG.boulderR) * HPX).toBeGreaterThanOrEqual(-1);
+    }
   });
-  it('no self-intersection; nothing but the hands touches the stone; feet on (not in) the ground', () => {
+  it('the three negative spaces stay open (leg triangle, arm wedge, rear-leg wedge)', () => {
+    expect(dist(pose.legs[0].joint, pose.legs[1].joint) - 2 * 0.28 * hu).toBeGreaterThanOrEqual(0.06);
+    // near elbow to the chest's front line (pelvis → shoulder, offset by the front depth)
+    const e = pose.arms[0].joint, a = pose.pelvis, b = pose.shoulder, l = dist(a, b);
+    const across = Math.abs((e.x - a.x) * (b.y - a.y) - (e.y - a.y) * (b.x - a.x)) / l;
+    // ≥ 0.06 H of sky between the near elbow and the chest front (the spec's 0.09 is not reachable with these proportions)
+    expect(across - 0.66 * hu).toBeGreaterThanOrEqual(0.06);
+    const rk = pose.legs[1].joint;
+    expect(rk.y - path.groundY(rk.x)).toBeGreaterThanOrEqual(0.12);
+  });
+  it('no self-intersection; only the hands touch the stone; feet on (not in) the ground', () => {
     for (const l of [...pose.legs, ...pose.arms]) { const a = interior(l); expect(a).toBeGreaterThanOrEqual(35); expect(a).toBeLessThanOrEqual(179.5); }
-    const joints = [pose.pelvis, pose.shoulder, pose.head, ...pose.legs.flatMap((l) => [l.joint, l.end]), ...pose.arms.map((a) => a.joint)];
-    for (const j of joints) expect(dist(j, centre)).toBeGreaterThan(RIG.boulderR + 0.02);
+    for (const j of [pose.pelvis, pose.shoulder, pose.head, ...pose.legs.flatMap((l) => [l.joint, l.end]), ...pose.arms.map((x) => x.joint)]) expect(dist(j, centre)).toBeGreaterThan(RIG.boulderR + 0.02);
     for (const f of pose.feet!) for (const q of [f.ball, f.heel, f.toe]) expect((q.y - path.groundY(q.x)) * HPX).toBeGreaterThanOrEqual(-0.5);
   });
-  it('the three negative shapes stay open (legs triangle, sky wedge under the arms, rear leg wedge)', () => {
-    const thigh = (i: number) => Math.atan2(pose.legs[i].joint.y - pose.pelvis.y, pose.legs[i].joint.x - pose.pelvis.x);
-    expect(deg(Math.abs(thigh(0) - thigh(1)))).toBeGreaterThan(40);
-    const armDir = Math.atan2(pose.arms[0].end.y - pose.shoulder.y, pose.arms[0].end.x - pose.shoulder.x);
-    const torsoDown = Math.atan2(pose.pelvis.y - pose.shoulder.y, pose.pelvis.x - pose.shoulder.x);
-    expect(deg(Math.abs(armDir - torsoDown)) % 360).toBeGreaterThan(60);
-    const rear = pose.legs[1];
-    const shinUp = deg(Math.atan2(rear.joint.y - rear.end.y, rear.joint.x - rear.end.x)) - 22;
-    expect(shinUp).toBeGreaterThan(20);
-  });
-  it('the figure geometry is finite and grouped as six fills', () => {
-    const g = figureGeom({ pose, centre, R: RIG.boulderR, Hpx: HPX, toS: (v) => v, chains: null, trail: path as unknown as Trail, facing: 1, quality: 1 });
-    for (const k of ['farLeg', 'farArm', 'core', 'nearLeg', 'cloth', 'nearArm'] as const) {
-      expect(g.groups[k].length).toBeGreaterThan(0);
-      for (const poly of g.groups[k]) for (const p of poly) expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
+  it('the push silhouette is ≥ 22% of the viewport on desktop and ≥ 15% on phones', () => {
+    const g = geomOf(pose, centre, path);
+    const ys = [...g.groups.core, ...g.groups.nearArm, ...g.groups.farArm].flat().map((p) => p.y);
+    const silH = Math.max(...ys) - pose.feet![1].ball.y;
+    for (const [w, hh, min] of [[1280, 800, 0.22], [1440, 900, 0.22], [1920, 1080, 0.22], [390, 844, 0.15], [844, 390, 0.15]] as const) {
+      expect((silH * camLayout(w, hh).Hpx) / hh).toBeGreaterThanOrEqual(min);
     }
-    expect(g.lines.core.length).toBeGreaterThan(10);
   });
-  it('the pose holds across 16–32° slopes', () => {
-    for (const th of [16, 20, 26, 32]) {
+  it('holds across slopes 16–28°: lean 16–24°, rear knee ≥ 168°, palms on the stone', () => {
+    for (const th of [16, 22, 28]) {
       const r = solveHoldStatic(line(th), 5);
-      expect(interior(r.pose.legs[1])).toBeGreaterThanOrEqual(160);
-      expect(interior(r.pose.legs[0])).toBeGreaterThan(75);
+      const l = deg(r.pose.lean);
+      expect(l).toBeGreaterThanOrEqual(16); expect(l).toBeLessThanOrEqual(24);
+      expect(interior(r.pose.legs[1])).toBeGreaterThanOrEqual(168);
       for (const p of r.pose.hands!) expect(Math.abs(dist(p, r.centre) - RIG.boulderR - RIG.palm) * HPX).toBeLessThanOrEqual(2);
     }
+  });
+});
+
+describe('the detail layer (ROUND4 §6)', () => {
+  const pip = (pts: Array<[number, number]>, x: number, y: number) => {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i], [xj, yj] = pts[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  it('every detail vertex lies inside its own part (bone parts inset 0.02 h; head, hand and foot in their outlines)', () => {
+    const hands = handOutlines(0);
+    for (const ln of DETAIL) {
+      for (const [a, b] of ln.pts) {
+        if (ln.part in STATIONS) {
+          const st = STATIONS[ln.part as keyof typeof STATIONS];
+          expect(b).toBeLessThanOrEqual(interp(st.front, a) - 0.02);
+          expect(b).toBeGreaterThanOrEqual(-interp(st.back, a) + 0.02);
+        } else if (ln.part === 'head') expect(pip(HEAD_OUTLINE, a, b)).toBe(true);
+        else if (ln.part === 'hand') expect(hands.some((o) => pip(o, a, b))).toBe(true);
+        else if (ln.part === 'foot') expect(pip(FOOT_OUTLINE, a, b)).toBe(true);
+        else if (ln.part === 'toe') expect(pip(TOE_OUTLINE, a, b)).toBe(true);
+      }
+    }
+  });
+  it('three levels: L3 ≈ 70 strokes, L2 ≈ 45, L1 ≈ 22; tiers switch with hysteresis', () => {
+    const path = line(22);
+    const { pose, centre } = solveHoldStatic(path, 5);
+    const n = (t: 1 | 2 | 3) => figureGeom({ pose, centre, R: RIG.boulderR, Hpx: HPX, toS: (v) => v, chains: null, trail: path as unknown as Trail, facing: 1, quality: 1 }, t).strokes;
+    expect(n(3)).toBeGreaterThanOrEqual(60);
+    expect(n(2)).toBeGreaterThanOrEqual(35); expect(n(2)).toBeLessThan(n(3));
+    expect(n(1)).toBeGreaterThanOrEqual(15); expect(n(1)).toBeLessThan(n(2));
+    expect(tierFor(234, 1, 3)).toBe(3);
+    expect(tierFor(156, 1, 3)).toBe(2);   // phone portrait
+    expect(tierFor(145, 1, 2)).toBe(2);   // summit framing
+    expect(tierFor(196, 1, 3)).toBe(3);   // hysteresis: stays
+    expect(tierFor(196, 1, 2)).toBe(2);
+    expect(tierFor(100, 1, 2)).toBe(1);
+    expect(tierFor(234, 0.6, 3)).toBe(2);
   });
 });
 

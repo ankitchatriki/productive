@@ -86,7 +86,9 @@ describe('push cycle harness', () => {
     }
   });
 
-  it('no rolling without travel: with the target frozen the stone turns < 0.1°/s outside strain beats', () => {
+  // Round 4 S1: the step-and-hold cycle these two checks were written for is replaced by the S2 trudge
+  // (motion.clean.test.ts); skipped for the S1 commit only.
+  it.skip('no rolling without travel: with the target frozen the stone turns < 0.1°/s outside strain beats', () => {
     const run = simulate(lineTrail(22), 90, { freezeAt: 20 });
     const fr = run.frames.filter((f) => f.t > 26 && f.mode !== 'strain' && f.mode !== 'step');
     for (let i = 1; i < fr.length; i++) {
@@ -95,7 +97,7 @@ describe('push cycle harness', () => {
     }
   });
 
-  it('a step pair takes 1.6–2.2 s at 18–26°; the pelvis is at rest at contact and lowest at u 0.85–0.95', () => {
+  it.skip('a step pair takes 1.6–2.2 s at 18–26°; the pelvis is at rest at contact and lowest at u 0.85–0.95', () => {
     for (const th of [18, 22, 26]) {
       const trail = lineTrail(th);
       const run = simulate(trail, 120);

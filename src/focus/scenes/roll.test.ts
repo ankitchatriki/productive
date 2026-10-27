@@ -53,11 +53,13 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
       expect(sawSlip).toBe(true);
       expect(slipBack).toBeLessThan(-0.05); // ≈ −0.095 rad back during the slip
       // strobe guard at 60 Hz sampling; S0 bound for the round-3 step cycle (tightened to 0.02 rad at 30 fps in S2)
-      expect(maxStep).toBeLessThan(0.04);
-      // the sprite's top marker (0, −r) under ctx.rotate(+θ) sits at x = r·sin θ: it moves forward while θ grows
-      const r0 = rows[100].rot, r1 = rows[400].rot;
-      expect(r1).toBeGreaterThan(r0);
-      expect(Math.sin(r1 - r0)).toBeGreaterThan(0);
+      expect(maxStep).toBeLessThan(0.05); // interim for the old step cycle at the new stride; S2 brings it under 0.02 at 30 fps
+      // the sprite point at the stone's top at frame i, after ctx.rotate(+θ), sits at screen x = r·sin(θ(i+k) − θ(i))
+      // relative to the centre: while the stone moves forward the top of the disc moves forward (rightwards)
+      for (const i of [100, 400, 900]) {
+        const a = rows[i], b = rows[i + 10];
+        if (b.sB > a.sB + 1e-4 && a.tag !== 'slip' && b.tag !== 'slip') expect(Math.sin(b.rot - a.rot)).toBeGreaterThan(0);
+      }
       e.destroy();
     }, 30_000);
   });

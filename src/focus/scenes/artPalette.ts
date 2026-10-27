@@ -25,7 +25,9 @@ export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.ma
 
 /** Line widths in CSS px, scaled with the figure (§1.2). */
 export const LW = (Hpx: number) => ({
-  contour: clamp(0.0075 * Hpx, 1.25, 2.25),
+  contour: clamp(0.0075 * Hpx, 1.2, 1.8),   // ROUND4 §6.2: muscle groups, silhouette-scale features
+  fine: clamp(0.0050 * Hpx, 1.0, 1.4),      // fingers, curls, ab grid, pleats, tendons
+  vein: clamp(0.0042 * Hpx, 1.0, 1.2),      // strain veins only
   incise: clamp(0.0070 * Hpx, 1.25, 2.0),
   fleck: clamp(0.0070 * Hpx, 1.25, 2.0),
   swirl: 1.75,

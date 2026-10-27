@@ -11,10 +11,11 @@ export const easeOut = (u: number) => 1 - (1 - u) * (1 - u);
 const hu = 1 / 8; // one head unit
 /** Lengths between joint centres, in H. */
 export const RIG = {
-  head: 1.0 * hu, neck: 0.5 * hu, torso: 2.4 * hu,
-  upperArm: 1.5 * hu, foreArm: 1.3 * hu, wristToPalm: 0.4 * hu, handLen: 0.75 * hu,
-  thigh: 1.95 * hu, shin: 1.9 * hu, heelToBall: 0.75 * hu, ballToToe: 0.3 * hu, ankleH: 0.3 * hu,
-  boulderR: 4.5 * hu,
+  // ROUND4 §3.1: heavier, heroic build; the boulder about the figure's height.
+  head: 1.05 * hu, neck: 0.45 * hu, torso: 2.5 * hu,
+  upperArm: 1.45 * hu, foreArm: 1.25 * hu, wristToPalm: 0.4 * hu, handLen: 0.85 * hu,
+  thigh: 2.0 * hu, shin: 1.95 * hu, heelToBall: 0.75 * hu, ballToToe: 0.35 * hu, ankleH: 0.3 * hu,
+  boulderR: 4.2 * hu,
   palm: 0.012,
 };
 export const ARM_CHAIN = RIG.upperArm + RIG.foreArm;
@@ -90,24 +91,24 @@ export function footAt(ball: V, groundRad: number, heel: number, facing: 1 | -1 
 }
 
 /** Torso lean for a slope (deg): 16° at 22° — raised from the §3.6 20° so he reads upright and heroic (review U10). */
-export const lean0 = (thetaDeg: number) => clamp(16 + 0.3 * (thetaDeg - 22), 12, 22);
+export const lean0 = (thetaDeg: number) => clamp(20 + 0.25 * (thetaDeg - 22), 16, 24); // ROUND4 §3.4: the 20° spear
 /** Stride scale on a slope relative to 22°. */
 export const cosRatio = (thetaDeg: number) => Math.cos(thetaDeg * DEG) / Math.cos(22 * DEG);
-export const H0 = 0.36;
+export const H0 = 0.43;
 /** Keyed pelvis height for a slope: higher on shallow ground so the rear leg stays long (the ceiling caps it). */
-export const h0 = (thetaDeg: number) => H0 + 0.006 * Math.max(0, 22 - thetaDeg);
+export const h0 = (thetaDeg: number) => H0 + 0.004 * Math.max(0, 22 - thetaDeg) + 0.012 * Math.max(0, thetaDeg - 22);
 /** Hold-pose foot placement along the trail from the pelvis ground point (× cos θ / cos 22°). */
-export const FRONT_FOOT = 0.08, REAR_FOOT = 0.22;
+export const FRONT_FOOT = 0.12, REAR_FOOT = 0.29;
 /** Rear heel lift in the hold (on the ball of the foot): the long straight rear leg. */
 export const REAR_HEEL = 30;
 /** Far hand offset around the stone and far-shoulder offset (H), so both arms read in profile (review U10). */
-export const HAND_NEAR = -0.03, HAND_FAR = 0.04, FAR_SHOULDER = 0.022;
+export const HAND_NEAR = 0, HAND_FAR = -0.05, FAR_SHOULDER = 0.03; // the far hand sits 0.05 H higher round the stone
 /** Max stance-leg extension: 0.996 keeps the rear knee at ≈ 168° (0.985 would cap it at 159°). */
 export const LEG_MAX = 0.996;
 
 /** Head centre from the shoulder: neck thrust 70° from vertical, head axis 100° (chin tucked). */
 export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {
-  const n = 70 * DEG, a = (100 + pitchDeg) * DEG; // §3.6: neck thrust 70°, head axis 100° (head up between the arms)
+  const n = 58 * DEG, a = (105 + pitchDeg) * DEG; // ROUND4 §3.4: neck 58°, head axis 105° (bowed between the arms)
   const neckEnd = { x: shoulder.x + Math.sin(n) * RIG.neck, y: shoulder.y + Math.cos(n) * RIG.neck };
   return { head: { x: neckEnd.x + Math.sin(a) * RIG.head * 0.5, y: neckEnd.y + Math.cos(a) * RIG.head * 0.5 }, axis: a };
 }
@@ -154,11 +155,12 @@ export function armsToStone(shoulder: V, centre: V, R: number, regrip = 0): Arms
     return { x: centre.x + Math.cos(a) * (R + RIG.palm), y: centre.y + Math.sin(a) * (R + RIG.palm) };
   }) as [V, V];
   void perp;
-  const arms = hands.map((p, i) => {
+  const wrists = hands.map((p) => {
     const nx = (p.x - centre.x) / (R + RIG.palm), ny = (p.y - centre.y) / (R + RIG.palm);
-    const wrist = { x: p.x + nx * RIG.wristToPalm, y: p.y + ny * RIG.wristToPalm };
-    return armIK(i === 1 ? farShoulder(shoulder, wrist) : shoulder, wrist);
-  }) as [Limb, Limb];
+    return { x: p.x + nx * RIG.wristToPalm, y: p.y + ny * RIG.wristToPalm };
+  });
+  const dNear = Math.hypot(wrists[0].x - shoulder.x, wrists[0].y - shoulder.y);
+  const arms = [armIK(shoulder, wrists[0]), armIK(farShoulder(shoulder, wrists[1], dNear), wrists[1])] as [Limb, Limb];
   return { arms, hands };
 }
 
@@ -172,9 +174,9 @@ export function solveHoldStatic(path: SlopePath, sP: number, R = RIG.boulderR): 
   const sFront = sP + FRONT_FOOT * k, sRear = sP - REAR_FOOT * k;
   const front = footAt(path.at(sFront), gA(sFront), 0);
   const rear = footAt(path.at(sRear), gA(sRear), REAR_HEEL * DEG);
-  const up = { x: 0, y: 1 };
+  const up = n; // ROUND4 §3.4: pelvis height is measured along the slope normal
   const hh = hipCeiling(base, up, h0(theta), [front.ankle, rear.ankle]);
-  const pelvis = { x: base.x, y: base.y + hh };
+  const pelvis = { x: base.x + up.x * hh, y: base.y + up.y * hh };
   const lean = lean0(theta) * DEG;
   const shoulder = { x: pelvis.x + RIG.torso * Math.sin(lean) + t.x * 0.01, y: pelvis.y + RIG.torso * Math.cos(lean) + t.y * 0.01 };
   const A = stoneDistance(0.995, R);
@@ -337,12 +339,15 @@ export function holdDForStone(path: SlopePath, stoneS: number): number {
 
 /**
  * The far shoulder sits a little above the near one (seen in profile), so the two arms separate. It slides along
- * the arm by just enough to keep the same shoulder → hand distance, so the far elbow stays as locked as the near.
+ * its arm until its shoulder → wrist distance equals the near arm's (`dist`), so both elbows lock alike.
  */
-export function farShoulder(shoulder: V, target: V): V {
+export function farShoulder(shoulder: V, target: V, dist?: number): V {
   const dx = target.x - shoulder.x, dy = target.y - shoulder.y, d = Math.hypot(dx, dy) || 1;
   const ux = dx / d, uy = dy / d, o = FAR_SHOULDER;
-  const delta = d - Math.sqrt(Math.max(0, d * d - o * o));
+  const want = dist ?? d;
+  // root = shoulder + perp·o + u·δ with |target − root| = want
+  const along = d, across = o; // target is `along` ahead on u, root is `across` off it
+  const delta = along - Math.sqrt(Math.max(0, want * want - across * across));
   return { x: shoulder.x - uy * o + ux * delta, y: shoulder.y + ux * o + uy * delta };
 }
 
@@ -351,7 +356,7 @@ export function farShoulder(shoulder: V, target: V): V {
  * extension e. Hands sit off the centre line, so measuring along it would over-straighten the arms.
  */
 export function stoneDistance(e: number, R: number): number {
-  const rr = R + RIG.palm + RIG.wristToPalm, phi = (Math.abs(HAND_NEAR) + Math.abs(HAND_FAR)) / 2 / R; // both hands about equally locked
+  const rr = R + RIG.palm + RIG.wristToPalm, phi = Math.abs(HAND_NEAR) / R; // the near hand sets it; the far shoulder matches its distance
   const L = e * ARM_CHAIN;
   return rr * Math.cos(phi) + Math.sqrt(Math.max(0, L * L - (rr * Math.sin(phi)) ** 2));
 }

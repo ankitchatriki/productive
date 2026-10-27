@@ -36,7 +36,8 @@ describe('A0: flat black-figure rules (ROUND3_ART §1.3)', () => {
 
   it('line weights scale with the figure and clamp (§1.2)', () => {
     expect(LW(216).contour).toBeCloseTo(1.62, 2);
-    expect(LW(60).contour).toBe(1.25);
+    expect(LW(60).contour).toBe(1.2);
+    expect(LW(234).fine).toBeCloseTo(1.17, 2);
     expect(LW(600).incise).toBe(2.0);
     expect(LW(216).swirl).toBe(1.75);
   });
