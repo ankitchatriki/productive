@@ -82,10 +82,26 @@ describe('complete / extend / nextBlock / break', () => {
     let s = reducer(base(), start());
     s = reducer(s, { type: 'focus/complete', at: T(50) });
     s = reducer(s, { type: 'focus/extend', now: T(53), minutes: 10 });
-    expect(s.focus).toMatchObject({ phase: 'focus', blockMinutes: 63, completedAt: null });
+    expect(s.focus).toMatchObject({ phase: 'focus', blockMinutes: 50, targetMs: 63 * 60_000, extendedMinutes: 10, completedAt: null });
     expect(focusView(s, new Date(T(53)))!.remainingMs).toBe(10 * 60_000);
     const open = reducer(base(), start(null));
     expect(reducer(open, { type: 'focus/extend', now: T(5), minutes: 5 })).toBe(open);
+  });
+  it('review S3: +10 at odd overtime gives exactly 10:00 and keeps the 25 min block length', () => {
+    let s = reducer(base(), start(25));
+    s = reducer(s, { type: 'focus/complete', at: T(25) });
+    s = reducer(s, { type: 'focus/extend', now: T(28, 16), minutes: 10 });
+    const v = focusView(s, new Date(T(28, 16)))!;
+    expect(v.remainingMs).toBe(10 * 60_000);
+    expect(v.blockLabel).toBe('25 min block · +10');
+    assertFocusInvariants(s);
+    s = reducer(s, { type: 'focus/extend', now: T(30), minutes: 5 });
+    expect(focusView(s, new Date(T(30)))!.remainingMs).toBe(8 * 60_000 + 16_000 + 5 * 60_000);
+    s = reducer(s, { type: 'focus/complete', at: T(43, 16) });
+    s = reducer(s, { type: 'focus/nextBlock', now: T(44) });
+    expect(s.focus).toMatchObject({ blockMinutes: 25, targetMs: null, extendedMinutes: 0 });
+    expect(focusView(s, new Date(T(44)))!.remainingMs).toBe(25 * 60_000);
+    expect(focusView(s, new Date(T(44)))!.blockLabel).toBe('25 min block · Block 2');
   });
   it('keep going (nextBlock from complete) continues the same entry', () => {
     let s = reducer(base(), start());

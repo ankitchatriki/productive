@@ -67,7 +67,9 @@ export function validateFocusSession(
     warnings.push('Focus session referenced a missing section; it was cleared.');
     sectionId = null;
   }
-  const session = { ...(raw as unknown as FocusSession), target: { courseId: t.courseId, sectionId, note: (t.note ?? '') as string } };
+  const targetMs = typeof raw.targetMs === 'number' && Number.isFinite(raw.targetMs) && raw.targetMs > 0 && raw.targetMs <= 480 * 60_000 && raw.blockMinutes !== null ? raw.targetMs : null;
+  const extendedMinutes = isInt(raw.extendedMinutes) && (raw.extendedMinutes as number) >= 0 ? raw.extendedMinutes as number : 0;
+  const session = { ...(raw as unknown as FocusSession), targetMs, extendedMinutes, target: { courseId: t.courseId, sectionId, note: (t.note ?? '') as string } };
   if (focusInvariantErrors(session, activeTimer).length) return drop();
   return session;
 }

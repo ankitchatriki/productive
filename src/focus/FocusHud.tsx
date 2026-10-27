@@ -1,5 +1,5 @@
 import styles from './FocusMode.module.css';
-import { formatCountdown } from '../domain/focus';
+import { blockMs, formatCountdown } from '../domain/focus';
 import { formatClock } from '../domain/time';
 import type { FocusView } from '../state/selectors';
 
@@ -35,7 +35,7 @@ export function FocusHud({ view, now, readoutMode, onCycleReadout }: FocusHudPro
   } else if (phase === 'complete') {
     status = 'Summit.';
     readout = formatCountdown(-Math.max(1000, view.overtimeMs));
-    if (view.overtimeMs < 1000) readout = formatCountdown((session.blockMinutes ?? 0) * 60_000);
+    if (view.overtimeMs < 1000) readout = formatCountdown(blockMs(session) ?? 0);
     caption = view.overtimeMs >= 1000 ? `past your ${session.blockMinutes} min block` : `${session.blockMinutes} minutes done`;
     muted = view.overtimeMs >= 1000;
   } else {

@@ -1,6 +1,6 @@
 // Pure reducer. Receives `now` inside actions; never reads the clock itself.
 import type { AppData, FocusSession, Id, WeekPlan } from '../domain/types';
-import { MAX_BLOCK_MINUTES, focusedMs } from '../domain/focus';
+import { MAX_BLOCK_MINUTES, blockMs, focusedMs } from '../domain/focus';
 import type { Action, SectionDeleteRecord } from './actions';
 import { entryFromTimer } from '../domain/entries';
 import { normalizeOrder, reorder } from '../domain/sections';
@@ -161,6 +161,7 @@ export function reducer(state: AppData, action: Action): AppData {
       if (!state.courses.some((c) => c.id === target.courseId)) return state;
       const session: FocusSession = {
         id: action.id, target, choice: action.choice, blockMinutes: action.blockMinutes,
+        targetMs: action.blockMinutes === null ? null : action.targetMs ?? null, extendedMinutes: 0,
         blockStartedAt: action.now, focusedMsBefore: 0, segmentStartedAt: action.now, phase: 'focus',
         completedAt: null, pausedAt: null, breakMinutes: null, breakStartedAt: null, breakEndsAt: null,
         blocksCompleted: 0, scene: action.scene, immersive: action.immersive,
@@ -187,8 +188,11 @@ export function reducer(state: AppData, action: Action): AppData {
     case 'focus/extend':
       return withFocus(state, ['focus', 'complete'], (s) => {
         if (s.blockMinutes === null) return state;
-        const blockMinutes = Math.min(MAX_BLOCK_MINUTES, Math.ceil(focusedMs(s, new Date(action.now)) / 60_000) + action.minutes);
-        return { ...state, focus: { ...s, blockMinutes, phase: 'focus', completedAt: null } };
+        // Exact: N minutes from now (review S3). The chosen block length (blockMinutes) is kept for the next block.
+        // While focusing, +N adds to what's left; from overtime it means N minutes from now.
+        const from = s.phase === 'focus' ? blockMs(s)! : focusedMs(s, new Date(action.now));
+        const targetMs = Math.min(MAX_BLOCK_MINUTES * 60_000, from + action.minutes * 60_000);
+        return { ...state, focus: { ...s, targetMs, extendedMinutes: (s.extendedMinutes ?? 0) + action.minutes, phase: 'focus', completedAt: null } };
       });
 
     case 'focus/nextBlock':
@@ -196,7 +200,7 @@ export function reducer(state: AppData, action: Action): AppData {
         const next: FocusSession = {
           ...s,
           blocksCompleted: s.phase === 'complete' ? s.blocksCompleted + 1 : s.blocksCompleted,
-          blockMinutes: action.blockMinutes !== undefined ? action.blockMinutes : s.blockMinutes,
+          blockMinutes: action.blockMinutes !== undefined ? action.blockMinutes : s.blockMinutes, targetMs: null, extendedMinutes: 0,
           blockStartedAt: action.now, segmentStartedAt: action.now, focusedMsBefore: 0, phase: 'focus',
           completedAt: null, pausedAt: null, breakMinutes: null, breakStartedAt: null, breakEndsAt: null,
         };

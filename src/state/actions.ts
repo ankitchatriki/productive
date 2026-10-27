@@ -29,7 +29,7 @@ export type Action =
   | { type: 'plan/insertGoal'; weekStart: WeekKey; goal: Goal; index: number; now: IsoInstant }
   | { type: 'plan/fillDays'; weekStart: WeekKey; sectionByDay: Record<DateKey, Id | null> }
   // Focus mode (FOCUS_PLAN.md §5.2)
-  | { type: 'focus/start'; now: IsoInstant; id: Id; target: FocusTarget; blockMinutes: number | null;
+  | { type: 'focus/start'; now: IsoInstant; id: Id; target: FocusTarget; blockMinutes: number | null; targetMs?: number | null;
       choice: BlockChoice['kind']; scene: SceneId; immersive: boolean }
   | { type: 'focus/pause'; now: IsoInstant; newEntryId: Id }
   | { type: 'focus/resume'; now: IsoInstant }

@@ -57,7 +57,7 @@ export function focusView(data: AppData, now: Date): FocusView | null {
   if (!s) return null;
   const course = data.courses.find((c) => c.id === s.target.courseId);
   const section = s.target.sectionId ? data.sections.find((x) => x.id === s.target.sectionId) : undefined;
-  const base = s.blockMinutes === null ? 'Open-ended' : `${s.blockMinutes} min block`;
+  const base = s.blockMinutes === null ? 'Open-ended' : `${s.blockMinutes} min block${s.extendedMinutes ? ` · +${s.extendedMinutes}` : ''}`;
   return {
     session: s,
     phase: s.phase,

@@ -5,7 +5,7 @@ import { useDispatch, useStore } from './store';
 import { BlockPicker } from '../focus/BlockPicker';
 import { FocusController } from '../focus/FocusController';
 import { primeAudio } from '../focus/chime';
-import { resolveBlockMinutes } from '../domain/focus';
+import { resolveBlock } from '../domain/focus';
 import type { BlockChoice, SceneId } from '../domain/types';
 import { defaultTimerTarget, useTimerActions, type TimerTarget } from './timer';
 import { useToast } from '../hooks/useToast';
@@ -79,8 +79,8 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
       return;
     }
     const fs = data.settings.focus;
-    const blockMinutes = resolveBlockMinutes(choice, data, new Date(), fs.defaultBlockMinutes);
-    startFocus({ target, blockMinutes, choice: choice.kind, scene, immersive: fs.enterOnClockIn });
+    const { blockMinutes, targetMs } = resolveBlock(choice, data, new Date(), fs.defaultBlockMinutes);
+    startFocus({ target, blockMinutes, targetMs, choice: choice.kind, scene, immersive: fs.enterOnClockIn });
     setDraft((d) => (d ? { ...d, note: '' } : d));
     setAnnouncement(blockMinutes ? `Block started, ${blockMinutes} minutes.` : 'Focus started.');
   }, [data, effectiveTarget, dispatch, clockIn, startFocus, toast, navigate]);

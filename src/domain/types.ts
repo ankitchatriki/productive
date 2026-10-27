@@ -116,7 +116,11 @@ export interface FocusSession {
   id: Id;
   target: FocusTarget;
   choice: BlockChoice['kind'];
-  blockMinutes: number | null;         // null = open-ended; integer 1..480 after extends
+  blockMinutes: number | null;         // null = open-ended; the chosen block length (kept through extends)
+  /** Exact target for the current block in focus ms, when it differs from blockMinutes (extend, planned "Until"). */
+  targetMs?: number | null;
+  /** Minutes added with +N to the current block (shown as "· +N"). */
+  extendedMinutes?: number;
   blockStartedAt: IsoInstant;
   focusedMsBefore: number;             // focus ms banked in this block before the current segment
   segmentStartedAt: IsoInstant | null; // null in 'paused' and 'break'

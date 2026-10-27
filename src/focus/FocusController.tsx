@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useStore } from '../state/store';
 import { useNow } from '../hooks/useNow';
-import { blockEndsAt, blockRemainingMs, focusTitle, isBlockDue, isBreakOver, isStaleFocus } from '../domain/focus';
+import { blockEndsAt, blockMs, blockRemainingMs, focusTitle, isBlockDue, isBreakOver, isStaleFocus } from '../domain/focus';
 import { playChime } from './chime';
 import { FocusMode } from './FocusMode';
 import { useReducedMotion } from './hooks/useReducedMotion';
@@ -72,10 +72,10 @@ export function FocusController({ announceApp, onStopAtLastActivity }: FocusCont
     }
     // Halfway / 5 minutes left (FOCUS_DESIGN §2.2), never per second.
     if (s.phase === 'focus' && s.blockMinutes !== null) {
-      const key = `${s.id}:${s.blockStartedAt}:${s.blockMinutes}`;
+      const key = `${s.id}:${s.blockStartedAt}:${s.blockMinutes}:${s.targetMs ?? ""}`;
       if (milestones.current.key !== key) milestones.current = { key, half: false, five: false };
       const r = blockRemainingMs(s, t)!;
-      const total = s.blockMinutes * 60_000;
+      const total = blockMs(s)!;
       if (!milestones.current.half && r <= total / 2 && r > total / 2 - 5000 && total >= 20 * 60_000) {
         milestones.current.half = true;
         announce(`Halfway through your ${s.blockMinutes} minute block.`);

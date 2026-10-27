@@ -87,11 +87,11 @@ export function useTimerActions() {
   }, [data, dispatch, toast, courseName]);
 
   // ---------- Focus (FOCUS_PLAN.md §5.4) ----------
-  const startFocus = useCallback((opts: { target: TimerTarget & { note?: string }; blockMinutes: number | null; choice: BlockChoice['kind']; scene: SceneId; immersive: boolean }) => {
+  const startFocus = useCallback((opts: { target: TimerTarget & { note?: string }; blockMinutes: number | null; targetMs?: number | null; choice: BlockChoice['kind']; scene: SceneId; immersive: boolean }) => {
     dispatch({
       type: 'focus/start', now: new Date().toISOString(), id: newId(),
       target: { courseId: opts.target.courseId, sectionId: opts.target.sectionId, note: opts.target.note ?? '' },
-      blockMinutes: opts.blockMinutes, choice: opts.choice, scene: opts.scene, immersive: opts.immersive,
+      blockMinutes: opts.blockMinutes, targetMs: opts.targetMs ?? null, choice: opts.choice, scene: opts.scene, immersive: opts.immersive,
     });
   }, [dispatch]);
 

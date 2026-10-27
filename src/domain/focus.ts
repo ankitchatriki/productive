@@ -18,7 +18,8 @@ export function focusedMs(s: FocusSession, now: Date): number {
 }
 
 export function blockMs(s: FocusSession): number | null {
-  return s.blockMinutes === null ? null : s.blockMinutes * 60_000;
+  if (s.blockMinutes === null) return null;
+  return typeof s.targetMs === 'number' ? s.targetMs : s.blockMinutes * 60_000;
 }
 
 /** 0..1. Open-ended sessions loop every 60 focused minutes; 'complete' is always 1. */
@@ -80,6 +81,26 @@ export function plannedBlockNow(data: Pick<AppData, 'weekPlans'>, now: Date): { 
   if (!current) return null;
   const minutesLeft = Math.floor(current.endMin - nowMin);
   return minutesLeft >= 5 ? { block: current, minutesLeft } : null;
+}
+
+/** Exact ms from `now` to the end of the planned block containing now (≥ 5 min left), else null. */
+export function plannedMsLeft(data: Pick<AppData, 'weekPlans'>, now: Date): number | null {
+  const p = plannedBlockNow(data, now);
+  if (!p) return null;
+  const end = new Date(now);
+  end.setHours(0, 0, 0, 0);
+  end.setMinutes(p.block.endMin);
+  return end.getTime() - now.getTime();
+}
+
+/** Block length + exact target for a choice. Planned blocks end exactly at the planned end (review S9). */
+export function resolveBlock(choice: BlockChoice, data: Pick<AppData, 'weekPlans'>, now: Date, fallback: number): { blockMinutes: number | null; targetMs: number | null } {
+  if (choice.kind === 'planned') {
+    const left = plannedMsLeft(data, now);
+    if (left === null) return { blockMinutes: fallback, targetMs: null };
+    return { blockMinutes: Math.min(MAX_BLOCK_MINUTES, Math.max(1, Math.round(left / 60_000))), targetMs: left };
+  }
+  return { blockMinutes: resolveBlockMinutes(choice, data, now, fallback), targetMs: null };
 }
 
 export function resolveBlockMinutes(choice: BlockChoice, data: Pick<AppData, 'weekPlans'>, now: Date, fallback: number): number | null {

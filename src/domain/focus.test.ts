@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   blockEndsAt, blockProgress, blockRemainingMs, breakProgress, breakRemainingMs, clampBlockMinutes, clampBreakMinutes,
   focusInvariantErrors, focusTitle, focusedMs, formatCountdown, isBlockDue, isBreakOver, isStaleFocus, overtimeMs,
-  plannedBlockNow, resolveBlockMinutes,
+  plannedBlockNow, resolveBlock, resolveBlockMinutes,
 } from './focus';
 import { at, data, iso } from './fixtures';
 import { createWeekPlan } from './plan';
@@ -125,6 +125,20 @@ describe('plannedBlockNow', () => {
     expect(resolveBlockMinutes({ kind: 'preset', minutes: 25 }, d, T0, 50)).toBe(25);
     expect(resolveBlockMinutes({ kind: 'custom', minutes: 40 }, d, T0, 50)).toBe(40);
     expect(resolveBlockMinutes({ kind: 'open' }, d, T0, 50)).toBeNull();
+  });
+});
+
+describe('review S9: "Until 15:00" ends at 15:00', () => {
+  it('resolveBlock gives the exact ms to the planned end, so blockEndsAt is 15:00:00', () => {
+    const d = data();
+    d.weekPlans['2026-10-26'] = { ...createWeekPlan('2026-10-26', d.settings, iso(2026, 10, 26)), blocks: [{ id: 'a', date: '2026-10-27', startMin: 14 * 60, endMin: 15 * 60, courseId: 'c1', sectionId: null, label: '' }] };
+    const now = at(2026, 10, 27, 14, 20, 1);
+    const r = resolveBlock({ kind: 'planned' }, d, now, 50);
+    expect(r).toEqual({ blockMinutes: 40, targetMs: 39 * 60_000 + 59_000 });
+    const s = { ...session({ blockStartedAt: now.toISOString(), segmentStartedAt: now.toISOString() }), blockMinutes: r.blockMinutes, targetMs: r.targetMs };
+    expect(blockEndsAt(s)).toBe(at(2026, 10, 27, 15, 0).toISOString());
+    expect(resolveBlock({ kind: 'planned' }, data(), now, 50)).toEqual({ blockMinutes: 50, targetMs: null });
+    expect(resolveBlock({ kind: 'preset', minutes: 25 }, d, now, 50)).toEqual({ blockMinutes: 25, targetMs: null });
   });
 });
 
