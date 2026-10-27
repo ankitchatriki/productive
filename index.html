@@ -49,11 +49,13 @@
         var el = document.getElementById('splash');
         if (!el) return;
         /* splash-skip:start */
-        function shouldSkipSplash(search, stored) {
+        function shouldSkipSplash(search, stored, now) {
           if (/[?&]nosplash(=|&|$)/.test(search)) return true;
           try {
             var d = stored ? JSON.parse(stored) : null;
-            if (d && d.focus && d.focus.immersive === true) return true;
+            var f = d && d.focus, STALE = 6 * 3600e3;
+            var stale = !!f && ((f.phase === 'paused' && now - Date.parse(f.pausedAt) > STALE) || (f.phase === 'break' && now - Date.parse(f.breakEndsAt) > STALE));
+            if (f && f.immersive === true && !stale) return true;
             if (d && d.settings && d.settings.showSplash === false) return true;
           } catch (e) { /* unreadable data: show the splash */ }
           return false;
@@ -61,7 +63,7 @@
         /* splash-skip:end */
         var stored = null;
         try { stored = localStorage.getItem('productive:v1'); } catch (e) { /* storage blocked */ }
-        if (shouldSkipSplash(location.search, stored)) { el.remove(); return; }
+        if (shouldSkipSplash(location.search, stored, Date.now())) { el.remove(); return; }
         var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
         var gone = false, timers = [];
         var evs = ['pointerdown', 'keydown', 'touchstart'];
