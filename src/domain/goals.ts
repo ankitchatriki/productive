@@ -1,7 +1,7 @@
 // Weekly goals (PLAN.md §4.1, §4.2).
 import type { AppData, Goal, GoalProgress, Weekday, WeekKey, WeekPlan } from './types';
 import { allIntervals, minutesByDay, minutesInDates } from './aggregate';
-import { isRestDay, toDateKey, weekDates } from './time';
+import { formatDuration, isRestDay, toDateKey, weekDates } from './time';
 
 /** Default goals for a new week. IDs are deterministic so the reducer stays pure. */
 export function defaultGoals(weekStart: WeekKey, dailyGoalMinutes: number, restDays: Weekday[]): Goal[] {
@@ -59,4 +59,20 @@ export function computeGoalProgress(goal: Goal, plan: WeekPlan, data: Pick<AppDa
     status = current >= expected ? 'on_track' : 'behind';
   }
   return { goalId: goal.id, current, target, ratio, status };
+}
+
+export const STATUS_LABEL: Record<GoalProgress['status'], string> = { met: 'Met', on_track: 'On track', behind: 'Behind', missed: 'Missed' };
+export const STATUS_CHIP: Record<GoalProgress['status'], string> = { met: 'chip-met', on_track: 'chip-ontrack', behind: 'chip-behind', missed: 'chip-missed' };
+
+/** Display strings for a goal row (shared by Review and Today's week card). */
+export function goalText(g: Goal, p: GoalProgress, courseName: (id: string) => string | undefined): { name: string; value: string; chip: string } {
+  const fmt = (v: number) => (goalIsDuration(g) ? formatDuration(v) : String(v));
+  const name = g.kind === 'totalHours' ? 'Total hours'
+    : g.kind === 'courseHours' ? `Hours on ${courseName(g.courseId) ?? 'a course'}`
+    : g.kind === 'sectionsCompleted' ? `Sections completed${g.courseId ? ` · ${courseName(g.courseId) ?? ''}` : ''}`
+    : 'Days hitting daily goal';
+  const chip = p.status === 'missed' && goalIsDuration(g) ? `Missed by ${formatDuration(p.target - p.current)}`
+    : p.status === 'met' && goalIsDuration(g) && p.current > p.target ? `Met · +${formatDuration(p.current - p.target)} over`
+    : p.status === 'behind' && goalIsDuration(g) ? `Behind` : STATUS_LABEL[p.status];
+  return { name, value: `${fmt(p.current)} / ${fmt(p.target)}`, chip };
 }

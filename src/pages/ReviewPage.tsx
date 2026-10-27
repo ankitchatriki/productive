@@ -7,7 +7,7 @@ import { useWeekParam } from '../hooks/useWeekParam';
 import { useMediaQuery, PHONE_QUERY } from '../hooks/useMediaQuery';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { allIntervals, minutesByCourse, minutesByDay, weekTotals } from '../domain/aggregate';
-import { computeGoalProgress, goalIsDuration } from '../domain/goals';
+import { STATUS_CHIP, computeGoalProgress, goalText as goalTextOf } from '../domain/goals';
 import { streaksAt } from '../state/selectors';
 import { dailyGoalFor, isRestDate, plannedMinutes } from '../domain/plan';
 import { colorVar } from '../domain/colors';
@@ -18,8 +18,6 @@ import { BarChart } from '../components/BarChart';
 import { Heatmap } from '../components/Heatmap';
 import { ProgressBar } from '../components/ProgressBar';
 
-const STATUS_LABEL: Record<GoalProgress['status'], string> = { met: 'Met', on_track: 'On track', behind: 'Behind', missed: 'Missed' };
-const STATUS_CHIP: Record<GoalProgress['status'], string> = { met: 'chip-met', on_track: 'chip-ontrack', behind: 'chip-behind', missed: 'chip-missed' };
 const STATUS_ICON: Record<GoalProgress['status'], string> = { met: '✓✓', on_track: '✓', behind: '⚠', missed: '–' };
 
 export function ReviewPage() {
@@ -65,17 +63,7 @@ export function ReviewPage() {
     return earlier || fromPrev;
   };
 
-  const goalText = (g: Goal, p: GoalProgress) => {
-    const fmt = (v: number) => (goalIsDuration(g) ? formatDuration(v) : String(v));
-    const name = g.kind === 'totalHours' ? 'Total hours'
-      : g.kind === 'courseHours' ? `Hours on ${courseById.get(g.courseId)?.name ?? 'a course'}`
-      : g.kind === 'sectionsCompleted' ? `Sections completed${g.courseId ? ` · ${courseById.get(g.courseId)?.name ?? ''}` : ''}`
-      : 'Days hitting daily goal';
-    const chip = p.status === 'missed' && goalIsDuration(g) ? `Missed by ${formatDuration(p.target - p.current)}`
-      : p.status === 'met' && goalIsDuration(g) && p.current > p.target ? `Met · +${formatDuration(p.current - p.target)} over`
-      : p.status === 'behind' && goalIsDuration(g) ? `Behind` : STATUS_LABEL[p.status];
-    return { name, value: `${fmt(p.current)} / ${fmt(p.target)}`, chip };
-  };
+  const goalText = (g: Goal, p: GoalProgress) => goalTextOf(g, p, (id) => courseById.get(id)?.name);
 
   return (
     <div className="page">

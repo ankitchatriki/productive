@@ -187,3 +187,12 @@ export function findCarryOver(data: { weekPlans: Record<WeekKey, WeekPlan>; sect
   }
   return null;
 }
+
+/** Today's current and upcoming blocks, sorted by start (ROUND3_PLAN §2.4). */
+export function todayBlocks(plan: WeekPlan | undefined, today: DateKey, nowMin: number): Array<{ block: ScheduledBlock; state: 'now' | 'next' }> {
+  if (!plan) return [];
+  return plan.blocks
+    .filter((b) => b.date === today && b.endMin > nowMin)
+    .sort((a, b) => a.startMin - b.startMin)
+    .map((block) => ({ block, state: block.startMin <= nowMin ? 'now' as const : 'next' as const }));
+}
