@@ -219,3 +219,67 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
 }
+
+/* ==========================================================
+   Focus mode + compact Today (round 2, FOCUS_DESIGN §6)
+   Focus mode is always dark-chromed; these do NOT change per theme.
+   ========================================================== */
+:root {
+  --focus-ink:          #f4f1ea;
+  --focus-ink-muted:    rgba(244, 241, 234, 0.70);
+  --focus-ink-subtle:   rgba(244, 241, 234, 0.45);
+  --focus-glass:        rgba(14, 16, 32, 0.38);
+  --focus-glass-solid:  #161a2e;
+  --focus-glass-border: rgba(255, 255, 255, 0.14);
+  --focus-accent:       #b8c1ff;
+  --focus-on-accent:    #11131f;
+  --focus-ring:         #ffffff;
+  --focus-text-shadow:  0 1px 12px rgba(0, 0, 0, 0.35);
+  --focus-bg:           #0b0e1f;
+
+  --sky-dawn-zenith:    #1d2340;  --sky-dawn-horizon:    #c88a8f;
+  --sky-noon-zenith:    #2c5a8f;  --sky-noon-horizon:    #a9c7da;
+  --sky-golden-zenith:  #2b3d6b;  --sky-golden-horizon:  #e8a868;
+  --sky-dusk-zenith:    #141832;  --sky-dusk-horizon:    #8a4a6e;
+  --sky-night-zenith:   #0b0e1f;  --sky-night-horizon:   #1d2140;
+  --sky-predawn:        #5a4a6e;
+  --sky-afterglow:      #d0507a;
+  --sky-venus-belt:     #7a5a9a;
+  --sky-sun-noon:       #fffaf0;
+  --sky-sun-low:        #ff9a5c;
+  --sky-moon:           #e8e6f0;
+
+  --dur-focus-stagger:   24ms;
+  --dur-focus-cards:     280ms;
+  --dur-focus-open:      800ms;
+  --dur-focus-chrome-in: 400ms;
+  --dur-focus-close:     540ms;
+  --dur-chrome-reveal:   160ms;
+  --dur-chrome-hide:     600ms;
+  --delay-chrome-idle:   3000ms;
+  --dur-complete:        6000ms;
+  --dur-reduced-fade:    240ms;
+  --ease-focus:          cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-in:             cubic-bezier(0.4, 0, 1, 1);
+
+  --text-focus-readout: clamp(48px, 7vw, 88px);
+  --text-focus-label:   12px;
+
+  --text-display-compact: 48px; --lh-display-compact: 52px;
+  --today-row1-h:      204px;
+  --ring-size-compact: 132px;
+  --ring-size-phone:   96px;
+  --hour-h-compact:    28px;
+  --week-strip-h:      56px;
+  --chip-h:            32px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-focus-open: var(--dur-reduced-fade);
+    --dur-focus-close: var(--dur-reduced-fade);
+    --dur-focus-cards: var(--dur-reduced-fade);
+    --dur-focus-stagger: 0ms;
+    --dur-complete: 1000ms;
+  }
+}

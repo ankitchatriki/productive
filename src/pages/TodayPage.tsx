@@ -11,6 +11,7 @@ import { useToast } from '../hooks/useToast';
 import { useHotkeys } from '../hooks/useHotkeys';
 import { streaksAt } from '../state/selectors';
 import { DayTimeline } from '../components/DayTimeline';
+import { FocusStrip, blockChoiceLabel } from '../focus/FocusStrip';
 import { ProgressBar } from '../components/ProgressBar';
 import { colorVar } from '../domain/colors';
 import { WEEKDAY_LETTER, formatClock, formatDay, formatDuration, formatElapsed, toDateKey, weekDates, weekStartOf } from '../domain/time';
@@ -34,6 +35,7 @@ export function TodayPage() {
   const ws = weekStartOf(today);
   const timer = data.activeTimer;
   const running = !!timer;
+  const focus = data.focus;
   const hasCourses = data.courses.some((c) => !c.archived);
   const courseById = useMemo(() => new Map(data.courses.map((c) => [c.id, c])), [data.courses]);
   const sectionById = useMemo(() => new Map(data.sections.map((s) => [s.id, s])), [data.sections]);
@@ -192,19 +194,39 @@ export function TodayPage() {
           <div className={`${styles.readout} ${running ? styles.running : ''}`} aria-live="off">{formatElapsed(elapsedMs)}</div>
           {running && <p className={styles.sub}>this session · <span className="num">{formatDuration(todayMinutes)}</span> today</p>}
 
+          {focus && <FocusStrip />}
           <div className={styles.actions}>
             <div className={styles.actionCol}>
               {running ? (
                 <button type="button" className={`btn btn-lg btn-clockout ${styles.clockBtn}`} onClick={ui.toggleTimer}><Icon name="stop" /> Clock out</button>
+              ) : focus ? (
+                <button type="button" className={`btn btn-lg btn-primary ${styles.clockBtn}`} onClick={ui.toggleTimer} data-focus-origin><Icon name="play" /> {focus.phase === 'paused' ? 'Resume' : 'Start next block'}</button>
               ) : (
-                <button type="button" className={`btn btn-lg btn-primary ${styles.clockBtn}`} onClick={ui.toggleTimer} disabled={!hasCourses || !target}><Icon name="play" /> Clock in</button>
+                <button type="button" className={`btn btn-lg btn-primary ${styles.clockBtn}`} onClick={ui.toggleTimer} disabled={!hasCourses || !target} data-focus-origin><Icon name="play" /> Clock in</button>
               )}
               <kbd className={styles.hint}>Space</kbd>
             </div>
+            {running && !focus && (
+              <div className={styles.actionCol}>
+                <button type="button" className="btn btn-lg" onClick={() => ui.openBlockPicker('attach')} data-focus-origin>◐ Start focus</button>
+              </div>
+            )}
+            {focus && !focus.immersive && (
+              <div className={styles.actionCol}>
+                <button type="button" className="btn btn-lg" onClick={ui.enterFocus} data-focus-origin>◐ Back to focus</button>
+              </div>
+            )}
             {running && (
               <div className={styles.actionCol}>
                 <button type="button" className="btn btn-lg" onClick={ui.openSwitch}>Switch section</button>
                 <kbd className={styles.hint}>S</kbd>
+              </div>
+            )}
+            {!running && !focus && hasCourses && (
+              <div className={styles.actionCol}>
+                <button type="button" className="btn btn-lg btn-ghost" onClick={() => ui.openBlockPicker('start')} aria-label={`Focus block: ${blockChoiceLabel(data.settings.focus.lastChoice)}. Change`}>
+                  Block: {blockChoiceLabel(data.settings.focus.lastChoice)} ▾
+                </button>
               </div>
             )}
           </div>

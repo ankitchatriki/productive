@@ -1,7 +1,12 @@
 // App-wide UI: entry dialog, switch picker, shortcuts overlay, timer draft and global hotkeys.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStore } from './store';
+import { useDispatch, useStore } from './store';
+import { BlockPicker } from '../focus/BlockPicker';
+import { FocusController } from '../focus/FocusController';
+import { primeAudio } from '../focus/chime';
+import { resolveBlockMinutes } from '../domain/focus';
+import type { BlockChoice, SceneId } from '../domain/types';
 import { defaultTimerTarget, useTimerActions, type TimerTarget } from './timer';
 import { useToast } from '../hooks/useToast';
 import { useHotkeys } from '../hooks/useHotkeys';
@@ -23,6 +28,10 @@ interface UiValue {
   effectiveTarget: TimerDraft | null;
   toggleTimer: () => void;
   announce: (msg: string) => void;
+  /** Open the focus block picker ('attach' = for an already-running plain timer). */
+  openBlockPicker: (mode?: 'start' | 'attach') => void;
+  /** Re-open the focus overlay for the current session. */
+  enterFocus: () => void;
 }
 
 const UiContext = createContext<UiValue | null>(null);
@@ -31,7 +40,9 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
   const data = useStore();
   const navigate = useNavigate();
   const toast = useToast();
-  const { clockIn, clockOut, switchTo } = useTimerActions();
+  const { clockIn, clockOut, switchTo, startFocus, resume, nextBlock } = useTimerActions();
+  const dispatch = useDispatch();
+  const [picker, setPicker] = useState<null | 'start' | 'attach'>(null);
   const [entryInit, setEntryInit] = useState<EntryDialogInit | null>(null);
   const [switchOpen, setSwitchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -49,7 +60,45 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     return d ? { ...d, note: '' } : null;
   }, [draft, data]);
 
+  /** Start a focus block (or a plain timer for "Just track") from a picker result. */
+  const startFromChoice = useCallback((choice: BlockChoice, scene: SceneId, justTrack: boolean, mode: 'start' | 'attach') => {
+    primeAudio();
+    dispatch({ type: 'focus/settings', patch: { lastChoice: choice, scene } });
+    const target = mode === 'attach' && data.activeTimer ? { courseId: data.activeTimer.courseId, sectionId: data.activeTimer.sectionId, note: data.activeTimer.note } : effectiveTarget;
+    if (!target) {
+      toast.show('Add a course to start tracking.', { label: 'Courses', onClick: () => navigate('/courses') });
+      return;
+    }
+    if (justTrack) {
+      clockIn(target);
+      setDraft((d) => (d ? { ...d, note: '' } : d));
+      setAnnouncement('Clocked in.');
+      return;
+    }
+    const fs = data.settings.focus;
+    const blockMinutes = resolveBlockMinutes(choice, data, new Date(), fs.defaultBlockMinutes);
+    startFocus({ target, blockMinutes, choice: choice.kind, scene, immersive: fs.enterOnClockIn });
+    setDraft((d) => (d ? { ...d, note: '' } : d));
+    setAnnouncement(blockMinutes ? `Block started, ${blockMinutes} minutes.` : 'Focus started.');
+  }, [data, effectiveTarget, dispatch, clockIn, startFocus, toast, navigate]);
+
+  const openBlockPicker = useCallback((mode: 'start' | 'attach' = 'start') => {
+    if (mode === 'start' && !effectiveTarget) {
+      toast.show('Add a course to start tracking.', { label: 'Courses', onClick: () => navigate('/courses') });
+      return;
+    }
+    setPicker(mode);
+  }, [effectiveTarget, toast, navigate]);
+
   const toggleTimer = useCallback(() => {
+    if (!data.activeTimer && data.focus?.phase === 'paused') { primeAudio(); resume(); setAnnouncement('Resumed.'); return; }
+    if (!data.activeTimer && data.focus?.phase === 'break') { primeAudio(); nextBlock(); setAnnouncement('Block started.'); return; }
+    if (!data.activeTimer && effectiveTarget) {
+      const fs = data.settings.focus;
+      if (fs.askBlockEachTime) openBlockPicker('start');
+      else startFromChoice(fs.lastChoice, fs.scene, false, 'start');
+      return;
+    }
     if (data.activeTimer) {
       const mins = Math.round((Date.now() - Date.parse(data.activeTimer.startedAt)) / 60000);
       clockOut();
@@ -63,7 +112,7 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     clockIn(effectiveTarget);
     setDraft((d) => (d ? { ...d, note: '' } : d));
     setAnnouncement('Clocked in.');
-  }, [data.activeTimer, effectiveTarget, clockIn, clockOut, toast, navigate]);
+  }, [data.activeTimer, data.focus?.phase, data.settings.focus, effectiveTarget, clockIn, clockOut, resume, nextBlock, openBlockPicker, startFromChoice, toast, navigate]);
 
   const openSwitch = useCallback(() => { if (data.activeTimer) setSwitchOpen(true); }, [data.activeTimer]);
 
@@ -82,7 +131,14 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     openShortcuts: () => setShortcutsOpen(true),
     draft, setDraft, effectiveTarget, toggleTimer,
     announce: setAnnouncement,
-  }), [openSwitch, draft, effectiveTarget, toggleTimer]);
+    openBlockPicker,
+    enterFocus: () => dispatch({ type: 'focus/setImmersive', immersive: true }),
+  }), [openSwitch, draft, effectiveTarget, toggleTimer, openBlockPicker, dispatch]);
+
+  const pickerTarget = picker === 'attach' && data.activeTimer ? data.activeTimer : effectiveTarget;
+  const pickerLabel = pickerTarget
+    ? [data.courses.find((c) => c.id === pickerTarget.courseId)?.name, pickerTarget.sectionId ? data.sections.find((x) => x.id === pickerTarget.sectionId)?.title : 'General'].filter(Boolean).join(' · ')
+    : '';
 
   return (
     <UiContext.Provider value={value}>
@@ -90,8 +146,11 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
       <EntryDialog open={!!entryInit} init={entryInit ?? {}} onClose={() => { const done = entryInit?.onClosed; setEntryInit(null); done?.(); }} />
       <SwitchDialog open={switchOpen} onClose={() => setSwitchOpen(false)} onConfirm={(next) => { switchTo(next); setAnnouncement('Switched section.'); }} />
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <BlockPicker open={!!picker} mode={picker ?? 'start'} targetLabel={pickerLabel} onClose={() => setPicker(null)}
+        onStart={(r) => { const mode = picker ?? 'start'; setPicker(null); startFromChoice(r.choice, r.scene, r.justTrack, mode); }} />
       <div className="visually-hidden" aria-live="polite">{announcement}</div>
       <TimerTitle />
+      <FocusController announceApp={setAnnouncement} onStopAtLastActivity={() => setEntryInit({ fromTimer: true })} />
     </UiContext.Provider>
   );
 }
@@ -101,6 +160,7 @@ function TimerTitle() {
   const data = useStore();
   const [tick, setTick] = useState(0);
   const t = data.activeTimer;
+  const hasFocus = !!data.focus;
   useEffect(() => {
     if (!t) return;
     const id = window.setInterval(() => setTick((x) => x + 1), 15_000);
@@ -108,6 +168,7 @@ function TimerTitle() {
   }, [t]);
   useEffect(() => {
     const root = document.documentElement;
+    if (hasFocus) { root.dataset.timer = '1'; return; } // FocusController owns the title
     if (!t) {
       delete root.dataset.timer;
       document.title = `${root.dataset.page ?? 'Today'} — Productive`;
@@ -116,7 +177,7 @@ function TimerTitle() {
     root.dataset.timer = '1';
     const course = data.courses.find((c) => c.id === t.courseId)?.name ?? '';
     document.title = `● ${formatElapsed(Date.now() - Date.parse(t.startedAt)).slice(0, -3)} · ${course} — Productive`;
-  }, [t, data.courses, tick]);
+  }, [t, data.courses, tick, hasFocus]);
   return null;
 }
 
