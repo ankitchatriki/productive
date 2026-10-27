@@ -464,6 +464,8 @@ Tint rebuild (every 2 s at most): sky, ridges, mountain faces + strata + detail 
 
 ### 4.1 Decisions
 
+> **Reconciled with `docs/ROUND3_PLAN.md`** (pushed in parallel). Where content differs, the plan wins: the header also drops `Plan →` (the card's `Edit goals` links to `/plan`), the streak reads `N-day streak · best M`, the card adds a **sections done / assigned** row under the goals, the phone card is compact with a `Details` toggle, and the card under Start is the plan's **Up next** (current and upcoming blocks only, `now`/`next`). So §4.6's `done`/`later`/`missed` states are dropped, and `Clock in` must sit fully above the tab bar at 390×844. The visuals below (grid, bars, spacing, tokens) apply to the plan's content as-is.
+
 - **Today scrolls.** Remove the one-screen lock (`height: 100dvh; overflow: hidden` in the `min-width: 1000px and min-height: 700px` block). Cards take their **natural height**. No card scrolls internally. This is what removes the Start card's empty middle: it was stretched to fill the viewport, and `.idle/.running { flex: 1; justify-content: center }` plus `.todayBlock { margin-top: auto }` then floated the content in whitespace (see `today-1440x900.png`).
 - **New order:** header → banner → **This week** card (full width) → **Start** (left) + **Log** (right) → **Today's plan** (left, under Start).
 - The header's **Week chip and streak chip move into the week card**, so nothing appears twice. The header keeps the title, the date and `Plan →`.
