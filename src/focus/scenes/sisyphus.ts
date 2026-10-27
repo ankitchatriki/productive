@@ -83,7 +83,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   function applySize() {
     if (!canvas || !ctx || w <= 0 || h <= 0) return;
     let d = Math.min(1.5, hostDpr) * quality;
-    if (w * h * d * d > 2.1e6) d = Math.sqrt(2.1e6 / (w * h));
+    // Very large screens (ultrawide / 4K) get a smaller back-buffer: the scene is soft-edged and upscales well.
+    const cap = w * h > 3e6 ? 1.3e6 : 2.1e6;
+    if (w * h * d * d > cap) d = Math.sqrt(cap / (w * h));
     scale = d;
     canvas.width = Math.max(1, Math.round(w * d));
     canvas.height = Math.max(1, Math.round(h * d));
