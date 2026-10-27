@@ -11,7 +11,7 @@ describe('validateAppData', () => {
   });
   it('rejects non-objects and wrong schemaVersion', () => {
     expect(validateAppData(null)).toEqual(['File is not a Productive backup (expected a JSON object).']);
-    const r = validateAppData({ ...data(), schemaVersion: 2 });
+    const r = validateAppData({ ...data(), schemaVersion: 3 });
     expect(Array.isArray(r) && r[0]).toMatch(/schemaVersion/);
   });
   it('reports missing fields and types', () => {

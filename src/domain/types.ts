@@ -78,16 +78,69 @@ export interface Settings {
   gridStartHour: number;      // default 6  (week grid visible range)
   gridEndHour: number;        // default 24
   onboarded: boolean;         // default false
+  focus: FocusSettings;       // round 2 (schema v2)
 }
 
 export interface AppData {
-  schemaVersion: 1;
+  schemaVersion: 2;
   settings: Settings;
   courses: Course[];
   sections: Section[];
   entries: TimeEntry[];
   weekPlans: Record<WeekKey, WeekPlan>;
   activeTimer: ActiveTimer | null;
+  focus: FocusSession | null;
+}
+
+// ---------- Focus mode (docs/FOCUS_PLAN.md §4) ----------
+
+/** Scene ids come from the registry; FOCUS_DESIGN.md fixes the list: Daylight (+ Nightfall). */
+export type SceneId = 'daylight' | 'nightfall';
+
+export type FocusPhase = 'focus' | 'paused' | 'complete' | 'break';
+
+export type BlockChoice =
+  | { kind: 'preset'; minutes: 25 | 50 | 90 }
+  | { kind: 'custom'; minutes: number }   // integer 5..240
+  | { kind: 'planned' }                    // "until my planned block ends"
+  | { kind: 'open' };                      // no block length
+
+export interface FocusTarget {
+  courseId: Id;
+  sectionId: Id | null;
+  note: string;
+}
+
+export interface FocusSession {
+  id: Id;
+  target: FocusTarget;
+  choice: BlockChoice['kind'];
+  blockMinutes: number | null;         // null = open-ended; integer 1..480 after extends
+  blockStartedAt: IsoInstant;
+  focusedMsBefore: number;             // focus ms banked in this block before the current segment
+  segmentStartedAt: IsoInstant | null; // null in 'paused' and 'break'
+  phase: FocusPhase;
+  completedAt: IsoInstant | null;
+  pausedAt: IsoInstant | null;
+  breakMinutes: number | null;
+  breakStartedAt: IsoInstant | null;
+  breakEndsAt: IsoInstant | null;
+  blocksCompleted: number;
+  scene: SceneId;
+  immersive: boolean;
+}
+
+export type MotionPref = 'system' | 'full' | 'reduced';
+
+export interface FocusSettings {
+  defaultBlockMinutes: number;       // default 50; integer 5..240
+  lastChoice: BlockChoice;           // default { kind: 'preset', minutes: 50 }
+  askBlockEachTime: boolean;         // default true
+  enterOnClockIn: boolean;           // default true
+  breakMinutes: number;              // default 10; integer 1..60
+  chime: boolean;                    // default true
+  scene: SceneId;                    // default 'daylight'
+  motion: MotionPref;                // default 'system'
 }
 
 export interface GoalProgress {

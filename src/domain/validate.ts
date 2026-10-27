@@ -1,5 +1,7 @@
 // Import validation (PLAN.md §4.10).
-import type { AppData, Goal, Weekday } from './types';
+import type { AppData, FocusSession, Goal, Weekday } from './types';
+import { migrate } from './migrate';
+import { repairFocusSettings, validateFocusSession } from './validateFocus';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -26,10 +28,11 @@ const isWeekdays = (v: unknown): v is Weekday[] => Array.isArray(v) && v.every((
  * Returns a cleaned AppData, or a list of error messages. Dangling sectionIds
  * are set to null and reported in `warnings`.
  */
-export function validateAppData(raw: unknown, warnings: string[] = []): AppData | string[] {
+export function validateAppData(input: unknown, warnings: string[] = []): AppData | string[] {
   const errors: string[] = [];
+  const raw = migrate(input);
   if (!isObj(raw)) return ['File is not a Productive backup (expected a JSON object).'];
-  if (raw.schemaVersion !== 1) errors.push(`Unsupported schemaVersion: ${JSON.stringify(raw.schemaVersion)} (expected 1).`);
+  if (raw.schemaVersion !== 2) errors.push(`Unsupported schemaVersion: ${JSON.stringify(raw.schemaVersion)} (expected 1 or 2).`);
 
   const s = raw.settings;
   if (!isObj(s)) errors.push('settings is missing.');
@@ -47,6 +50,7 @@ export function validateAppData(raw: unknown, warnings: string[] = []): AppData 
   }
   if (!isObj(raw.weekPlans)) errors.push('weekPlans must be an object.');
   if (raw.activeTimer !== null && !isObj(raw.activeTimer)) errors.push('activeTimer must be null or an object.');
+  if (raw.focus !== undefined && raw.focus !== null && !isObj(raw.focus)) errors.push('focus must be null or an object.');
   if (errors.length) return errors;
 
   const courses = raw.courses as unknown[];
@@ -166,13 +170,18 @@ export function validateAppData(raw: unknown, warnings: string[] = []): AppData 
   }
   if (errors.length) return errors;
 
+  const focusSettings = repairFocusSettings((raw.settings as Obj).focus, warnings);
+  let focus: FocusSession | null = null;
+  if (isObj(raw.focus)) focus = validateFocusSession(raw.focus, courseIds, sectionCourse, activeTimer as AppData['activeTimer'], warnings);
+
   return {
-    schemaVersion: 1,
-    settings: raw.settings as AppData['settings'],
+    schemaVersion: 2,
+    settings: { ...(raw.settings as AppData['settings']), focus: focusSettings },
     courses: courses as AppData['courses'],
     sections: sections as AppData['sections'],
     entries: cleanEntries as AppData['entries'],
     weekPlans: cleanPlans as AppData['weekPlans'],
     activeTimer: activeTimer as AppData['activeTimer'],
+    focus,
   };
 }

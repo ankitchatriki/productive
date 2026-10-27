@@ -1,5 +1,6 @@
 // Test fixture builders (imported only by *.test.ts).
 import type { AppData, Course, Section, TimeEntry } from './types';
+import { defaultFocusSettings } from '../storage/defaults';
 
 export const at = (y: number, m: number, d: number, h = 0, min = 0, s = 0) => new Date(y, m - 1, d, h, min, s);
 export const iso = (y: number, m: number, d: number, h = 0, min = 0, s = 0) => at(y, m, d, h, min, s).toISOString();
@@ -18,13 +19,14 @@ export function entry(id: string, courseId: string, start: string, end: string, 
 
 export function data(extra: Partial<AppData> = {}): AppData {
   return {
-    schemaVersion: 1,
-    settings: { dailyGoalMinutes: 480, restDays: [], gridStartHour: 6, gridEndHour: 24, onboarded: true },
+    schemaVersion: 2,
+    settings: { dailyGoalMinutes: 480, restDays: [], gridStartHour: 6, gridEndHour: 24, onboarded: true, focus: { ...defaultFocusSettings, lastChoice: { ...defaultFocusSettings.lastChoice } } },
     courses: [],
     sections: [],
     entries: [],
     weekPlans: {},
     activeTimer: null,
+    focus: null,
     ...extra,
   };
 }
