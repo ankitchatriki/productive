@@ -303,6 +303,7 @@ export interface RangeFrame { horizonY: number; summit: V; baseY: number }
 /** Skyline height (world y) of a range layer at world x, and the x of the peak that dominates there. */
 export function rangeSkyline(layer: RangeLayer, x: number, f: RangeFrame): { y: number; peakX: number } {
   const hRef = f.summit.y - f.horizonY;
+  const capAt = (px: number) => f.summit.y - 0.02 - (Math.abs(px - f.summit.x) < 0.12 ? 0.06 : 0);
   let best = -Infinity, peakX = x;
   const cell = Math.floor(x);
   for (let c = cell - 2; c <= cell + 2; c++) {
@@ -310,7 +311,8 @@ export function rangeSkyline(layer: RangeLayer, x: number, f: RangeFrame): { y: 
     const n = layer.density[0] + Math.floor(r() * (layer.density[1] - layer.density[0] + 1));
     for (let k = 0; k < n; k++) {
       const px = c + (k + 0.2 + r() * 0.6) / n;
-      const ph = f.horizonY + hRef * (layer.height[0] + r() * (layer.height[1] - layer.height[0]));
+      // Peaks that would rise above the true summit are lowered as a whole, so their tops stay pointed (no flat crowns).
+      const ph = Math.min(f.horizonY + hRef * (layer.height[0] + r() * (layer.height[1] - layer.height[0])), capAt(px) - layer.amp * 0.5);
       const sl = layer.slope[0] + r() * (layer.slope[1] - layer.slope[0]);
       const y = ph - Math.abs(x - px) * sl;
       if (y > best) { best = y; peakX = px; }
