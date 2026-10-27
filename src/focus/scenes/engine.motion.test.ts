@@ -128,3 +128,35 @@ describe('strain beat framing (V9)', () => {
     expect(beats).toBeGreaterThan(0);
   }, 30000);
 });
+
+describe('the rendered climb at the engine\'s own 30 fps (V7)', () => {
+  it('pelvis |a| ≤ 1.6 H/s² and |j| ≤ 12 H/s³; head axis ≤ 0.5°, elbow ≤ 0.8° per 60 Hz frame — trudge frames, 60 s at 1440×900', async () => {
+    const e = await makeEngine(1440, 900);
+    let focused = 300;
+    e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / 1500); e.setPhase('focus', { instant: true });
+    const rows: Array<{ t: number; p: number[]; g: string; ha: number; el: number; u: number }> = [];
+    for (let k = 0; k < 60; k++) {
+      focused += 1; e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / 1500);
+      run(1, (s) => rows.push({ t: s.clock as number, p: s.pelvisW as number[], g: s.gait as string, ha: s.headAxisDeg as number, el: s.elbowDeg as number, u: s.u as number }), e.stats as unknown as Record<string, unknown>);
+    }
+    e.destroy();
+    const beatStarts = rows.filter((r, i) => r.g === 'strain' && rows[i - 1]?.g !== 'strain').map((r) => r.t);
+    let aMax = 0, jMax = 0, haMax = 0, elMax = 0;
+    for (let i = 3; i < rows.length; i++) {
+      const w = rows.slice(i - 3, i + 1);
+      if (w.some((r) => r.g !== 'trudge') || rows[i].t - rows[0].t < 3) continue;
+      // (the step that decelerates into a strain beat belongs to the beat: strain limits, motion.clean.test.ts)
+      if (beatStarts.some((b) => b - rows[i].t >= 0 && b - rows[i].t < 3.2)) continue;
+      const h = (rows[i].t - rows[i - 3].t) / 3;
+      const d = (k: number) => [0, 1].map((c) => w[k].p[c]);
+      const a = [0, 1].map((c) => (d(3)[c] - 2 * d(2)[c] + d(1)[c]) / (h * h));
+      const j = [0, 1].map((c) => (d(3)[c] - 3 * d(2)[c] + 3 * d(1)[c] - d(0)[c]) / (h * h * h));
+      aMax = Math.max(aMax, Math.hypot(a[0], a[1])); jMax = Math.max(jMax, Math.hypot(j[0], j[1]));
+      const per60 = (1 / 60) / h;
+      haMax = Math.max(haMax, Math.abs(w[3].ha - w[2].ha) * per60); elMax = Math.max(elMax, Math.abs(w[3].el - w[2].el) * per60);
+    }
+    console.log(`engine 30 fps: pelvis |a| ${aMax.toFixed(2)} H/s², |j| ${jMax.toFixed(1)} H/s³, head ${haMax.toFixed(2)}°/60Hz-frame, elbow ${elMax.toFixed(2)}°`);
+    expect(aMax).toBeLessThanOrEqual(1.6); expect(jMax).toBeLessThanOrEqual(12);
+    expect(haMax).toBeLessThanOrEqual(0.5); expect(elMax).toBeLessThanOrEqual(0.8);
+  }, 30000);
+});

@@ -115,8 +115,8 @@ export const sigmaAt = (thetaDeg: number) => (FRONT_FOOT + REAR_FOOT) * cosRatio
 export const periodAt = (thetaDeg: number) => sigmaAt(thetaDeg) / PACE;
 const SIM_DT = 1 / 120;
 /** V8: the cadence eases up from rest (after a hold or a strain beat) over this long. */
-const RAMP_T = 0.4;
-const PRESS_END = 0.24, PRESS_KNEE = 166, TOEOFF_KNEE = 150, TO_BLEND = 0.08;
+const RAMP_T = 0.3;
+const PRESS_END = 0.24, PRESS_KNEE = 164, TOEOFF_KNEE = 150, TO_BLEND = 0.16;
 /** 0 → 1 at an even rate with eased ends (C2; the peak rate is 1.33×, against 1.875× for a quintic ease). */
 const trapRamp = (x: number) => {
   // even-rate ramp whose speed eases in and out on smoothsteps (C2 position: no jerk spike at the joins)
@@ -125,7 +125,7 @@ const trapRamp = (x: number) => {
 };
 /** Hip-to-ankle reach (fraction of the leg chain) for an interior knee angle. */
 const kneeReach = (deg: number) => Math.sqrt(RIG.thigh ** 2 + RIG.shin ** 2 - 2 * RIG.thigh * RIG.shin * Math.cos(deg * DEG)) / LEG_CHAIN;
-const KNEE_SOFT = kneeReach(172); // just inside LEG_MAX (≈ 170°): the hard reach never binds
+const KNEE_SOFT = kneeReach(173); // just inside LEG_MAX (≈ 170°): the hard reach never binds
 /** The push-hold key pose sits at the end of the press: the feet are planted relative to D + KEY_OFF·σ (§3.4). */
 const KEY_OFF = 0.12;
 const EXT = 0.995;
@@ -555,7 +555,7 @@ export class Gait {
       const lim0 = hipCeiling(trail.at(sT), trail.normalAt(sT), 2, [footAt(rear.ball, rear.ground, KEY.rearHeel(PHASE.toeOff) * DEG).ankle], KNEE_SOFT, true);
       swingKneeCeil = lim0 + 0.15 * ease5((k - PHASE.toeOff) / 0.15);
     }
-    const fadeSwing = swingPlanted || !trudge ? 0 : ease5((k - PHASE.toeOff) / 0.12);
+    const fadeSwing = swingPlanted || !trudge ? 0 : ease5((k - PHASE.toeOff) / 0.06);
     const smin = (a: number, c: number, kk: number) => 0.5 * (a + c - Math.sqrt((a - c) ** 2 + kk * kk));
     const kneeLimit = (hgt: number, kk: number, off: number) => {
       const withSwing = smin(hgt, Math.min(stanceKneeCeil, swingKneeCeil) - off, kk), without = smin(hgt, stanceKneeCeil - off, kk);
@@ -566,7 +566,7 @@ export class Gait {
     // the planted legs open to ≈ 169° at most: a soft limit just inside the hard reach, so the spring's small
     // overshoots never snap a knee straight (near-straight, a millimetre of height is ten degrees of knee)
     const hRaw = Number.isFinite(st.hh) && !rawStone ? st.hh : hhTarget;
-    const hSoft = kneeLimit(hRaw, 0.002, 0);
+    const hSoft = kneeLimit(hRaw, 0.004, 0);
     const hh = Math.min(hSoft, ceil);
     const pelvis = { x: base.x + nrm.x * hh, y: base.y + nrm.y * hh };
     // Swing leg: keyed FK, blended to IK toward the plant target over u 0.66–0.75 (on the foot target).

@@ -108,7 +108,7 @@ export const REAR_HEEL = 30;
 /** Far hand offset around the stone and far-shoulder offset (H), so both arms read in profile (review U10). */
 export const HAND_NEAR = 0, HAND_FAR = -0.05, FAR_SHOULDER = 0.03; // the far hand sits 0.05 H higher round the stone
 /** Max stance-leg extension: 0.996 keeps the rear knee at ≈ 168° (0.985 would cap it at 159°). */
-export const LEG_MAX = 0.998;
+export const LEG_MAX = 0.9985;
 
 /** Head centre from the shoulder: neck thrust 70° from vertical, head axis 100° (chin tucked). */
 export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {

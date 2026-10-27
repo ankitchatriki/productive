@@ -9,7 +9,7 @@ import { M_PER_H, PACE_M } from '../../domain/mountain';
 import { PACE, sigmaAt } from './gait';
 import { hash1, mulberry32, noise1, ridged, smoothstep } from './noise';
 import type { V } from './path';
-import { RIG, holdDForStone, solveSit, stepToStand, type Pose } from './rig';
+import { DEG as DEG_, RIG, holdDForStone, interior as interiorDeg_, solveSit, stepToStand, type Pose } from './rig';
 import { PREFIX_LEN } from '../../domain/mountain';
 import { Gait } from './gait';
 import { drawFigureArt, figureTier, lastDetailMs, type FigureFrame } from './figureArt';
@@ -30,7 +30,7 @@ const R = RIG.boulderR; // H units
 const ROLL_DIR = 1;
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number; camY?: number; figureMs?: number; detailMs?: number; tier?: number; pelvisH?: number; clothDeg?: number; clock?: number; u?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; detailAvg?: number; settling?: boolean; cut?: boolean; handGapPx?: number; pelvisPx?: number[] }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number; camY?: number; figureMs?: number; detailMs?: number; tier?: number; pelvisH?: number; clothDeg?: number; clock?: number; u?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; detailAvg?: number; settling?: boolean; cut?: boolean; handGapPx?: number; pelvisPx?: number[]; pelvisW?: number[]; headAxisDeg?: number; elbowDeg?: number }
 
 interface Grit { live: boolean; x: number; y: number; vx: number; vy: number; age: number }
 
@@ -734,7 +734,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stats.figureAvg = stats.frames ? (stats.figureAvg ?? stats.figureMs) * 0.95 + stats.figureMs * 0.05 : stats.figureMs;
     stats.detailAvg = stats.frames ? (stats.detailAvg ?? lastDetailMs) * 0.95 + lastDetailMs * 0.05 : lastDetailMs;
     stats.settling = settling; stats.cut = cut; cut = false;
-    if (pose.hands) { const he = S(pose.arms[0].end), hp = S(pose.hands[0]); stats.handGapPx = Math.abs(Math.hypot(he.x - hp.x, he.y - hp.y) - RIG.wristToPalm * lay.Hpx * cam.zoom); stats.pelvisPx = [S(pose.pelvis).x, S(pose.pelvis).y]; }
+    if (pose.hands) { const he = S(pose.arms[0].end), hp = S(pose.hands[0]); stats.handGapPx = Math.abs(Math.hypot(he.x - hp.x, he.y - hp.y) - RIG.wristToPalm * lay.Hpx * cam.zoom); stats.pelvisPx = [S(pose.pelvis).x, S(pose.pelvis).y]; stats.pelvisW = [pose.pelvis.x, pose.pelvis.y]; stats.headAxisDeg = (pose.headAxis ?? 0) / DEG_; stats.elbowDeg = interiorDeg_(pose.arms[0]); }
     stepGrit(dt);
     drawGrit(g);
 
