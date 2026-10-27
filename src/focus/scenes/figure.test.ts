@@ -166,3 +166,21 @@ describe('stand and sit (§5.2, §5.3)', () => {
     for (const f of p.feet!) expect(Math.abs(f.ball.y - flat.groundY(f.ball.x)) * HPX).toBeLessThanOrEqual(1);
   });
 });
+
+describe('cloth flaps (V5)', () => {
+  it('the hanging flaps are soft tabs with a rounded hem, never tapering to a spike', async () => {
+    const { makeChain } = await import('./chain');
+    const path = line(22);
+    const { pose, centre } = solveHoldStatic(path, 5);
+    const a = { x: pose.pelvis.x, y: pose.pelvis.y - 0.08 };
+    const chains = [makeChain(a, 3, 0.24 / 8, 30, 0.6), makeChain({ x: a.x - 0.05, y: a.y }, 3, 0.24 / 8, 30, 0.6)];
+    const g = figureGeom({ pose, centre, R: RIG.boulderR, Hpx: HPX, toS: (v) => v, chains, trail: path as unknown as Trail, facing: 1, quality: 1 });
+    for (const poly of g.groups.cloth.slice(-2)) {
+      // the free end: the two edge points at the last chain point are ≥ 0.2 head units apart, and the hem bulges out
+      const n = 4, left = poly[n - 1], right = poly[poly.length - n];
+      expect(dist(left, right)).toBeGreaterThanOrEqual(0.2 * hu);
+      const tipY = Math.min(...poly.map((p) => p.y));
+      expect(Math.min(left.y, right.y) - tipY).toBeLessThanOrEqual(0.12 * hu); // a rounded end, not a long point
+    }
+  });
+});

@@ -456,10 +456,18 @@ export function figureGeom(fr: FigureFrame, tier: Tier = 3): FigureGeom {
         const dx = bq.x - a.x, dy = bq.y - a.y, l = Math.hypot(dx, dy) || 1;
         const n = { x: -dy / l, y: dx / l };
         const k = i / (P.length - 1);
-        const wd = (tail ? 0.06 - 0.04 * k : 0.17 - 0.13 * k) * h; // flaps taper 0.34 → 0.08 h (the spec 0.45 → 0.25 read as boxes), knot tails 0.12 → 0.04 h
+        const wd = (tail ? 0.06 - 0.02 * k : 0.17 - 0.04 * k) * h; // V5: soft cloth tabs (0.34 → 0.26 h) with a rounded end, never spikes; knot tails 0.12 → 0.08 h
         left.push({ x: P[i].x + n.x * wd, y: P[i].y + n.y * wd }); right.push({ x: P[i].x - n.x * wd, y: P[i].y - n.y * wd });
       }
-      groups.cloth.push([...left, ...right.reverse()]);
+      // rounded hem at the free end: a half-ellipse beyond the last point
+      const n = P.length - 1, e = P[n], d0 = P[n - 1], ex = e.x - d0.x, ey = e.y - d0.y, el = Math.hypot(ex, ey) || 1;
+      const tx = ex / el, ty = ey / el, wEnd = Math.hypot(left[n].x - e.x, left[n].y - e.y);
+      const cap: V[] = [];
+      for (let j = 1; j < 6; j++) {
+        const a = (Math.PI * j) / 6, cw = Math.cos(a), sw = Math.sin(a) * 0.7;
+        cap.push({ x: e.x + (left[n].x - e.x) * cw + tx * wEnd * sw, y: e.y + (left[n].y - e.y) * cw + ty * wEnd * sw });
+      }
+      groups.cloth.push([...left, ...cap, ...right.reverse()]);
       if (!tail && tier >= 2) {
         for (const off of [0.3, -0.3]) lines.cloth.F.push(P.map((p, i) => ({ x: p.x + (left[i].x - p.x) * off, y: p.y + (left[i].y - p.y) * off })).slice(1));
         strokes += 2;
