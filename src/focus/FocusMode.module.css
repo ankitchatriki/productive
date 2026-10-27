@@ -27,9 +27,7 @@
 /* Auto-hiding parts */
 .fade { transition: opacity var(--dur-chrome-hide) ease; }
 .hidden .fade { opacity: 0; }
-.hidden .fade:focus-within { opacity: 1; }
-.hidden .fade * { pointer-events: none; }
-.hidden .fade:focus-within * { pointer-events: auto; }
+.hidden .fade, .hidden .fade * { pointer-events: none !important; }
 .shown .fade { transition-duration: var(--dur-chrome-reveal); }
 .reduced .fade { transition: none; }
 
@@ -65,7 +63,6 @@
   background: none; border: 0; padding: 0 8px; cursor: pointer; transition: opacity var(--dur-chrome-hide) ease; pointer-events: auto;
 }
 .readout.muted { color: var(--focus-ink-muted); }
-.hidden .readout { opacity: 0.55; }
 .readoutHidden { font-size: var(--text-sm); opacity: 0.5; font-family: var(--font-sans); }
 .caption { font-size: var(--text-md); color: var(--focus-ink-muted); text-shadow: var(--focus-text-shadow); margin-top: -8px; }
 .progress { width: min(280px, 60vw); height: 3px; border-radius: 2px; background: rgba(255,255,255,0.18); overflow: hidden; }
@@ -117,7 +114,6 @@
 
 @media (max-width: 767px) {
   .top { padding: max(16px, env(safe-area-inset-top)) 16px 0; }
-  .hidden .fade { opacity: 0.35; }
   .keys { display: none; }
 }
 @media (max-height: 480px) and (orientation: landscape) {

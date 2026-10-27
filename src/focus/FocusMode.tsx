@@ -160,9 +160,15 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
   const setScene = (scene: SceneId) => { dispatch({ type: 'focus/setScene', scene }); dispatch({ type: 'focus/settings', patch: { scene } }); };
 
   // Overlay keys (FOCUS_PLAN §3.11). Esc is handled by the focus trap.
+  const chromeHiddenRef = useRef(false);
+  const openedAt = useRef(Date.now());
+  const revealedAt = useRef(0);
   useOverlayKeys(ref, (e) => {
     const k = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toLowerCase() : e.key;
     const onButton = (e.target as HTMLElement | null)?.closest('button, select, a');
+    // Review S1/S15: while the chrome is faded, Enter/Space on the (invisible) focused control only reveals it;
+    // just after opening, an Enter/Space that followed the start key doesn't hit Pause.
+    if (onButton && (k === 'Enter' || k === 'Space') && (chromeHiddenRef.current || Date.now() - revealedAt.current < 150 || Date.now() - openedAt.current < 600)) return true;
     switch (k) {
       case 'Space':
         if (onButton) return false;
@@ -191,6 +197,9 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
   const sceneProgress = phase === 'complete' ? Math.min(1, view.overtimeMs / (60 * 60_000)) : view.progress;
   const scenePhase = phase === 'focus' && s.blockMinutes === null ? 'open' : phase;
   const chromeHidden = idle && !sticky && !showKeys;
+  // React re-renders between the idle hook's window listener and ours, so remember when the chrome was last revealed.
+  if (chromeHiddenRef.current && !chromeHidden) revealedAt.current = Date.now();
+  chromeHiddenRef.current = chromeHidden;
   const label = [view.courseName, view.sectionTitle].filter(Boolean).join(' · ');
 
   return createPortal(
@@ -246,7 +255,7 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
             </div>
           )}
           {hud && <div className={styles.hud} role="status">{hud}</div>}
-          <div className={styles.readoutBox}>
+          <div className={`${styles.readoutBox} ${styles.fade}`}>
             <FocusHud view={view} now={now} readoutMode={readoutMode} onCycleReadout={cycleReadout} />
           </div>
           {phase === 'focus' || phase === 'paused' ? (
