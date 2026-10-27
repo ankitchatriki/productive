@@ -140,7 +140,8 @@ export function summitS(R: number, L: number): number { return 1 - (R * 0.9) / L
 /** Quadratic Bézier sun path in screen space (§3.6). */
 export function sunPosition(p: number, w: number, h: number, horizonY: number, summit: V, layout: Layout): V {
   const A = { x: 0.1 * w, y: horizonY };
-  const C = layout === 'portrait' ? { x: 0.4 * w, y: 0.08 * h } : { x: 0.42 * w, y: 0.1 * h };
+  // Portrait keeps the sun below the readout band at the top of the screen (review S2).
+  const C = layout === 'portrait' ? { x: 0.4 * w, y: 0.3 * h } : { x: 0.42 * w, y: 0.1 * h };
   const B = { x: summit.x + 0.035 * w, y: summit.y - 0.11 * h };
   const t = Math.min(1, Math.max(0, p)), u = 1 - t;
   return { x: u * u * A.x + 2 * u * t * C.x + t * t * B.x, y: u * u * A.y + 2 * u * t * C.y + t * t * B.y };

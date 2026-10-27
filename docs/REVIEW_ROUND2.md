@@ -146,3 +146,26 @@ I captured frames at 130 ms intervals at 1440×900 (dpr 2) and 390×844 (dpr 3).
 - Vite dev server (`npm run dev`) for the walkthrough and `vite preview` for splash timing. Playwright 1.63 Chromium, headless, `timezoneId: UTC`, with `page.clock` installed at 2026-10-27 14:20 for the timed flows. Frame-time runs used no fake clock.
 - Fixture: 3 courses (OChem, LinAlg, Physics), 3 entries today plus 2 yesterday, a week plan with blocks 09:00–10:45, 11:00–12:00, 14:00–15:00 and 16:00–17:00, an unfinished Monday section (carry-over banner) and a 48 h goal. Variants: running timer from 14:05, 15 extra entries, a 10 h timer, a v1 blob and a stale paused session.
 - I wrote no code changes. The only files touched are this report and `docs/review/round2/`.
+
+## Resolution
+
+Coder, 27 Oct 2026. Every finding was reproduced before it was fixed. Tests: 228 pass (was 224). Typecheck and build are clean.
+
+| ID | Outcome | Commit |
+|---|---|---|
+| S1 | **Fixed.** Removed the `:focus-within` override, so the top bar, readout and controls all fade after 3 s idle, also on phones (the 0.35 floor is gone) and also while focus sits on Pause. A key, tap or mouse move brings them back, and Tab still reveals them. While the chrome is faded, Enter/Space on the invisible focused control only reveals it. | 09b736b |
+| S2 | **Fixed.** Portrait lifts the world by 19% of the height, so the climb sits above the control bar. The stone stays on screen on narrow phones. The figure is ~73 px standing at 390 px, and the sun path stays below the readout. The course label wraps onto its own line under 480 px. The complete panel clears the summit. The desktop figure and stone are 30% larger. | 079bc09, this commit |
+| S3 | **Fixed.** `blockMinutes` stays the chosen length. A new `targetMs`/`extendedMinutes` pair holds the exact current target. +10 at +3:16 gives 10:00 left. Keep going / Next block use 25. The header reads "25 min block · +10". While focusing, +N adds to what's left. Tested. | 93c353f |
+| S4 | **Fixed.** Longer plateaus mean the figure steps onto the plateau and rests a hand on top of the stone. "Summit." appears at about 3.6 s (the delay is now computed once). The glow punch-in was not added. | 079bc09, c484ea9 |
+| S5 | **Fixed.** The figure sits on the plateau against the stone and stands up (1 s) when the break runs out. | 079bc09 |
+| S6 | **Fixed.** The roll-back cross-fades from the current sky to dawn, with no noon flash. | 079bc09 |
+| S7 | **Fixed.** Focus returns to the opener: Back to focus or the pill when the original button re-rendered. A scene click keeps focus in the dialog. | 30bcedd |
+| S8 | **Fixed.** The Start card's pick block and running block sit centred above TODAY, and the running readout grows to 76 px. There's no "Behind" before a study day of the week has passed. | 54870f4 |
+| S9 | **Fixed.** "Until 15:00" targets the planned end exactly (ends 15:00:00). Tested. | 93c353f |
+| S10 | Fixed: the planned chip shows a course dot. | 54870f4 |
+| S11 | Skipped (nit): the log row is already a grid. The ragged look comes from the time-range text. Left for a later polish pass. | — |
+| S12 | Fixed: "left · paused". | c484ea9 |
+| S13 | Fixed: the inline skip rule applies the 6 h stale check. Tested. | 243ee22 |
+| S14 | Partly: the dust is tinted and fainter. Joint seams and the contact shadow are unchanged. | 079bc09 |
+| S15 | Fixed with S1: Enter/Space in the first 600 ms after opening is swallowed. | 09b736b |
+| Perf | Screens over 3 MP cap the canvas at 1.3 MP. Headless 3440×1440 went from ~18 to ~22 fps. | 2c4a828 |
