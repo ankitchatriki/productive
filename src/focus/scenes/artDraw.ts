@@ -211,3 +211,12 @@ export function drawContactArc(g: CanvasRenderingContext2D, c: V, Rpx: number, s
     g.beginPath(); g.arc(c.x, c.y, Rpx - 1.5, s0, e); g.stroke();
   }
 }
+
+/**
+ * Soft cap for a range skyline (review U4): heights well under `allowed` pass unchanged, taller ones are pressed
+ * smoothly toward it (p-norm soft minimum) — peaks keep their shape and slip behind the slope, never a flat shelf.
+ */
+export function softCap(height: number, allowed: number, p = 6): number {
+  if (allowed <= 0 || height <= 0) return Math.max(0, Math.min(height, 0));
+  return (height * allowed) / Math.pow(Math.pow(height, p) + Math.pow(allowed, p), 1 / p);
+}

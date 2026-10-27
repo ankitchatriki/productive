@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { softCap } from './artDraw';
 import { ART_STOPS, INK, LW, NIGHT, artStop, contrast, hexToRgb, pausedStop } from './artPalette';
 import sisyphusSrc from './sisyphus.ts?raw';
 import artDrawSrc from './artDraw.ts?raw';
@@ -38,5 +39,20 @@ describe('A0: flat black-figure rules (ROUND3_ART §1.3)', () => {
     expect(LW(60).contour).toBe(1.25);
     expect(LW(600).incise).toBe(2.0);
     expect(LW(216).swirl).toBe(1.75);
+  });
+});
+
+describe('range cap (review U4)', () => {
+  it('never exceeds the allowed height, keeps low peaks, and has no flat shelf (strictly increasing)', () => {
+    const A = 100;
+    let prev = -1;
+    for (let H = 0; H <= 400; H += 2) {
+      const c = softCap(H, A);
+      expect(c).toBeLessThanOrEqual(A);
+      expect(c).toBeGreaterThan(prev);
+      prev = c;
+    }
+    expect(softCap(30, A)).toBeGreaterThan(29.9);
+    expect(softCap(50, 0)).toBe(0);
   });
 });

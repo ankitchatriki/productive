@@ -2,7 +2,7 @@
 // endless incline. Flat fills and thin ochre lines; the summit appears only when a block completes.
 import type { ClimbInput, SceneEngine, SceneInitOptions, ScenePhase } from './types';
 import { INK, LW, NIGHT, PREDAWN_BAND, artStop, mixOk, mixStop, pausedStop, type ArtStop } from './artPalette';
-import { buildBoulderSprite, buildCloudMass, buildStrip, drawContactArc, drawMoon, drawSky, drawStars, drawSun, makeStars, mkCanvas, type Star } from './artDraw';
+import { softCap, buildBoulderSprite, buildCloudMass, buildStrip, drawContactArc, drawMoon, drawSky, drawStars, drawSun, makeStars, mkCanvas, type Star } from './artDraw';
 import { camLayout, clampCamX, follow, toScreen, type Cam, type CamLayout } from './camera';
 import { detailsIn, makeTrail, type Trail } from './trail';
 import { M_PER_H, PACE_M } from '../../domain/mountain';
@@ -26,7 +26,7 @@ const MAX_GRIT = 12;
 const R = RIG.boulderR; // H units
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number }
 
 interface Grit { live: boolean; x: number; y: number; vx: number; vy: number; age: number }
 
@@ -105,13 +105,14 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let desatK = 0, desatTarget = 0;
 
   // ---------- caches ----------
-  interface Strip { canvas: HTMLCanvasElement | null; offAtBuild: number; key: string; uStart: number; band: number }
+  interface Strip { canvas: HTMLCanvasElement | null; offAtBuild: number; key: string; uStart: number; band: number; sig: CapSig | null }
+  interface CapSig { stoneX: number; ys: number[] }
   const LAYERS = [
     { name: 'far', baseY: 0.42, k: 0.08, f: 0.02, unit: 0.30, amp: 0.20, seed: 11 },
     { name: 'mid', baseY: 0.48, k: 0.18, f: 0.05, unit: 0.24, amp: 0.15, seed: 23 },
     { name: 'near', baseY: 0.52, k: 0.32, f: 0.10, unit: 0.18, amp: 0.11, seed: 37 },
   ] as const;
-  const strips: Strip[] = LAYERS.map(() => ({ canvas: null, offAtBuild: 0, key: '', uStart: 0, band: 0 }));
+  const strips: Strip[] = LAYERS.map(() => ({ canvas: null, offAtBuild: 0, key: '', uStart: 0, band: 0, sig: null }));
   interface Cloud { canvas: HTMLCanvasElement | null; key: string; x: number; y: number; mw: number; mh: number; seed: number; back: boolean; part: number }
   let clouds: Cloud[] = [];
   let boulderSprite: HTMLCanvasElement | null = null;
@@ -120,7 +121,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   const chunkCache = new Map<number, { body: Path2D; lines: Path2D; salmon: Path2D; stones: Path2D; stoneTops: Path2D; tufts: Path2D }>();
   /** Cache rebuilds allowed this frame (strips and cloud masses rebuild staged, one per frame). */
   let cacheBudget = 1;
-  let drawnRanges = 0, drawnClouds = 0;
+  let drawnRanges = 0, drawnClouds = 0, stripBuilds = 0;
   /** After a cut, the next frame rebuilds every stale cache at once (no mixed-palette frame). */
   let rebuildAll = false;
 
@@ -218,6 +219,17 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     return Math.max(0, best + L.amp * 0.06 * (ridged(u * 3 + L.seed) - 0.5));
   }
 
+  /** Screen y of the slope surface at screen x (current render camera). */
+  function slopeScreenY(X: number): number {
+    const wx = cam.pos.x + (X - cam.anchor.x) / (lay.Hpx * cam.zoom);
+    return S({ x: wx, y: trail.groundY(wx) }).y;
+  }
+  let stoneScreenX = 0;
+  /** What the range cap depends on: the stone's screen x and the slope's screen skyline. */
+  function capSignature(): CapSig {
+    return { stoneX: stoneScreenX, ys: [0.55, 0.7, 0.85, 1].map((k) => slopeScreenY(k * w)) };
+  }
+  const sigMoved = (a: CapSig | null, b: CapSig) => !a || Math.abs(a.stoneX - b.stoneX) > 40 || a.ys.some((y, j) => Math.abs(y - b.ys[j]) > 12);
   /** The range cap ahead of the stone applies while tracking (not in the wide summit / next-climb shots). */
   const capOn = () => renderCam.zoom > 0.99;
   function layerOffset(i: number): number { return -LAYERS[i].f * cam.pos.x * lay.Hpx; }
@@ -232,15 +244,24 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const uStart = (-0.5 * w - off) / unit;
     const band = (L.amp * 1.25 + 0.04) * h; // the strip holds only the peaks; below it is a plain fillRect
     const base = band - 0.02 * h;            // skyline zero row inside the strip
-    // Clarity: ahead of the stone, ranges stay below a 16° line through the anchor (never above the slope's horizon).
-    const capY = (X: number) => (capOn() && X > lay.anchor.x + px(1.2) ? lay.anchor.y - (X - lay.anchor.x) * Math.tan((16 * Math.PI) / 180) + 0.04 * h : -1e9);
+    // Clarity (review U4): ahead of the stone no range may rise above the real slope skyline. Peaks are lowered
+    // smoothly (a soft minimum against the slope edge, measured per column) so they slip behind the slope instead
+    // of being clipped into shelves or a straight wedge; left of the stone they are untouched.
+    const cap = capOn();
+    const sig = capSignature();
     const top0 = layerTop(i, altNow);
+    const ramp = Math.max(8, px(R));
     const strip = buildStrip(2 * w, band, scale, stripColour(i), (x) => {
       const X = x - 0.5 * w;
-      const yScreen = top0 - skyline(L, uStart + x / unit) * h;
-      return Math.max(yScreen, capY(X)) - top0 + base;
+      const H = skyline(L, uStart + x / unit) * h;             // px above the layer's base line
+      if (!cap || X < sig.stoneX - ramp) return base - H;
+      const allowed = top0 - (slopeScreenY(X) + 16);             // px above base that stays behind the slope (with room for drift between rebuilds)
+      const wgt = smoothstep(sig.stoneX - ramp, sig.stoneX, X);
+      const A = allowed + (1 - wgt) * 2 * h;
+      return base - softCap(H, A);
     });
-    strips[i].canvas = strip; strips[i].offAtBuild = off; strips[i].uStart = uStart; strips[i].band = band;
+    stripBuilds++;
+    strips[i].canvas = strip; strips[i].offAtBuild = off; strips[i].uStart = uStart; strips[i].band = band; strips[i].sig = sig;
     strips[i].key = `${stripColour(i)}|${Math.round(top0)}|${capOn()}`;
   }
 
@@ -546,6 +567,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const tp = trail.at(targetS);
     updateCamera(t, dt, tp);
     cam.anchor = renderCam.anchor; const keepPos = cam.pos; cam.pos = renderCam.pos; cam.zoom = renderCam.zoom;
+    stoneScreenX = S(centre).x;
 
     // Altitude parallax: 0 at the climb start, 1 at its end.
     const lh = Math.max(1e-3, trail.at(trail.geom.crestS).y - trail.at(0).y);
@@ -570,7 +592,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const s = strips[i];
       const off = layerOffset(i);
       const key = `${stripColour(i)}|${Math.round(layerTop(i, altNow))}|${capOn()}`;
-      const stale = !s.canvas || Math.abs(off - s.offAtBuild) > 0.12 * w || (s.key !== key && Math.abs(Number(s.key.split('|')[1]) - layerTop(i, altNow)) > 0.03 * h) || s.key.split('|')[0] !== key.split('|')[0] || s.key.split('|')[2] !== key.split('|')[2];
+      const capStale = capOn() && (Math.abs(off - s.offAtBuild) > 12 || sigMoved(s.sig, capSignature()));
+      const stale = !s.canvas || capStale || Math.abs(off - s.offAtBuild) > 0.12 * w || (s.key !== key && Math.abs(Number(s.key.split('|')[1]) - layerTop(i, altNow)) > 0.03 * h) || s.key.split('|')[0] !== key.split('|')[0] || s.key.split('|')[2] !== key.split('|')[2];
       if (stale && cacheBudget > 0) { buildStripFor(i); cacheBudget--; }
     }
     drawStrip(g, 0, altNow);
@@ -610,7 +633,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       below += Math.min(1, Math.max(0, (h - Y) / h));
     }
     stats.slopeFrac = below / 16;
-    stats.zoom = cam.zoom; stats.rangesDrawn = drawnRanges; stats.cloudsDrawn = drawnClouds;
+    stats.zoom = cam.zoom; stats.rangesDrawn = drawnRanges; stats.cloudsDrawn = drawnClouds; stats.stripBuilds = stripBuilds;
     cam.pos = keepPos;
     stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS(); stats.gait = mode === "climb" ? gait.mode : mode;
     void t0;
