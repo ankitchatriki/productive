@@ -579,8 +579,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         ffS = dTarget(t); ffV = live ? PACE : 0; ffA = 0; corr = lin - (ffS - 0.15 * sig); corrV = 0; corrA = 0;
       }
       // the feed-forward speed itself changes through a critically damped filter (ω = 2.5): eases in and out
-      ffA += (-6.25 * (ffV - (live ? PACE : 0)) - 5 * ffA) * dt; ffV += ffA * dt;
-      ffS += ffV * dt + (dTarget(t) - ffS) * Math.min(1, dt * 0.1);
+      // V9: through a strain beat the world eases down to 25% of the pace (the figure stalls for 3 s), so he never
+      // slides far back in the frame; the saturating correction brings him home in a few seconds
+      const vT = live ? PACE * (frMode === 'strain' ? 0.25 : 1) : 0;
+      ffA += (-6.25 * (ffV - vT) - 5 * ffA) * dt; ffV += ffA * dt;
+      ffS += ffV * dt + 0.03 * PACE * Math.tanh((dTarget(t) - ffS) / 0.3) * dt; // (a slow, capped pull keeps it honest)
       // the correction: proportional (ω = 1.2) but its speed saturates at ±12% of v̄ and changes through a critically
       // damped velocity filter (ω = 2) — a strain beat's 3 s stall plays out in the frame, the world never stutters
       const err = lin - (ffS - 0.15 * sig) - corr, vmax = 0.12 * PACE;

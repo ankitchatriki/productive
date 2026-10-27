@@ -10,14 +10,14 @@ afterAll(removeStubs);
 
 const lenM = 1500 * PACE_M;
 const climb = (posM: number) => ({ stage: 1, stageStartM: 0, stageLenM: lenM, posM, fromSummit: false, summits: 0, atSummit: false });
-interface Row { t: number; x: number; y: number; ph: number; cloth: number }
+interface Row { t: number; x: number; y: number; ph: number; cloth: number; g: string }
 
 async function capture(startS: number, secs: number): Promise<Row[]> {
   const e = await makeEngine(1440, 900);
   let focused = startS;
   e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / 1500); e.setPhase('focus', { instant: true });
   const rows: Row[] = [];
-  const rec = (s: Record<string, unknown>) => rows.push({ t: s.clock as number, x: s.camX as number, y: s.camY as number, ph: s.pelvisH as number, cloth: s.clothDeg as number });
+  const rec = (s: Record<string, unknown>) => rows.push({ t: s.clock as number, x: s.camX as number, y: s.camY as number, ph: s.pelvisH as number, cloth: s.clothDeg as number, g: s.gait as string });
   for (let k = 0; k < secs; k++) {
     focused = Math.min(1500, focused + 1);
     e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / 1500);
@@ -30,13 +30,25 @@ async function capture(startS: number, secs: number): Promise<Row[]> {
 const speedOf = (r: Row[]) => r.slice(1).map((q, i) => ({ t: q.t, v: Math.hypot(q.x - r[i].x, q.y - r[i].y) / (q.t - r[i].t) }));
 
 describe('feed-forward camera (§7.6)', () => {
-  it('while climbing: speed v̄ ± 15% after 2 s, |Δv| ≤ 0.002 H/s per frame, jerk ≤ 0.5 H/s³', async () => {
+  it('while climbing (outside strain beats): speed v̄ ± 15% after 2 s, |Δv| ≤ 0.002 H/s per frame, jerk ≤ 0.5 H/s³', async () => {
     const rows = await capture(300, 40);
-    const v = speedOf(rows).filter((q) => q.t - rows[0].t > 2);
-    const dv = v.slice(1).map((q, i) => q.v - v[i].v);
-    const dts = v.slice(1).map((q, i) => q.t - v[i].t);
-    const acc = dv.map((d, i) => d / dts[i]);
-    const jerk = acc.slice(1).map((a, i) => (a - acc[i]) / dts[i + 1]);
+    // (a strain beat eases the world down with the stalled figure, V9; the beat and 3 s after it are excluded here)
+    const beats = rows.filter((r, i) => r.g === 'strain' && rows[i - 1]?.g !== 'strain').map((r) => r.t);
+    const ends = rows.filter((r, i) => r.g !== 'strain' && rows[i - 1]?.g === 'strain').map((r) => r.t);
+    const inBeat = (t: number) => beats.some((b, i) => t >= b - 0.5 && t <= (ends[i] ?? Infinity) + 3);
+    const all = speedOf(rows);
+    const v = all.filter((q) => q.t - rows[0].t > 2 && !inBeat(q.t));
+    const okIdx = new Set(all.map((q, i) => (q.t - rows[0].t > 2 && !inBeat(q.t) ? i : -1)).filter((i) => i >= 0));
+    console.log(`(${beats.length} strain beats excluded)`);
+    // per-frame changes only between consecutive kept frames
+    const dv: number[] = [], acc: number[] = [], jerk: number[] = [];
+    for (let i = 3; i < all.length; i++) {
+      if (![i, i - 1, i - 2, i - 3].every((j) => okIdx.has(j))) continue;
+      const d = (j: number) => all[j].v - all[j - 1].v, h = (j: number) => all[j].t - all[j - 1].t;
+      dv.push(d(i));
+      const a1 = d(i) / h(i), a0 = d(i - 1) / h(i - 1);
+      acc.push(a1); jerk.push((a1 - a0) / h(i));
+    }
     const vMin = Math.min(...v.map((q) => q.v)), vMax = Math.max(...v.map((q) => q.v));
     const dvMax = Math.max(...dv.map(Math.abs)), jMax = Math.max(...jerk.map(Math.abs));
     console.log(`camera speed ${(vMin / PACE).toFixed(3)}–${(vMax / PACE).toFixed(3)} v̄ · |Δv| max ${dvMax.toFixed(5)} H/s · jerk max ${jMax.toFixed(3)} H/s³ (${v.length} frames)`);
@@ -87,3 +99,32 @@ describe('cloth follow-through (§7.5)', () => {
 });
 
 void M_PER_H;
+
+describe('strain beat framing (V9)', () => {
+  it('through and after a strain beat the figure drifts ≤ 55 px from his mark (incl. the ±25 px step surge) and is back within 15 px 5 s after the beat', async () => {
+    const e = await makeEngine(1440, 900);
+    let focused = 300;
+    e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / 1500); e.setPhase('focus', { instant: true });
+    const rows: Array<{ t: number; x: number; g: string }> = [];
+    for (let k = 0; k < 60; k++) {
+      focused += 1; e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / 1500);
+      run(1, (s) => rows.push({ t: s.clock as number, x: (s.pelvisPx as number[])[0], g: s.gait as string }), e.stats as unknown as Record<string, unknown>);
+    }
+    e.destroy();
+    const steady = rows.filter((r) => r.t - rows[0].t > 3 && r.g === 'trudge').map((r) => r.x).sort((a, b) => a - b);
+    const mark = steady[Math.floor(steady.length / 2)];
+    let beats = 0;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i - 1].g !== 'strain' && rows[i].g === 'strain') {
+        beats++;
+        const t0 = rows[i].t, win = rows.filter((r) => r.t >= t0 && r.t < t0 + 8);
+        const drift = Math.max(...win.map((r) => Math.abs(r.x - mark)));
+        const end = rows.find((r) => r.t >= t0 + 3 + 5);
+        console.log(`strain beat: max drift ${drift.toFixed(0)} px; 5 s after: ${end ? Math.abs(end.x - mark).toFixed(0) : '-'} px`);
+        expect(drift).toBeLessThanOrEqual(55); // (round 4 review: ≈ 80–105 px, back after ≈ 10 s)
+        if (end) expect(Math.abs(end.x - mark)).toBeLessThanOrEqual(15 + 25); // (±25 px is the per-step surge inside the frame)
+      }
+    }
+    expect(beats).toBeGreaterThan(0);
+  }, 30000);
+});
