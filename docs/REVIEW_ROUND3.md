@@ -302,3 +302,20 @@ There were no page errors.
   - a rendering loop that stops when the tab is hidden;
   - correct reduced-motion gating;
   - a 2–4 ms average draw in software rendering, well under the 6 ms budget.
+
+## Resolution
+
+Coder, 27 Oct 2026. The user changed the art direction mid-round: the focus scene will become an endless, camera-tracked climb in a Greek black-figure style, with the summit shown only when a block completes. So only the Today and weekly-card findings were fixed. Tests: 299 pass. Typecheck and build are clean.
+
+| ID | Outcome | Commit |
+|---|---|---|
+| T1 | **Superseded by new art direction** (endless climb, black-figure style). Commit 7a86a9e has an interim fix: the stone drops onto its contact, and a test checks it rests within 1 px of the ledge. That code will be replaced. | 7a86a9e |
+| T2 | **Superseded by new art direction.** The summit won't be visible during a block. Commit 7a86a9e has an interim multi-peak massif with tests for ≥ 3 peaks on screen at 1280, 1440, 1920 and 390, and an irregular arête. | 7a86a9e |
+| T3 | **Superseded by new art direction.** Commit 7a86a9e has an interim summit ledge with no-overlap tests. | 7a86a9e |
+| T4 | Superseded by new art direction. The interim rim-in-rotated-frame fix is in 7a86a9e. | — |
+| T5 | Superseded by new art direction. The interim blurred mottling is in 7a86a9e. | — |
+| T6 | **Fixed.** The Start card's top half reserves 288 px. Clocking in with a 25-minute block moves TODAY 0 px (it moved 9 px before). The 1280×800 fold still passes. | f16a993 |
+| T7 | **Fixed.** Light-theme past bars use heat-4: 3.33:1 on the track and 4.0:1 on the card. Rest-day fills share the same colour. | f16a993 |
+| T8 | **Resolved by decision, no code change.** Plan §1.4 says "Plan week creates it as it does today", and PlanPage has always ensured the plan on mount. The week card's button creates nothing itself; the plan only appears once the user lands on Plan week. The W1 row "weekPlans unchanged right after the click" is dropped as contradictory. A lazy create-on-first-edit can be a later round. | — |
+| T9–T14 | Superseded by new art direction: the milestone beat and look-up, animation tests, reduced-motion redraw cadence, figure details, phone scene framing, strata and gullies. | — |
+| T15–T22 (nits) | Not addressed this round. T15–T19 are Today nits, left for the next pass; T20–T22 are scene and screenshot nits, superseded. | — |
