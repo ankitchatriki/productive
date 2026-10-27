@@ -1,5 +1,5 @@
 // Import validation (PLAN.md §4.10).
-import type { AppData, FocusSession, Goal, Weekday } from './types';
+import type { AppData, FocusSession, Goal, MountainState, Weekday } from './types';
 import { migrate } from './migrate';
 import { repairFocusSettings, validateFocusSession } from './validateFocus';
 
@@ -32,7 +32,8 @@ export function validateAppData(input: unknown, warnings: string[] = []): AppDat
   const errors: string[] = [];
   const raw = migrate(input);
   if (!isObj(raw)) return ['File is not a StruggleMore backup (expected a JSON object).'];
-  if (raw.schemaVersion !== 2) errors.push(`Unsupported schemaVersion: ${JSON.stringify(raw.schemaVersion)} (expected 1 or 2).`);
+  if (raw.schemaVersion !== 3) errors.push(`Unsupported schemaVersion: ${JSON.stringify(raw.schemaVersion)} (expected 1, 2 or 3).`);
+  else errors.push(...mountainErrors(raw.mountain));
 
   const s = raw.settings;
   if (!isObj(s)) errors.push('settings is missing.');
@@ -178,7 +179,7 @@ export function validateAppData(input: unknown, warnings: string[] = []): AppDat
   if (isObj(raw.focus)) focus = validateFocusSession(raw.focus, courseIds, sectionCourse, activeTimer as AppData['activeTimer'], warnings);
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     settings: { ...(raw.settings as AppData['settings']), showSplash, focus: focusSettings },
     courses: courses as AppData['courses'],
     sections: sections as AppData['sections'],
@@ -186,5 +187,18 @@ export function validateAppData(input: unknown, warnings: string[] = []): AppDat
     weekPlans: cleanPlans as AppData['weekPlans'],
     activeTimer: activeTimer as AppData['activeTimer'],
     focus,
+    mountain: raw.mountain as MountainState,
   };
+}
+
+/** The mountain (schema v3): field types, whole-number counters, non-negative distances. */
+export function mountainErrors(m: unknown): string[] {
+  if (!isObj(m)) return ['mountain is missing.'];
+  const errs: string[] = [];
+  for (const k of ['seed', 'stage', 'summits'] as const) if (!isInt(m[k]) || (m[k] as number) < 0) errs.push(`mountain.${k} must be a whole number ≥ 0.`);
+  for (const k of ['posM', 'stageStartM'] as const) if (!isNum(m[k]) || (m[k] as number) < 0) errs.push(`mountain.${k} must be a number ≥ 0.`);
+  for (const k of ['altM', 'stageStartAltM'] as const) if (!isNum(m[k]) || (m[k] as number) < 0) errs.push(`mountain.${k} must be a number ≥ 0.`);
+  for (const k of ['fromSummit', 'atSummit'] as const) if (!isBool(m[k])) errs.push(`mountain.${k} must be true or false.`);
+  if (!errs.length && (m.posM as number) < (m.stageStartM as number) - 1e-6) errs.push('mountain.posM must not be behind mountain.stageStartM.');
+  return errs;
 }

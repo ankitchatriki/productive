@@ -136,7 +136,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   function sunPos(q: number): V {
     // Rises left, arcs right (screen space), B ≈ (0.86 w, 0.20 h) in landscape.
-    const A = { x: 0.06 * w, y: 0.40 * h }, C = { x: 0.42 * w, y: 0.06 * h }, B = lay.landscape ? { x: 0.86 * w, y: 0.20 * h } : { x: 0.8 * w, y: 0.22 * h };
+    // Portrait keeps the sun low on the left, clear of the readout cartouche at the top.
+    const A = lay.landscape ? { x: 0.06 * w, y: 0.40 * h } : { x: 0.08 * w, y: 0.52 * h };
+    const C = lay.landscape ? { x: 0.42 * w, y: 0.06 * h } : { x: 0.12 * w, y: 0.36 * h };
+    const B = lay.landscape ? { x: 0.86 * w, y: 0.20 * h } : { x: 0.24 * w, y: 0.40 * h };
     const u = 1 - q; return { x: u * u * A.x + 2 * u * q * C.x + q * q * B.x, y: u * u * A.y + 2 * u * q * C.y + q * q * B.y };
   }
 

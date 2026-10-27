@@ -6,6 +6,7 @@ import { entryFromTimer } from '../domain/entries';
 import { normalizeOrder, reorder } from '../domain/sections';
 import { createWeekPlan, shiftPlanFrom } from '../domain/plan';
 import { weekStartOf } from '../domain/time';
+import { beginClimb, foldClimb, summitClimb } from '../domain/climb';
 
 function mapPlans(data: AppData, fn: (p: WeekPlan) => WeekPlan): Record<string, WeekPlan> {
   const out: Record<string, WeekPlan> = {};
@@ -57,6 +58,20 @@ function stopTimerOnly(state: AppData, now: string, newEntryId: Id): AppData {
   if (!state.activeTimer) return state;
   const r = entryFromTimer(state.activeTimer, now, newEntryId, state.entries);
   return { ...state, activeTimer: null, entries: r.kind === 'entry' ? [...state.entries, r.entry] : state.entries };
+}
+
+/** Keep the climber's progress when a block stops early (clock out, pause, break, the 60 s save). */
+function keepClimb(state: AppData, now: string | undefined): AppData {
+  const s = state.focus;
+  if (!s || (s.phase !== 'focus' && s.phase !== 'paused')) return state;
+  const at = now ? new Date(now) : new Date(s.pausedAt ?? s.segmentStartedAt ?? s.blockStartedAt);
+  return { ...state, mountain: foldClimb(state.mountain, s, at) };
+}
+
+/** The periodic save: the position only (the block's climb keeps its start). */
+function keepClimbLive(state: AppData, now: string): AppData {
+  const folded = keepClimb(state, now).mountain;
+  return { ...state, mountain: { ...state.mountain, posM: folded.posM, altM: folded.altM } };
 }
 
 function withFocus(state: AppData, phases: FocusSession['phase'][], fn: (s: FocusSession) => AppData): AppData {
@@ -140,7 +155,7 @@ export function reducer(state: AppData, action: Action): AppData {
 
     case 'timer/stop': {
       if (!state.activeTimer) return state;
-      return { ...stopTimerOnly(state, action.now, action.newEntryId), focus: null };
+      return { ...stopTimerOnly(keepClimb(state, action.now), action.now, action.newEntryId), focus: null };
     }
 
     case 'timer/switch': {
@@ -166,12 +181,12 @@ export function reducer(state: AppData, action: Action): AppData {
         completedAt: null, pausedAt: null, breakMinutes: null, breakStartedAt: null, breakEndsAt: null,
         blocksCompleted: 0, scene: action.scene, immersive: action.immersive,
       };
-      return { ...state, activeTimer: t ?? { ...target, startedAt: action.now }, focus: session };
+      return { ...state, activeTimer: t ?? { ...target, startedAt: action.now }, focus: session, mountain: beginClimb(state.mountain) };
     }
 
     case 'focus/pause':
       return withFocus(state, ['focus'], (s) => ({
-        ...stopTimerOnly(state, action.now, action.newEntryId),
+        ...stopTimerOnly(keepClimbLive(state, action.now), action.now, action.newEntryId),
         focus: { ...s, focusedMsBefore: focusedMs(s, new Date(action.now)), segmentStartedAt: null, phase: 'paused', pausedAt: action.now },
       }));
 
@@ -183,7 +198,7 @@ export function reducer(state: AppData, action: Action): AppData {
       }));
 
     case 'focus/complete':
-      return withFocus(state, ['focus'], (s) => (s.blockMinutes === null ? state : { ...state, focus: { ...s, phase: 'complete', completedAt: action.at } }));
+      return withFocus(state, ['focus'], (s) => (s.blockMinutes === null ? state : { ...state, focus: { ...s, phase: 'complete', completedAt: action.at }, mountain: summitClimb(state.mountain, s) }));
 
     case 'focus/extend':
       return withFocus(state, ['focus', 'complete'], (s) => {
@@ -192,7 +207,9 @@ export function reducer(state: AppData, action: Action): AppData {
         // While focusing, +N adds to what's left; from overtime it means N minutes from now.
         const from = s.phase === 'focus' ? blockMs(s)! : focusedMs(s, new Date(action.now));
         const targetMs = Math.min(MAX_BLOCK_MINUTES * 60_000, from + action.minutes * 60_000);
-        return { ...state, focus: { ...s, targetMs, extendedMinutes: (s.extendedMinutes ?? 0) + action.minutes, phase: 'focus', completedAt: null } };
+        // From the summit (overtime), the climb simply gets longer: the summit is no longer reached.
+        const mountain = s.phase === 'complete' && state.mountain.atSummit ? { ...state.mountain, atSummit: false, summits: Math.max(0, state.mountain.summits - 1) } : state.mountain;
+        return { ...state, mountain, focus: { ...s, targetMs, extendedMinutes: (s.extendedMinutes ?? 0) + action.minutes, phase: 'focus', completedAt: null } };
       });
 
     case 'focus/nextBlock':
@@ -204,13 +221,14 @@ export function reducer(state: AppData, action: Action): AppData {
           blockStartedAt: action.now, segmentStartedAt: action.now, focusedMsBefore: 0, phase: 'focus',
           completedAt: null, pausedAt: null, breakMinutes: null, breakStartedAt: null, breakEndsAt: null,
         };
-        if (s.phase === 'break') return { ...state, activeTimer: { ...s.target, startedAt: action.now }, focus: next };
-        return { ...state, focus: next };
+        const mountain = beginClimb(state.mountain);
+        if (s.phase === 'break') return { ...state, activeTimer: { ...s.target, startedAt: action.now }, focus: next, mountain };
+        return { ...state, focus: next, mountain };
       });
 
     case 'focus/startBreak':
       return withFocus(state, ['focus', 'complete'], (s) => ({
-        ...stopTimerOnly(state, action.stopAt, action.newEntryId),
+        ...stopTimerOnly(keepClimb(state, action.stopAt), action.stopAt, action.newEntryId),
         focus: {
           ...s, blocksCompleted: s.blocksCompleted + 1, phase: 'break', breakMinutes: action.minutes, breakStartedAt: action.now,
           breakEndsAt: new Date(Date.parse(action.now) + action.minutes * 60_000).toISOString(), segmentStartedAt: null, completedAt: null,
@@ -230,7 +248,10 @@ export function reducer(state: AppData, action: Action): AppData {
       return state.focus ? { ...state, focus: { ...state.focus, scene: action.scene } } : state;
 
     case 'focus/end':
-      return state.focus ? { ...state, focus: null } : state;
+      return state.focus ? { ...keepClimb(state, action.now), focus: null } : state;
+
+    case 'mountain/sync':
+      return state.focus && state.focus.phase === 'focus' ? keepClimbLive(state, action.now) : state;
 
     case 'focus/settings':
       return { ...state, settings: { ...state.settings, focus: { ...state.settings.focus, ...action.patch } } };

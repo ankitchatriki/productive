@@ -16,11 +16,7 @@
 .idleCursor { cursor: none; }
 
 .scene { position: absolute; inset: 0; }
-.overlay[data-scene="sisyphus"] .scrim {
-  /* Round 3: no dark smudge mid-slope; darken only behind the readout (lower right) and the top bar. */
-  background: radial-gradient(ellipse 34% 30% at 84% 80%, rgba(6, 8, 18, 0.32), transparent 72%),
-              linear-gradient(to bottom, rgba(6, 8, 18, 0.30), transparent 16%);
-}
+.overlay[data-scene="sisyphus"] .scrim { background: none; } /* ROUND3_ART §2.6: text sits on black or on a cartouche */
 .scrim { position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse 70% 45% at 50% 78%, rgba(6, 8, 18, 0.45), transparent 70%),
               linear-gradient(to bottom, rgba(6, 8, 18, 0.35), transparent 18%); }
@@ -143,10 +139,30 @@
 .overlay[data-scene="sisyphus"][data-sticky="true"] .readoutBox { bottom: 38vh; }
 .overlay[data-scene="sisyphus"] .readoutBox .caption { margin-top: -6px; }
 @media (max-aspect-ratio: 9/10) {
-  .overlay[data-scene="sisyphus"] .scrim { background: linear-gradient(to bottom, rgba(6, 8, 18, 0.32), transparent 22%); }
   .overlay[data-scene="sisyphus"] .readoutBox,
   .overlay[data-scene="sisyphus"][data-sticky="true"] .readoutBox {
-    left: 0; right: 0; top: calc(13vh + 16px); bottom: auto; align-items: center; text-align: center; padding: 16px 0;
-    background: radial-gradient(ellipse 60vw 50% at 50% 50%, rgba(0, 0, 0, 0.22), transparent 70%);
+    left: 50%; right: auto; transform: translateX(-50%); top: calc(13vh + 16px); bottom: auto; align-items: center; text-align: center;
+    padding: 10px 16px; width: max-content; max-width: calc(100vw - 32px);
+    background: rgba(21, 16, 13, 0.88); border-radius: 6px; /* cartouche over the sky */
   }
+  .overlay[data-scene="sisyphus"] .climb { width: 180px; }
+  .overlay[data-scene="sisyphus"] .climbLine { text-align: center; }
 }
+
+/* Black-figure scene (ROUND3_ART §2.6): no text shadows; the course line sits on a black cartouche over the sky. */
+.overlay[data-scene="sisyphus"] .label {
+  background: rgba(21, 16, 13, 0.88); color: #F1E4C4; border-radius: 6px; padding: 6px 10px; text-shadow: none;
+}
+.overlay[data-scene="sisyphus"] .status,
+.overlay[data-scene="sisyphus"] .readout,
+.overlay[data-scene="sisyphus"] .caption { text-shadow: none; }
+.overlay[data-scene="sisyphus"] .readout { color: #F1E4C4; }
+.overlay[data-scene="sisyphus"] .caption { color: rgba(241, 228, 196, 0.8); }
+
+/* Climb strip: altitude + climb number, and the Greek-key meander. */
+.climb { width: 240px; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.climbLine { font-size: 13px; line-height: 16px; color: rgba(241, 228, 196, 0.8); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.meander { display: block; overflow: visible; }
+.meander path { fill: none; stroke-linecap: square; stroke-linejoin: miter; vector-effect: non-scaling-stroke; }
+.meanderRest { stroke: #CF9450; stroke-opacity: 0.35; stroke-width: 1.5; }
+.meanderDone { stroke: #F1E4C4; stroke-width: 1.5; }

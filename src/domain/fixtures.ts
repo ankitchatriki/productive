@@ -1,4 +1,5 @@
 // Test fixture builders (imported only by *.test.ts).
+import { defaultMountain } from './climb';
 import type { AppData, Course, Section, TimeEntry } from './types';
 import { defaultFocusSettings } from '../storage/defaults';
 
@@ -19,7 +20,7 @@ export function entry(id: string, courseId: string, start: string, end: string, 
 
 export function data(extra: Partial<AppData> = {}): AppData {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     settings: { dailyGoalMinutes: 480, restDays: [], gridStartHour: 6, gridEndHour: 24, onboarded: true, showSplash: true, focus: { ...defaultFocusSettings, lastChoice: { ...defaultFocusSettings.lastChoice } } },
     courses: [],
     sections: [],
@@ -27,6 +28,7 @@ export function data(extra: Partial<AppData> = {}): AppData {
     weekPlans: {},
     activeTimer: null,
     focus: null,
+    mountain: defaultMountain(),
     ...extra,
   };
 }

@@ -15,6 +15,8 @@ import { FocusControls } from './FocusControls';
 import { CompletePanel, OVERTIME_CHOICE_MS, type PendingStop } from './CompletePanel';
 import { BreakPanel } from './BreakPanel';
 import { SceneCanvas } from './SceneCanvas';
+import { ClimbStrip } from './ClimbStrip';
+import { climbFor } from '../domain/climb';
 import { primeAudio } from './chime';
 import { SCENE_IDS } from './scenes/ids';
 import { SCENE_META } from './scenes/meta';
@@ -201,6 +203,8 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
   if (chromeHiddenRef.current && !chromeHidden) revealedAt.current = Date.now();
   chromeHiddenRef.current = chromeHidden;
   const label = [view.courseName, view.sectionTitle].filter(Boolean).join(' · ');
+  const climb = climbFor(data.mountain, s, now);
+  const climbNo = climb.summits + (phase === 'complete' || (phase === 'break' && data.mountain.atSummit) ? 0 : 1);
 
   return createPortal(
     <div
@@ -221,7 +225,7 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
     >
       <div className={styles.scene} aria-hidden="true">
         <SceneCanvas sceneId={s.scene} phase={scenePhase} progress={sceneProgress} completedAt={s.completedAt}
-          reducedMotion={reducedMotion} running={visible} accent={view.courseColor ?? '#a3461a'} />
+          reducedMotion={reducedMotion} running={visible} accent={view.courseColor ?? '#a3461a'} climb={climb} />
       </div>
       <div className={styles.scrim} aria-hidden="true" />
 
@@ -262,6 +266,9 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
           {hud && <div className={styles.hud} role="status">{hud}</div>}
           <div className={`${styles.readoutBox} ${styles.fade}`}>
             <FocusHud view={view} now={now} readoutMode={readoutMode} onCycleReadout={cycleReadout} />
+            {s.scene === 'sisyphus' && (
+              <ClimbStrip altM={climb.altM} climbNo={climbNo} fraction={phase === 'focus' || phase === 'paused' ? view.progress : 1} />
+            )}
           </div>
           {phase === 'focus' || phase === 'paused' ? (
             <div className={styles.fade}>

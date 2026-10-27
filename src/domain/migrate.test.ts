@@ -9,38 +9,69 @@ import type { AppData } from './types';
 /** A round-1 (schema v1) export. */
 function v1() {
   const d = data({ courses: [course('c1')], entries: [entry('e', 'c1', iso(2026, 10, 27, 9), iso(2026, 10, 27, 10))] });
-  const { focus: _f, ...rest } = d;
-  void _f;
+  const { focus: _f, mountain: _m, ...rest } = d;
+  void _f; void _m;
   const { focus: _s, ...settings } = d.settings;
   void _s;
   return { ...rest, schemaVersion: 1, settings };
 }
 
+/** A round-2 (schema v2) export: no mountain yet. */
+function v2() {
+  const d = data({ courses: [course('c1')], entries: [entry('e', 'c1', iso(2026, 10, 27, 9), iso(2026, 10, 27, 10))] });
+  const { mountain: _m, ...rest } = d;
+  void _m;
+  return { ...rest, schemaVersion: 2 };
+}
+
 describe('v1 → v2 migration', () => {
   it('migrate adds focus settings and a null session', () => {
     const m = migrate(v1()) as AppData;
-    expect(m.schemaVersion).toBe(2);
+    expect(m.schemaVersion).toBe(3);
     expect(m.settings.focus).toEqual(defaultFocusSettings);
     expect(m.focus).toBeNull();
   });
-  it('v2 passes through and unknown input is untouched', () => {
+  it('v3 passes through and unknown input is untouched', () => {
     const d = data();
     expect(migrate(d)).toBe(d);
     expect(migrate(42)).toBe(42);
     const odd = { schemaVersion: 9 };
     expect(migrate(odd)).toBe(odd);
   });
-  it('a v1 export imports as v2 and exports v2', () => {
+  it('a v1 export imports as v3 and exports v3', () => {
     const r = importJson(JSON.stringify(v1()));
     expect('data' in r).toBe(true);
     if ('data' in r) {
-      expect(r.data.schemaVersion).toBe(2);
+      expect(r.data.schemaVersion).toBe(3);
       expect(r.data.entries).toHaveLength(1);
-      expect(JSON.parse(exportJson(r.data)).schemaVersion).toBe(2);
+      expect(JSON.parse(exportJson(r.data)).schemaVersion).toBe(3);
     }
   });
   it('unknown schemaVersion is rejected clearly', () => {
-    expect(validateAppData({ ...data(), schemaVersion: 7 })).toEqual(['Unsupported schemaVersion: 7 (expected 1 or 2).']);
+    expect(validateAppData({ ...data(), schemaVersion: 7 })).toEqual(['Unsupported schemaVersion: 7 (expected 1, 2 or 3).']);
+  });
+});
+
+describe('v2 → v3 migration (the mountain, ROUND3_ART §6.2)', () => {
+  it('adds the default mountain at its foot and keeps everything else', () => {
+    const m = migrate(v2()) as AppData;
+    expect(m.schemaVersion).toBe(3);
+    expect(m.mountain).toEqual({ seed: 0x5157, stage: 0, posM: 0, altM: 0, stageStartM: 0, stageStartAltM: 0, fromSummit: false, atSummit: false, summits: 0 });
+    expect(m.entries).toHaveLength(1);
+  });
+  it('a v2 export imports, validates and round-trips the mountain through export/import', () => {
+    const r = importJson(JSON.stringify(v2()));
+    expect('data' in r).toBe(true);
+    if (!('data' in r)) return;
+    const moved = { ...r.data, mountain: { ...r.data.mountain, stage: 4, posM: 812.5, altM: 301.2, stageStartM: 700, stageStartAltM: 260, fromSummit: true, summits: 3 } };
+    const back = importJson(exportJson(moved));
+    expect('data' in back && back.data.mountain).toEqual(moved.mountain);
+  });
+  it('rejects a malformed mountain', () => {
+    const bad = { ...data(), mountain: { ...data().mountain, posM: -3, summits: 1.5, atSummit: 'yes' } };
+    const r = validateAppData(bad) as string[];
+    expect(r.join('\n')).toMatch(/mountain.summits[\s\S]*mountain.posM[\s\S]*mountain.atSummit/);
+    expect((validateAppData({ ...data(), mountain: undefined }) as string[])[0]).toMatch(/mountain is missing/);
   });
 });
 
