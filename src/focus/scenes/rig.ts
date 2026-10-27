@@ -81,13 +81,17 @@ export interface PushParams {
 }
 
 export function boulderCentre(path: SlopePath, sB: number, R: number): V {
+  if (path.centreAt) return path.centreAt(sB, R);
   const g = path.at(sB), n = path.normalAt(sB);
   return { x: g.x + n.x * R, y: g.y + n.y * R };
 }
 
 /** Contact angles on the stone, relative to the local slope (208°/192° on the 22° base slope). Non-rotating with the texture. */
 export function handAngles(path: SlopePath, sB: number): [number, number] {
-  const a = path.angleAt(Math.min(sB, 0.999));
+  // Slope averaged over the figure's footprint (a chord), so the hands slide smoothly over a crest (ROUND3 §3.3.5).
+  const s = Math.min(sB, 0.999);
+  const p1 = path.at(s), p0 = path.at(s - 0.14 / path.length);
+  const a = Math.atan2(p1.y - p0.y, p1.x - p0.x) / DEG;
   return [188 + a, 196 + a];
 }
 

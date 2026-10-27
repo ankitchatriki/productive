@@ -54,6 +54,8 @@ export interface SlopePath {
   groundY(x: number): number;
   /** s at the far end of the plateau. */
   plateauEndS: number;
+  /** Optional exact boulder centre (offset curve) for radius R. */
+  centreAt?(s: number, R: number): V;
 }
 
 export function buildPath(spec: PathSpec): SlopePath {

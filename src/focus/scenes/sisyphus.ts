@@ -1,8 +1,9 @@
 // "Sisyphus" focus scene (STRUGGLEMORE_DESIGN §3): Canvas 2D, a figure pushing a boulder
 // up a dusk-lit mountain. Boulder position on the slope = block progress.
 import type { SceneEngine, SceneInitOptions, ScenePhase } from './types';
-import { NIGHT, PREDAWN, css, darken, desaturate, gradePalette, lighten, mixPalette, mixRGB, palette, type Palette, type RGB } from './palette';
-import { FIGURE_H, PATHS, WORLD, boulderS, buildPath, layoutFor, startS, summitS, sunPosition, type Layout, type SlopePath, type V } from './path';
+import { NIGHT, PREDAWN, css, darken, desaturate, gradePalette, hex, lighten, mixPalette, mixRGB, palette, type Palette, type RGB } from './palette';
+import { FIGURE_H, layoutFor, startS, summitS, sunPosition, type Layout, type SlopePath, type V } from './path';
+import { RANGE_LAYERS, RIDGES, backSide, benchProgressMap, buildRidgePath, rangeSkyline, snowEdge, type RidgePath } from './ridge';
 import {
   BODY, DEG, blendPose, boulderCentre, easeInOut, easeOut, hipH, leanDeg, pelvisOffset, solvePush, solveSit, solveStand,
   surge as surgeCurve, type Limb, type Pose,
@@ -28,7 +29,17 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let ctx: CanvasRenderingContext2D | null = null;
   let w = 0, h = 0, scale = 1, hostDpr = 1, quality = 1;
   let layout: Layout = 'landscape', S = 1, ox = 0, oy = 0;
-  let path: SlopePath = buildPath(PATHS.landscape);
+  let path: RidgePath = buildRidgePath(RIDGES.landscape);
+  let sMap: (p: number) => number = (p) => p;
+  let mountainBody: Path2D | null = null;
+  let benchesLit = 0;
+  const isRidge = (pth: SlopePath): pth is RidgePath => 'benches' in pth;
+  // Milestone beat at each false summit (ROUND3 §3.3.2) and the look-ahead lean filter.
+  let beatT0 = -1e9, leanAhead = 0, leanT = 0, meanSlope = 30;
+  void mountainBody;
+  const BEAT_DUR = 1.4;
+  /** Milestone beat envelope 0..1: ease in 0–0.4 s, hold, ease out 1.0–1.4 s. */
+  const beatK = (t: number) => { const u = t - beatT0; return u < 0 || u > BEAT_DUR ? 0 : u < 0.4 ? easeInOut(u / 0.4) : u < 1.0 ? 1 : 1 - easeInOut((u - 1.0) / 0.4); };
   let Hw = 0.085, Rw = BODY.boulderR * 0.085;
   let reduced = false, running = false, raf = 0, mounted = false;
   let phase: ScenePhase = 'focus';
@@ -82,9 +93,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   function layoutWorld() {
     const l = layoutFor(w, h);
     layout = l.layout; S = l.S; ox = l.ox; oy = l.oy;
-    path = buildPath(PATHS[layout]);
+    path = buildRidgePath(RIDGES[layout]);
     Hw = FIGURE_H[layout];
     Rw = BODY.boulderR * Hw;
+    sMap = benchProgressMap(path, startS(Hw, Rw, path.length), summitS(Rw, path.length));
+    leanAhead = 0;
+    meanSlope = path.headings.reduce((a, b) => a + b, 0) / path.headings.length;
   }
 
   function applySize() {
@@ -295,88 +309,180 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     gl.fillRect(0, 0, w, h);
     vignette(gl);
 
-    // Land: ridges, mountain, strata, cairn
+    // Land (ROUND3_DESIGN §3.3): peaked range layers with snow and haze, then the main mountain.
     if (!land || land.width !== cw || land.height !== ch) land = mk(cw, ch);
     const l = land.getContext('2d')!;
     l.setTransform(1, 0, 0, 1, 0, 0);
     l.clearRect(0, 0, cw, ch);
     l.setTransform(scale, 0, 0, scale, 0, 0);
-    const bases = [0.36, 0.27, 0.18], amps = [0.14, 0.10, 0.06], freqs = [1.1, 2.0, 3.6], hazes = [0.70, 0.45, 0.22];
-    for (let i = 0; i < 3; i++) {
-      l.fillStyle = css(mixRGB(pal.ridgeNear, pal.horizon, hazes[i] * (0.55 + 0.45 * (1 - desatK))));
-      l.beginPath(); l.moveTo(0, h);
-      for (let x = 0; x <= w + 6; x += 6) {
-        const wx = (x - ox) / S;
-        const y = bases[i] + amps[i] * ridged(wx * freqs[i] + 13.7 * (i + 1));
-        l.lineTo(x, h - oy - y * S);
+    drawRange(l, ss);
+    drawMountain(l, ss);
+    buildClouds(lighten(mixRGB(pal.horizon, pal.zenith, 0.3), 0.15));
+    buildBoulderTexture(pal.boulderBase);
+  }
+
+  // ---------- terrain (ROUND3_DESIGN §3.3) ----------
+  const SNOWLINE: Record<Layout, number> = { landscape: 0.62, portrait: 0.47 };
+  const worldX = (x: number) => (x - ox) / S;
+  const scrY = (wy: number) => h - oy - wy * S;
+
+  function rangeFrame() {
+    return { horizonY: HORIZON_Y, summit: path.spec.plateauEnd, baseY: path.spec.p0.y };
+  }
+
+  function drawRange(l: CanvasRenderingContext2D, ss: SkyState) {
+    const frame = rangeFrame();
+    const snowline = SNOWLINE[layout];
+    const L = ss.light;
+    const step = 3;
+    RANGE_LAYERS.forEach((layer, i) => {
+      const haze = layer.haze * (0.55 + 0.45 * (1 - desatK));
+      const col = mixRGB(mixRGB(pal.ridgeNear, pal.horizon, haze), L.key, 0.15);
+      const tops: Array<{ x: number; y: number; peakX: number }> = [];
+      for (let x = -step; x <= w + step; x += step) {
+        const r = rangeSkyline(layer, worldX(x), frame);
+        tops.push({ x, y: r.y, peakX: r.peakX });
       }
-      l.lineTo(w, h); l.closePath(); l.fill();
-    }
-    // Mountain body
+      l.fillStyle = css(col);
+      l.beginPath(); l.moveTo(-step, h);
+      for (const t of tops) l.lineTo(t.x, scrY(t.y));
+      l.lineTo(w + step, h); l.closePath(); l.fill();
+      // Snow caps above the snowline: sun side lit, shade side cool; they take the layer's haze.
+      const sunX = ss.sun ? worldX(ss.sun.x) : frame.summit.x;
+      const litSnow = mixRGB(mixRGB(hex('#efe6da'), L.key, 0.35), pal.horizon, haze * 0.6);
+      const shadeSnow = mixRGB(mixRGB(hex('#c9c3cf'), L.ambient, 0.45), pal.horizon, haze * 0.6);
+      // Contiguous runs → polygons (top = skyline, bottom = ragged snow edge), split at each peak into sun/shade.
+      let run: Array<{ x: number; top: number; bot: number }> = [];
+      let runSide: boolean | null = null;
+      const flush = () => {
+        if (run.length > 1) {
+          l.fillStyle = css(runSide ? litSnow : shadeSnow, 0.93);
+          l.beginPath();
+          run.forEach((c, k) => { if (k === 0) l.moveTo(c.x, c.top); else l.lineTo(c.x, c.top); });
+          for (let k = run.length - 1; k >= 0; k--) l.lineTo(run[k].x, run[k].bot);
+          l.closePath(); l.fill();
+        }
+        run = [];
+      };
+      for (const t of tops) {
+        const wx = worldX(t.x);
+        const edge = snowEdge(wx + i * 3.1, snowline);
+        const sunSide = Math.sign(wx - t.peakX) === Math.sign(sunX - t.peakX);
+        if (t.y <= edge) { flush(); runSide = null; continue; }
+        if (runSide !== null && sunSide !== runSide) { const last = run[run.length - 1]; flush(); if (last) run.push(last); }
+        runSide = sunSide;
+        run.push({ x: t.x, top: scrY(t.y), bot: scrY(Math.min(t.y, edge)) });
+      }
+      flush();
+      // Lit ridge top
+      l.strokeStyle = css(L.key, 0.15 * (1 - layer.haze));
+      l.lineWidth = 1;
+      l.beginPath();
+      tops.forEach((t, k) => { if (k === 0) l.moveTo(t.x, scrY(t.y)); else l.lineTo(t.x, scrY(t.y)); });
+      l.stroke();
+      // Haze band (valley mist) at the foot of this layer, in front of the next one back.
+      const baseWY = frame.horizonY + (frame.summit.y - frame.horizonY) * layer.height[0] * 0.45;
+      const y0 = scrY(baseWY), y1 = scrY(baseWY + 0.06);
+      const hg = l.createLinearGradient(0, y0, 0, y1);
+      hg.addColorStop(0, css(pal.horizon, 0.35 * haze)); hg.addColorStop(1, css(pal.horizon, 0));
+      l.fillStyle = hg; l.fillRect(0, y1, w, h - y1);
+    });
+  }
+
+  /** The main mountain outline (screen space) as a Path2D, plus its back-side polyline (world). */
+  function mountainShape(): { body: Path2D; back: V[] } {
     const sp = path.spec;
-    const leftX = -ox / S - 0.05;
-    const backEnd = WORLD[layout].w + (w - WORLD[layout].w * S) / 2 / S + 0.05;
+    const leftX = worldX(0) - 0.05;
+    const rightX = worldX(w) + 0.05;
+    const back = backSide(layout, sp.plateauEnd, sp.p0.y, rightX);
     const body = new Path2D();
-    const P = (x: number, y: number) => toS({ x, y });
-    let q = P(leftX, 0); body.moveTo(q.x, h + 2);
-    q = P(leftX, sp.p0.y - 0.01); body.lineTo(q.x, q.y);
-    q = P(sp.p0.x - 0.02, sp.p0.y - 0.005); body.lineTo(q.x, q.y);
-    for (let i = 0; i <= 64; i++) { const v = toS(path.at(i / 64)); body.lineTo(v.x, v.y); }
-    q = toS(sp.plateauEnd); body.lineTo(q.x, q.y);
-    const steps = 24;
-    for (let i = 1; i <= steps; i++) {
-      const k = i / steps;
-      const x = sp.plateauEnd.x + (backEnd - sp.plateauEnd.x) * k;
-      const y = sp.plateauEnd.y + (0.42 - sp.plateauEnd.y) * Math.pow(k, 0.7) + 0.02 * (ridged(x * 6 + 3) - 0.5);
-      const v = P(x, y); body.lineTo(v.x, v.y);
+    body.moveTo(-2, h + 2);
+    // Left foothill rubble, not a ruler line.
+    for (let x = leftX; x < sp.p0.x - 0.005; x += 0.01) {
+      const y = sp.p0.y - 0.012 + 0.03 * (ridged(x * 7 + 2.3, 3) - 0.5) * Math.min(1, (sp.p0.x - x) / 0.08);
+      const v = toS({ x, y }); body.lineTo(v.x, v.y);
+    }
+    for (let i = 0; i <= 160; i++) { const v = toS(path.at(i / 160)); body.lineTo(v.x, v.y); }
+    for (let i = 0; i < back.length; i++) {
+      const a2 = back[i];
+      const b2 = back[i + 1];
+      const v = toS(a2); body.lineTo(v.x, v.y);
+      if (b2 && i > 0) {
+        // chatter along the rock edge
+        for (let k = 1; k < 6; k++) {
+          const u = k / 6, x = a2.x + (b2.x - a2.x) * u, y = a2.y + (b2.y - a2.y) * u + 0.006 * (noise2(x * 45, 3.3) - 0.5);
+          const q = toS({ x, y }); body.lineTo(q.x, q.y);
+        }
+      }
     }
     body.lineTo(w + 2, h + 2); body.closePath();
-    const top = toS(path.at(1)).y;
-    const mg = l.createLinearGradient(0, top, 0, h);
-    mg.addColorStop(0, css(pal.rockLit)); mg.addColorStop(1, css(pal.rockShade));
-    l.fillStyle = mg; l.fill(body);
-    // Strata and scree
-    l.save(); l.clip(body);
-    const pr = mulberry32(9);
-    l.lineWidth = 1;
-    l.strokeStyle = css(darken(pal.rockShade, 0.3), 0.18);
-    for (let i = 0; i < 54; i++) {
-      const s = pr() * 1.05, depth = 0.015 + pr() * 0.3, len = 0.03 + pr() * 0.06;
-      const a = path.at(s), n = path.normalAt(Math.min(1, s)), t = path.tangentAt(Math.min(1, s));
-      const c = { x: a.x - n.x * depth, y: a.y - n.y * depth };
-      const e1 = toS({ x: c.x - t.x * len / 2, y: c.y - t.y * len / 2 }), e2 = toS({ x: c.x + t.x * len / 2, y: c.y + t.y * len / 2 });
-      l.beginPath(); l.moveTo(e1.x, e1.y); l.lineTo(e2.x, e2.y); l.stroke();
+    return { body, back };
+  }
+
+  function backTopAt(back: V[], x: number): number {
+    for (let i = 0; i < back.length - 1; i++) if (x >= back[i].x && x <= back[i + 1].x) {
+      const u = (x - back[i].x) / (back[i + 1].x - back[i].x || 1); return back[i].y + (back[i + 1].y - back[i].y) * u;
     }
-    l.fillStyle = css(lighten(pal.rockLit, 0.1), 0.25);
-    for (let i = 0; i < 25; i++) {
-      const s = pr(), a = path.at(s), n = path.normalAt(s), d = 0.004 + pr() * 0.03;
-      const v = toS({ x: a.x - n.x * d, y: a.y - n.y * d });
-      l.fillRect(v.x, v.y, 1.5 + pr() * 1.5, 1);
+    return -1;
+  }
+
+  function drawCairn(l: CanvasRenderingContext2D, base: V, size: number, lit: number, L: LightKey) {
+    let cy = base.y;
+    for (const [wid, ht] of [[0.030, 0.010], [0.022, 0.009], [0.014, 0.008]]) {
+      const rw = (wid * S * size) / 2, rh = (ht * S * size) / 2;
+      l.fillStyle = css(darken(pal.rockShade, 0.2));
+      l.beginPath(); l.ellipse(base.x, cy - rh, rw, rh, 0, 0, Math.PI * 2); l.fill();
+      if (lit > 0) {
+        l.strokeStyle = css(L.key, 0.6 * lit); l.lineWidth = 1;
+        l.beginPath(); l.ellipse(base.x, cy - rh, rw, rh, 0, Math.PI * 1.05, Math.PI * 1.75); l.stroke();
+      }
+      cy -= rh * 1.8;
+    }
+  }
+
+  function drawMountain(l: CanvasRenderingContext2D, ss: SkyState) {
+    const { body, back } = mountainShape();
+    mountainBody = body;
+    const sp = path.spec;
+    const top = toS(sp.plateauEnd).y;
+    const mg = l.createLinearGradient(0, top, 0, h);
+    mg.addColorStop(0, css(mixRGB(pal.rockLit, ss.light.key, 0.12)));
+    mg.addColorStop(1, css(mixRGB(pal.rockShade, ss.light.ambient, 0.3)));
+    l.fillStyle = mg; l.fill(body);
+    // Snow: a full cap on the twin peak, only a dusting near the true summit, never near the path.
+    l.save(); l.clip(body);
+    const snowline = SNOWLINE[layout];
+    const lit = mixRGB(hex('#efe6da'), ss.light.key, 0.35), shade = mixRGB(hex('#c9c3cf'), ss.light.ambient, 0.45);
+    const x0 = sp.plateauEnd.x + 0.045;
+    for (let px = Math.floor(toS({ x: x0, y: 0 }).x); px < w; px += 2) {
+      const wx = worldX(px);
+      const ty = backTopAt(back, wx);
+      if (ty < 0) continue;
+      const edge = snowEdge(wx + 7.7, snowline);
+      if (ty <= edge) continue;
+      l.fillStyle = css(wx < back[4]?.x ? shade : lit, 0.9);
+      l.fillRect(px, scrY(ty) - 1, 2.5, (ty - edge) * S + 1);
     }
     l.restore();
     // Lit crest along the climb: brighter toward golden hour (the "nearly there" cue).
     l.strokeStyle = css(ss.light.key, (0.25 + 0.4 * ss.light.rim) * (1 - desatK * 0.5));
     l.lineWidth = 2;
     l.beginPath();
-    for (let i = 0; i <= 64; i++) { const v = toS(path.at(i / 64)); if (i === 0) l.moveTo(v.x, v.y); else l.lineTo(v.x, v.y); }
+    for (let i = 0; i <= 160; i++) { const v = toS(path.at(i / 160)); if (i === 0) l.moveTo(v.x, v.y); else l.lineTo(v.x, v.y); }
     const pe = toS(sp.plateauEnd); l.lineTo(pe.x, pe.y);
     l.stroke();
-    // Summit cairn
-    const cairnBase = toS({ x: sp.plateauEnd.x - 0.01, y: sp.plateauEnd.y });
-    let cy = cairnBase.y;
-    l.fillStyle = css(darken(pal.rockShade, 0.2));
-    for (const [wid, ht] of [[0.030, 0.010], [0.022, 0.009], [0.014, 0.008]]) {
-      const rw = (wid * S) / 2, rh = (ht * S) / 2;
-      l.beginPath(); l.ellipse(cairnBase.x, cy - rh, rw, rh, 0, 0, Math.PI * 2); l.fill();
-      cy -= rh * 1.8;
-    }
-    buildClouds(lighten(mixRGB(pal.horizon, pal.zenith, 0.3), 0.15));
-    buildBoulderTexture(pal.boulderBase);
+    // Cairns: one on each false summit (lit once passed) and the summit cairn.
+    if (isRidge(path)) path.benches.forEach((b, k) => {
+      const g = path.at(b.sMid);
+      const n = path.normalAt(b.sMid);
+      drawCairn(l, toS({ x: g.x - n.x * 0.004, y: g.y - n.y * 0.004 }), 0.55, benchesLit > k ? 1 : 0, ss.light);
+    });
+    drawCairn(l, toS({ x: sp.plateauEnd.x - 0.01, y: sp.plateauEnd.y }), 1, 0, ss.light);
   }
 
   function maybeRebuild(t: number, ss: SkyState) {
     const key = [ss.pal.zenith, ss.pal.horizon, ss.pal.rockLit].map((c) => c.map((v) => Math.round(v * 200)).join(',')).join('|')
-      + `|${Math.round(ss.light.rim * 20)}|${Math.round(ss.light.warmth * 20)}|${ss.moon ? Math.round(ss.moon.x / 3) : ''}|${Math.round(ss.glow * 20)}|${Math.round(desatK * 10)}|${Math.round(ss.predawn * 20)}`;
+      + `|${benchesLit}|${Math.round(ss.light.rim * 20)}|${Math.round(ss.light.warmth * 20)}|${ss.moon ? Math.round(ss.moon.x / 3) : ''}|${Math.round(ss.glow * 20)}|${Math.round(desatK * 10)}|${Math.round(ss.predawn * 20)}`;
     const minGap = seq || (desatK !== desatTarget) ? 0.1 : 2;
     if (key !== palKey && (t - lastCacheAt >= minGap || !sky)) {
       rebuildCaches(ss);
@@ -691,14 +797,14 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (phase === 'paused' || reduced) return;
     if (strainUntil > t) return;
     if (strainUntil > 0 && strainUntil <= t) { strainUntil = 0; heave = 1.6; }
-    const speed = seq?.kind === 'summit' || seq?.kind === 'mini' ? 1.2 : 1;
+    const speed = (seq?.kind === 'summit' || seq?.kind === 'mini' ? 1.2 : 1) * (1 - 0.6 * beatK(t));
     const heaveSpeed = heave > 1 ? 1.25 : 1;
     const before = phi;
     phi += (dt / T) * speed * heaveSpeed;
     if (phi >= 1) {
       phi -= 1;
       heave = 1;
-      const sB = boulderS(progress, Hw, Rw, path.length);
+      const sB = sMap(progress);
       T = 2.6 * (1 + 0.24 * (rng() - 0.5)) * (1 + 0.25 * Math.min(1, Math.max(0, (sB - s0()) / (s1() - s0()))));
       cyclesUntilPause--;
       if (cyclesUntilPause <= 0 && mode === 'climb' && !seq) {
@@ -721,12 +827,18 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const still = phase === 'paused' || reduced;
     const ph = still ? 0.42 : phi;
     const k = still ? 0 : strainK(t);
-    const lean = still ? 48 : leanDeg(ph) * (1 - k) + 51 * k;
-    const hip = (still ? 0.455 : hipH(ph)) - 0.02 * k;
-    const sg = still ? 0 : surgeCurve(ph) * heave;
+    // Look-ahead lean (anticipation): dig in before a steeper pitch, ease off toward a bench (§3.3.5).
+    const thAhead = path.angleAt(Math.min(0.999, sB + (0.5 * Hw) / path.length));
+    const fdt = Math.min(0.2, Math.max(0, t - leanT)); leanT = t;
+    leanAhead = leanAhead === 0 ? thAhead : leanAhead + (thAhead - leanAhead) * Math.min(1, fdt / 1.2);
+    const ahead = Math.max(-8, Math.min(5, 0.6 * (leanAhead - meanSlope)));
+    const bk = still ? 0 : beatK(t);
+    const lean = Math.max(36, Math.min(53, (still ? 48 : leanDeg(ph) * (1 - k) + 51 * k) + ahead - 8 * bk));
+    const hip = (still ? 0.455 : hipH(ph)) - 0.02 * k + 0.02 * bk;
+    const sg = still ? 0 : surgeCurve(ph) * heave * (1 - bk);
     const tremor = k > 0 ? 0.006 * Math.sin(2 * Math.PI * 5 * t) * k : 0;
-    const headTilt = still ? 30 : (lean - 18) * (1 - k) + (lean - 4) * k;
-    const breath = 1 + 0.012 * Math.sin((2 * Math.PI * t) / 3.2);
+    const headTilt = (still ? 30 : (lean - 18) * (1 - k) + (lean - 4) * k) * (1 - bk) + 10 * bk;
+    const breath = (1 + 0.012 * Math.sin((2 * Math.PI * t) / 3.2)) * (1 + 0.025 * bk * Math.sin(Math.min(1, (t - beatT0 - 0.4) / 0.6) * Math.PI));
     const nudge = (0.6 * sg * Hw) / path.length;
     const r = solvePush({ path, H: Hw, sB: sB + nudge, phi: ph, lean, hip, surge: sg, tremor, headTilt, breath, alpha }, pelvisOffset(path, sB, Hw));
     // Dust from slipping feet.
@@ -879,7 +991,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       if (sq && sq.kind === 'fadein') s2.pose.alpha = smoothstep(0, FADEIN_DUR, st);
       fig = s2; boulderC = s2.boulderC; rot = s2.rot;
     } else {
-      const sB = boulderS(progress, Hw, Rw, path.length);
+      const sB = sMap(progress);
       const pp = pushPose(sB, t);
       fig = pp; boulderC = pp.boulderC; rot = pp.rot + (pp.tremor ? pp.tremor * 0.5 : 0);
     }
@@ -1021,11 +1133,15 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         mode = 'stand';
         if (!reduced) { startSeq('standup', nowS()); }
       }
+      // False summits at 25/50/75% (ROUND3 §3.3.2): light the cairn; play the beat on a live crossing only.
+      const passed = (phase === 'focus' || phase === 'open' || phase === 'paused') ? [0.25, 0.5, 0.75].filter((b) => q >= b).length : benchesLit;
+      if (passed > benchesLit && phaseSet && (phase === 'focus' || phase === 'open') && !reduced && q - lastProgress < 0.01 && lastProgress > 0) beatT0 = nowS();
+      if (passed !== benchesLit) { benchesLit = passed; palKey = ''; }
       lastProgress = q;
       progress = q;
       if (reduced && mounted) {
         const t = nowS();
-        const moved = Math.abs(boulderS(q, Hw, Rw, path.length) - boulderS(lastDrawnP, Hw, Rw, path.length)) * path.length * S * scale;
+        const moved = Math.abs(sMap(q) - sMap(lastDrawnP)) * path.length * S * scale;
         if ((moved >= 1 && t - lastDraw >= 60) || phase !== 'focus') { lastDrawnP = q; drawNow(); }
       }
     },
