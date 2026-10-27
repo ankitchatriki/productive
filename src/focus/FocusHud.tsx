@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import styles from './FocusMode.module.css';
 import { blockMs, formatCountdown } from '../domain/focus';
 import { formatClock } from '../domain/time';
@@ -15,6 +16,12 @@ interface FocusHudProps {
 /** Status line, big readout and caption over the lake (FOCUS_DESIGN §2.2). */
 export function FocusHud({ view, now, readoutMode, onCycleReadout }: FocusHudProps) {
   const { phase, session } = view;
+  // Review S4: the heading waits for the summit beat (≥ 3.6 s after completion). Computed once per completion:
+  // recomputing it every second would keep shrinking the delay and show the heading early.
+  const summitDelay = useMemo(
+    () => (session.completedAt ? Math.max(0, 3.6 - (Date.now() - Date.parse(session.completedAt)) / 1000) : 0),
+    [session.completedAt],
+  );
   let status = '';
   let readout = '';
   let caption = '';
@@ -27,7 +34,7 @@ export function FocusHud({ view, now, readoutMode, onCycleReadout }: FocusHudPro
     minutesLeft = open ? null : Math.ceil(remaining / 60_000);
     const mode = open && readoutMode === 'remaining' ? 'elapsed' : readoutMode;
     readout = mode === 'elapsed' ? formatCountdown(view.focusedMs) : formatCountdown(remaining);
-    if (phase === 'paused') caption = open ? `${formatCountdown(view.focusedMs)} focused` : `${formatCountdown(remaining)} left`;
+    if (phase === 'paused') caption = open ? 'focused · paused' : mode === 'elapsed' ? `${formatCountdown(remaining)} left · paused` : 'left · paused';
     else if (open) caption = 'focused · open-ended';
     else if (mode === 'elapsed') caption = `focused · ${formatCountdown(remaining)} left`;
     else caption = `left · ends ${formatClock(new Date(now.getTime() + remaining))}`;
@@ -56,7 +63,7 @@ export function FocusHud({ view, now, readoutMode, onCycleReadout }: FocusHudPro
   return (
     <>
       <div className={`${styles.status} ${phase === 'complete' ? styles.summit : ''}`} aria-hidden={!status}
-        style={phase === 'complete' && session.completedAt ? { animationDelay: `${Math.max(0, 3.6 - (now.getTime() - Date.parse(session.completedAt)) / 1000)}s` } : undefined}>
+        style={phase === 'complete' && session.completedAt ? { animationDelay: `${summitDelay}s` } : undefined}>
         {status}
       </div>
       {phase === 'paused' && <div className={styles.paused}>PAUSED</div>}
