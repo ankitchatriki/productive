@@ -8,8 +8,10 @@ import {
   BODY, DEG, blendPose, boulderCentre, easeInOut, easeOut, hipH, leanDeg, pelvisOffset, solvePush, solveSit, solveStand,
   surge as surgeCurve, type Limb, type Pose,
 } from './rig';
-import { fbm1, fbm2, hash1, hash2, mulberry32, noise2, ridged, smoothstep } from './noise';
+import { fbm1, fbm2, hash1, hash2, mulberry32, noise1, noise2, ridged, smoothstep } from './noise';
 import { NIGHT_LIGHT, lightState, mixLight, type LightKey } from './light';
+import { Motion, wind } from './motion';
+import { makeChain, solveRest, stepChain, type Chain } from './chain';
 import { clockwise, finite, footOutline, handOutline, headOutline, limbOutline, smoothPath, torsoOutline } from './figure';
 
 type Mode = 'climb' | 'stand' | 'sit';
@@ -52,7 +54,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   const rng = mulberry32(20261027);
 
   // Gait
-  let phi = 0.42, T = 2.6, cyclesUntilPause = 6, strainUntil = 0, strainStart = 0, heave = 1;
+  let motion = new Motion(20261027);
   let lastFrame = 0, lastDraw = 0, ambientT = 0, lastDrawnP = 0;
   // Pause look
   let desatK = 0, desatTarget = 0;
@@ -66,6 +68,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let clouds: HTMLCanvasElement[] = [];
   let boulderTex: HTMLCanvasElement | null = null;
   let boulderOutline: Path2D | null = null;
+  let dustSprite: HTMLCanvasElement | null = null;
   let stars: Array<{ x: number; y: number; b: number; ph: number }> = [];
   let pal: Palette = gradePalette(palette(0));
   let palKey = '';
@@ -218,13 +221,22 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     }
     // Pits
     const pr = mulberry32(77);
-    for (let i = 0; i < 8; i++) {
+    // Pits: soft radial hollows with a lit lip toward the texture's fixed up-light (no stickers).
+    for (let i = 0; i < 9; i++) {
       const a = pr() * Math.PI * 2, d = pr() * R * 0.75, rr = R * (0.04 + pr() * 0.06);
       const x = Math.cos(a) * d, y = Math.sin(a) * d;
-      g.fillStyle = 'rgba(10,6,4,0.35)';
-      g.beginPath(); g.ellipse(x - rr * 0.15, y + rr * 0.15, rr, rr * 0.75, 0.3, 0, Math.PI * 2); g.fill();
-      g.fillStyle = 'rgba(255,235,210,0.18)';
-      g.beginPath(); g.ellipse(x + rr * 0.25, y - rr * 0.25, rr * 0.7, rr * 0.45, 0.3, 0, Math.PI * 2); g.fill();
+      const pg = g.createRadialGradient(x, y, 0, x, y, rr);
+      pg.addColorStop(0, 'rgba(10,6,4,0.35)'); pg.addColorStop(0.7, 'rgba(10,6,4,0.12)'); pg.addColorStop(1, 'rgba(10,6,4,0)');
+      g.fillStyle = pg; g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(255,238,215,0.22)'; g.lineWidth = Math.max(0.6, rr * 0.18);
+      g.beginPath(); g.arc(x, y + rr * 0.1, rr * 0.85, Math.PI * 0.15, Math.PI * 0.85); g.stroke();
+    }
+    // Lichen flecks.
+    const lichen = mixRGB(base, hex('#7a7a52'), 0.4);
+    for (let i = 0; i < 12; i++) {
+      const a = pr() * Math.PI * 2, d = pr() * R * 0.85;
+      g.fillStyle = css(lichen, 0.35);
+      g.beginPath(); g.arc(Math.cos(a) * d, Math.sin(a) * d, R * (0.012 + pr() * 0.02), 0, Math.PI * 2); g.fill();
     }
     // Cracks
     g.strokeStyle = 'rgba(10,6,4,0.35)';
@@ -327,7 +339,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     yield;
     const { body, back } = drawMountainBase(l, ss);
     yield;
-    drawSurface(l, body, back, ss);
+    drawSurface(l, body, back, ss, 0);
+    yield;
+    drawSurface(l, body, back, ss, 1);
+    yield;
+    drawSurface(l, body, back, ss, 2);
     yield;
     drawMountainTop(l, body, back, ss);
     yield;
@@ -335,6 +351,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     yield;
     buildClouds(lighten(mixRGB(pal.horizon, pal.zenith, 0.3), 0.15));
     buildBoulderTexture(pal.boulderBase);
+    buildDustSprite(ss.light);
     // Bake the grade (vignette + wash) into sky and land: no full-screen blend per frame (perf at dpr 2).
     for (const [c, op] of [[skyT, 'source-over'], [landT, 'source-atop']] as const) {
       const cx = c.getContext('2d')!;
@@ -469,12 +486,26 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
 
   /** Faces, strata, joints, gullies, scree and grain on the main mountain (ROUND3 §3.3.7). */
-  function drawSurface(l: CanvasRenderingContext2D, body: Path2D, back: V[], ss: SkyState) {
+  function drawSurface(l: CanvasRenderingContext2D, body: Path2D, back: V[], ss: SkyState, part: 0 | 1 | 2) {
     const sp = path.spec;
     const L = ss.light;
     const sEnd = 1 + (path.plateauEndS - 1) * 1.45;
     l.save();
     l.clip(body);
+    if (part === 2) {
+      // Grain overlay (one drawImage per tint rebuild).
+      if (detail && quality > 0.5) {
+        l.globalCompositeOperation = 'overlay';
+        l.globalAlpha = 0.35;
+        l.drawImage(detail, 0, 0, w, h);
+        l.globalCompositeOperation = 'source-over';
+        l.globalAlpha = 1;
+      }
+      l.restore();
+      return;
+    }
+    if (part === 1) { surfaceDetail(l, back, ss); l.restore(); return; }
+    void back;
     // Strata bands in mountain-local coordinates (u along the path, v depth along the normal).
     const N = layout === 'landscape' ? 9 : 7;
     const vk = (k: number, s: number) => 0.035 + k * 0.055 + 0.012 * (fbm1(s * 3.2 * path.length + k * 7.1) * 2 - 1);
@@ -514,6 +545,13 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     bg.addColorStop(0, css(mixRGB(pal.rockShade, L.ambient, 0.2), 0.8));
     bg.addColorStop(1, css(darken(pal.rockShade, 0.25), 0.9));
     l.fillStyle = bg; l.fill(bf);
+    l.restore();
+  }
+
+  function surfaceDetail(l: CanvasRenderingContext2D, back: V[], ss: SkyState) {
+    const sp = path.spec;
+    const L = ss.light;
+    void sp; void back;
     // Joints: short cracks perpendicular to the strata, with a lit edge on the sun side.
     const pr = mulberry32(53);
     const nJ = 18 + Math.floor(pr() * 9);
@@ -556,15 +594,6 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       l.strokeStyle = css(L.key, 0.3); l.lineWidth = 0.8;
       l.beginPath(); l.moveTo(c.x - sz * 0.6, c.y - sz * 0.35); l.lineTo(c.x + sz * 0.5, c.y - sz * 0.4); l.stroke();
     }
-    // Grain overlay (one drawImage per tint rebuild).
-    if (detail && quality > 0.5) {
-      l.globalCompositeOperation = 'overlay';
-      l.globalAlpha = 0.35;
-      l.drawImage(detail, 0, 0, w, h);
-      l.globalCompositeOperation = 'source-over';
-      l.globalAlpha = 1;
-    }
-    l.restore();
   }
 
   /** Foreground rocks (L10): dark, slightly blurred, at the bottom corners; never over the path or the HUD. */
@@ -784,7 +813,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     g.fill();
   }
 
-  function drawFigure(g: CanvasRenderingContext2D, pose: Pose, drawBoulderBetween: () => void, stone: V | null = null) {
+  function drawFigure(g: CanvasRenderingContext2D, pose: Pose, drawBoulderBetween: () => void, stone: V | null = null, withChains = false) {
     if (pose.alpha <= 0.001) { drawBoulderBetween(); return; }
     const parts = figureParts(pose, stone);
     const light = lastSky?.light ?? lightState(0.43);
@@ -799,12 +828,14 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     g.fillStyle = css(darken(figure, 0.35));
     fillParts(g, [parts.hair]);
     g.restore();
+    if (withChains) { drawCloth(g, 1, pose.alpha); drawHair(g, pose.alpha); }
     drawBoulderBetween();
     g.save();
     g.globalAlpha = pose.alpha;
     g.fillStyle = css(figure);
     fillParts(g, parts.near);
     g.restore();
+    if (withChains) drawCloth(g, 0, pose.alpha);
     if (quality >= 0.75) {
       drawEdgeLight(g, pose, parts, 'bounce');
       if (!reduced || lastSky?.sun) drawEdgeLight(g, pose, parts, 'rim');
@@ -899,129 +930,239 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     g.restore();
   }
 
-  // ---------- particles ----------
+  // ---------- particles v2 (ROUND3 §3.9) ----------
   function spawn(kind: Particle['kind'], x: number, y: number, vx: number, vy: number, r: number, life: number, s = 0) {
+    const cap = quality >= 1 ? MAX_PARTICLES : quality >= 0.75 ? 36 : 20;
+    let live = 0;
+    for (const q of particles) if (q.live) live++;
+    if (live >= cap) return;
     const p = particles.find((q) => !q.live);
     if (!p) return;
     p.live = true; p.kind = kind; p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.r = r; p.life = life; p.age = 0; p.s = s; p.hops = 0;
   }
 
+  /** Dust puffs drift back and down the slope with drag, then rise a little in the wind. */
   function dustAt(foot: V, n: number) {
     const H = Hw;
-    const t = path.tangentAt(path.length ? Math.max(0, Math.min(1, s0())) : 0);
+    const t = path.tangentAt(Math.max(0, Math.min(1, sAtX(foot.x))));
     for (let i = 0; i < n; i++) {
       const sp = (0.15 + rng() * 0.2) * H;
-      spawn('dust', foot.x, foot.y + 0.01 * H, -t.x * sp, -t.y * sp + 0.05 * H, (0.01 + rng() * 0.015) * H, 0.9 + rng() * 0.5);
+      spawn('dust', foot.x + (rng() - 0.5) * 0.03 * H, foot.y + 0.01 * H, -t.x * sp, -t.y * sp + 0.03 * H, (0.012 + rng() * 0.014) * H, 0.9 + rng() * 0.6);
     }
   }
 
-  function stepParticles(dt: number) {
+  /** Grit: a few grains drop from the contact point and bounce once. */
+  function gritAt(s: number, n: number) {
+    const g = path.at(Math.max(0, s));
+    for (let i = 0; i < n; i++) spawn('grit', g.x + (rng() - 0.5) * 0.01, g.y + 0.004, -(0.05 + rng() * 0.1) * Hw, 0.15 * Hw, 0.004 * Hw, 1.1);
+  }
+
+  function stepParticles(dt: number, t: number) {
     let live = 0;
+    const wx = wind(t) * Hw;
+    const drag = Math.pow(0.92, dt * 60);
     for (const p of particles) {
       if (!p.live) continue;
       p.age += dt;
       if (p.age >= p.life) { p.live = false; continue; }
       live++;
       if (p.kind === 'pebble') {
-        // Roll down the path under gravity along the tangent, with two small hops.
+        // Roll down the path; each landing hop keeps 35% of its speed and kicks a tiny puff.
         const ang = path.angleAt(Math.max(0, Math.min(0.999, p.s))) * DEG;
-        p.vx -= 2.2 * Hw * Math.sin(ang) * dt; // along-path speed (world/s), negative = downhill
+        p.vx -= 2.2 * Hw * Math.sin(ang) * dt;
         p.s += (p.vx * dt) / path.length;
-        p.vy -= 3 * Hw * dt * 4;
+        p.vy -= 12 * Hw * dt;
         p.y = Math.max(0, p.y + p.vy * dt);
-        if (p.y === 0 && p.hops < 2) { p.vy = Math.abs(p.vy) * 0.4; p.hops++; }
+        if (p.y === 0 && p.vy < 0) {
+          if (p.hops < 3 && Math.abs(p.vy) > 0.05 * Hw) {
+            p.vy = Math.abs(p.vy) * 0.35; p.hops++;
+            const g = path.at(p.s); spawn('dust', g.x, g.y, 0, 0.02 * Hw, 0.008 * Hw, 0.5);
+          } else p.vy = 0;
+        }
         if (p.s < -0.2) p.live = false;
+      } else if (p.kind === 'grit') {
+        p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 1.6 * Hw * dt;
+        const gy = path.groundY(p.x);
+        if (p.y < gy && p.hops === 0) { p.y = gy; p.vy = Math.abs(p.vy) * 0.35; p.hops = 1; }
       } else {
+        p.vx = p.vx * drag + wx * 0.5 * dt * 2; p.vy = p.vy * drag + 0.01 * Hw * dt;
         p.x += p.vx * dt; p.y += p.vy * dt;
-        if (p.kind === 'grit') p.vy -= 2.2 * Hw * dt;
       }
     }
     stats.particles = live;
   }
 
+  /** Two-tone dust sprite (lit toward the sun), rebuilt with the tint. */
+  function buildDustSprite(light: LightKey) {
+    const n = Math.max(8, Math.round(32 * scale));
+    dustSprite = mk(n, n);
+    const g = dustSprite.getContext('2d')!;
+    const lit = mixRGB(pal.rockLit, light.key, 0.5), shade = mixRGB(pal.rockLit, light.ambient, 0.4);
+    const rg = g.createRadialGradient(n * 0.4, n * 0.4, 0, n / 2, n / 2, n / 2);
+    rg.addColorStop(0, css(lit, 1)); rg.addColorStop(0.55, css(mixRGB(lit, shade, 0.5), 0.6)); rg.addColorStop(1, css(shade, 0));
+    g.fillStyle = rg; g.fillRect(0, 0, n, n);
+  }
+
   function drawParticles(g: CanvasRenderingContext2D) {
-    const dust = pal.rockLit; // review S14: tinted, not bright white dots
     for (const p of particles) {
       if (!p.live) continue;
       const k = p.age / p.life;
       if (p.kind === 'pebble') {
         const base = path.at(p.s), n = path.normalAt(Math.max(0, Math.min(1, p.s)));
         const v = toS({ x: base.x + n.x * (p.r + p.y), y: base.y + n.y * (p.r + p.y) });
-        g.fillStyle = css(pal.rockShade, 1 - k * 0.3);
-        g.beginPath(); g.arc(v.x, v.y, p.r * S, 0, Math.PI * 2); g.fill();
-      } else {
+        g.fillStyle = css(darken(pal.rockShade, 0.1), 1 - k * 0.3);
+        g.beginPath(); g.arc(v.x, v.y, Math.max(1, p.r * S), 0, Math.PI * 2); g.fill();
+        g.fillStyle = css(lastSky?.light.key ?? pal.rockLit, 0.35 * (1 - k));
+        g.beginPath(); g.arc(v.x - 0.3 * p.r * S, v.y - 0.3 * p.r * S, Math.max(0.5, p.r * S * 0.45), 0, Math.PI * 2); g.fill();
+      } else if (p.kind === 'grit') {
         const v = toS({ x: p.x, y: p.y });
-        const r = p.r * S * (1 + 1.5 * k);
-        g.fillStyle = css(p.kind === 'grit' ? pal.rockShade : dust, (p.kind === 'grit' ? 0.8 : 0.22) * (1 - k));
-        g.beginPath(); g.arc(v.x, v.y, r, 0, Math.PI * 2); g.fill();
+        g.fillStyle = css(darken(pal.rockShade, 0.2), 0.85 * (1 - k));
+        g.fillRect(v.x, v.y, 1.5, 1.5);
+      } else if (dustSprite) {
+        const v = toS({ x: p.x, y: p.y });
+        const r = p.r * S * (1 + 1.5 * (1 - (1 - k) * (1 - k)));
+        g.globalAlpha = 0.35 * (1 - k) * (1 - k);
+        g.drawImage(dustSprite, v.x - r, v.y - r, r * 2, r * 2);
+        g.globalAlpha = 1;
       }
     }
   }
 
-  // ---------- gait / poses ----------
-  let prevSlip = [0, 0];
+  // ---------- hair and cloth chains (ROUND3 §3.5) ----------
+  let chains: { hair: Chain[]; cloth: Chain[] } | null = null;
+  let chainAcc = 0;
+
+  function chainAnchors(pose: Pose) {
+    const H = Hw;
+    const d = { x: pose.shoulder.x - pose.pelvis.x, y: pose.shoulder.y - pose.pelvis.y };
+    const dl = Math.hypot(d.x, d.y) || 1;
+    const front = { x: (pose.facing * d.y) / dl, y: (-pose.facing * d.x) / dl };
+    const up = { x: d.x / dl, y: d.y / dl };
+    const hd = pose.head;
+    return {
+      hair: [0, 1].map((i) => ({ x: hd.x - front.x * 0.045 * H + up.x * (0.03 - i * 0.015) * H, y: hd.y - front.y * 0.045 * H + up.y * (0.03 - i * 0.015) * H })),
+      cloth: [1, -1].map((side) => ({ x: pose.pelvis.x + front.x * 0.07 * H * side - up.x * 0.03 * H, y: pose.pelvis.y + front.y * 0.07 * H * side - up.y * 0.03 * H })),
+      back: { x: -front.x, y: -front.y },
+    };
+  }
+
+  function updateChains(pose: Pose, dt: number, t: number, rest: boolean) {
+    const a = chainAnchors(pose);
+    const H = Hw;
+    if (!chains) {
+      chains = {
+        hair: a.hair.map((p) => makeChain(p, 3, 0.04 * H, 35, 1.0, { x: a.back.x * 0.7, y: -0.7 })),
+        cloth: a.cloth.map((p) => makeChain(p, 4, 0.03 * H, 25, 0.6, { x: 0, y: -1 })),
+      };
+      rest = true;
+    }
+    const grav = 0.9 * H * 9;
+    const w = wind(t) * H * 6;
+    const hairDir = { x: a.back.x * 0.6, y: 0.4 }, clothDir = { x: 0, y: -1 };
+    if (rest) {
+      chains.hair.forEach((c, i) => solveRest(c, a.hair[i], hairDir, grav * 0.4, w));
+      chains.cloth.forEach((c, i) => solveRest(c, a.cloth[i], clothDir, grav, w * 0.6));
+      return;
+    }
+    chainAcc = Math.min(chainAcc + dt, 3 / 60);
+    const sub = quality >= 1 ? 3 : 1;
+    let n = 0;
+    while (chainAcc >= 1 / 60 && n < sub) {
+      chains.hair.forEach((c, i) => stepChain(c, a.hair[i], hairDir, 1 / 60, grav * 0.4, w));
+      chains.cloth.forEach((c, i) => stepChain(c, a.cloth[i], clothDir, 1 / 60, grav, w * 0.6));
+      chainAcc -= 1 / 60; n++;
+    }
+  }
+
+  function drawHair(g: CanvasRenderingContext2D, alpha: number) {
+    if (!chains) return;
+    const H = Hpx();
+    g.save(); g.globalAlpha = alpha;
+    g.strokeStyle = css(darken(pal.figure, 0.35)); g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const c of chains.hair) {
+      for (let i = 1; i < c.p.length; i++) {
+        const a = toS(c.p[i - 1]), b = toS(c.p[i]);
+        g.lineWidth = Math.max(0.8, (0.016 - i * 0.004) * H);
+        g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+      }
+    }
+    g.restore();
+  }
+
+  function drawCloth(g: CanvasRenderingContext2D, which: 0 | 1, alpha: number) {
+    if (!chains) return;
+    const c = chains.cloth[which];
+    const H = Hpx();
+    const pts = c.p.map((p) => toS(p));
+    const left: V[] = [], right: V[] = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+      const wdt = (0.05 - (0.03 * i) / (pts.length - 1)) * H * 0.5;
+      left.push({ x: p.x - (dy / l) * wdt, y: p.y + (dx / l) * wdt });
+      right.push({ x: p.x + (dy / l) * wdt, y: p.y - (dx / l) * wdt });
+    });
+    g.save(); g.globalAlpha = alpha;
+    g.fillStyle = css(mixRGB(pal.figure, pal.rockShade, 0.35));
+    g.beginPath();
+    smoothPath(g, clockwise([...left, ...right.reverse()]));
+    g.fill();
+    g.restore();
+  }
+
+  // ---------- gait / poses (motion v2, ROUND3 §3.7) ----------
+  let lastFeet: V[] = [];
+  let lastContactS = 0;
 
   function advanceGait(dt: number, t: number) {
-    if (phase === 'paused' || reduced) return;
-    if (strainUntil > t) return;
-    if (strainUntil > 0 && strainUntil <= t) { strainUntil = 0; heave = 1.6; }
+    const still = phase === 'paused' || reduced;
     const speed = (seq?.kind === 'summit' || seq?.kind === 'mini' ? 1.2 : 1) * (1 - 0.6 * beatK(t));
-    const heaveSpeed = heave > 1 ? 1.25 : 1;
-    const before = phi;
-    phi += (dt / T) * speed * heaveSpeed;
-    if (phi >= 1) {
-      phi -= 1;
-      heave = 1;
-      const sB = sMap(progress);
-      T = 2.6 * (1 + 0.24 * (rng() - 0.5)) * (1 + 0.25 * Math.min(1, Math.max(0, (sB - s0()) / (s1() - s0()))));
-      cyclesUntilPause--;
-      if (cyclesUntilPause <= 0 && mode === 'climb' && !seq) {
-        cyclesUntilPause = 5 + Math.floor(rng() * 5);
-        // Freeze at the key pose for the strain pause.
-        phi = 0.42;
-        strainStart = t;
-        strainUntil = t + 1.6 + rng() * 0.8;
+    const climb = Math.min(1, Math.max(0, (sMap(progress) - s0()) / (s1() - s0())));
+    motion.step(t, dt, { still, climb, speed, climbing: mode === 'climb' && !seq });
+    if (still || mode !== 'climb') return;
+    const m = motion.sample(t, false);
+    // Small juice: dust when a planted foot slips; medium: the big slip (burst + pebbles); grit on the heave.
+    motion.events.slipStart.forEach((on, i) => {
+      if (!on || !lastFeet[i]) return;
+      const big = i === 0 && m.bigSlip;
+      dustAt(lastFeet[i], big ? 6 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3));
+      const pebbles = big ? 1 + Math.floor(rng() * 2) : rng() < 0.12 ? 1 : 0;
+      for (let k = 0; k < pebbles && quality > 0.5; k++) {
+        if (particles.filter((q) => q.live && q.kind === 'pebble').length >= 3) break;
+        spawn('pebble', 0, 0, -0.05 * Hw - rng() * 0.05 * Hw, 0.02 * Hw, (0.012 + rng() * 0.008) * Hw, 4, sAtX(lastFeet[i].x));
       }
-    }
-    void before;
-  }
-
-  function strainK(t: number): number {
-    if (strainUntil <= t) return 0;
-    return Math.min(smoothstep(strainStart, strainStart + 0.4, t), 1 - smoothstep(strainUntil - 0.3, strainUntil, t));
+    });
+    if (motion.events.heaveStart) gritAt(lastContactS, 2 + Math.floor(rng() * 2));
   }
 
   function pushPose(sB: number, t: number, alpha = 1) {
     const still = phase === 'paused' || reduced;
-    const ph = still ? 0.42 : phi;
-    const k = still ? 0 : strainK(t);
+    const m = motion.sample(t, still);
+    const ph = m.phi;
+    const k = m.strainK;
     // Look-ahead lean (anticipation): dig in before a steeper pitch, ease off toward a bench (§3.3.5).
     const thAhead = path.angleAt(Math.min(0.999, sB + (0.5 * Hw) / path.length));
     const fdt = Math.min(0.2, Math.max(0, t - leanT)); leanT = t;
     leanAhead = leanAhead === 0 ? thAhead : leanAhead + (thAhead - leanAhead) * Math.min(1, fdt / 1.2);
     const ahead = Math.max(-8, Math.min(5, 0.6 * (leanAhead - meanSlope)));
     const bk = still ? 0 : beatK(t);
-    const lean = Math.max(36, Math.min(53, (still ? 48 : leanDeg(ph) * (1 - k) + 51 * k) + ahead - 8 * bk));
-    const hip = (still ? 0.455 : hipH(ph)) - 0.02 * k + 0.02 * bk;
-    const sg = still ? 0 : surgeCurve(ph) * heave * (1 - bk);
+    // Drag hierarchy: pelvis leads; the spine lags ~60 ms and the head ~120 ms behind it.
+    const spineLean = still ? 48 : leanDeg(ph - 0.023) * (1 - k) + 51 * k;
+    const lean = Math.max(36, Math.min(53, spineLean + ahead - 8 * bk + m.leanAdj));
+    const hip = (still ? 0.455 : hipH(ph)) - 0.02 * k + 0.02 * bk + m.hipAdj;
+    const sg = still ? 0 : surgeCurve(ph) * m.heave * m.surgeMul * (1 - bk);
     const tremor = k > 0 ? 0.006 * Math.sin(2 * Math.PI * 5 * t) * k : 0;
-    const headTilt = (still ? 30 : (lean - 18) * (1 - k) + (lean - 4) * k) * (1 - bk) + 10 * bk;
-    const breath = (1 + 0.012 * Math.sin((2 * Math.PI * t) / 3.2)) * (1 + 0.025 * bk * Math.sin(Math.min(1, (t - beatT0 - 0.4) / 0.6) * Math.PI));
-    const nudge = (0.6 * sg * Hw) / path.length;
-    const r = solvePush({ path, H: Hw, sB: sB + nudge, phi: ph, lean, hip, surge: sg, tremor, headTilt, breath, alpha }, pelvisOffset(path, sB, Hw));
-    // Dust from slipping feet.
-    if (!still) {
-      r.slips.forEach((sl, i) => {
-        if (sl > 0 && prevSlip[i] === 0) {
-          dustAt(r.feet[i], 3 + Math.floor(rng() * 4));
-          if (rng() < 0.15 && quality > 0.5) {
-            const fs = sB - pelvisOffset(path, sB, Hw) / path.length;
-            spawn('pebble', 0, 0, -0.05 * Hw, 0.02 * Hw, (0.012 + rng() * 0.008) * Hw, 3, fs);
-          }
-        }
-        prevSlip[i] = sl;
-      });
-    }
+    const headLag = still ? 30 : (leanDeg(ph - 0.046) + ahead - 18) * (1 - k) + (lean - 4) * k;
+    const headTilt = (headLag + (still ? 0 : 3 * (noise1(t * 0.4) * 2 - 1))) * (1 - bk) + 10 * bk;
+    const breath = m.breath * (1 + 0.025 * bk * Math.sin(Math.min(1, Math.max(0, (t - beatT0 - 0.4) / 0.6)) * Math.PI));
+    // The stone gives back on a damped spring (pushed on each shove, rolls back on each slip).
+    const nudge = (m.spring * Hw) / path.length;
+    const r = solvePush({
+      path, H: Hw, sB: sB + nudge, phi: ph, lean, hip, surge: sg, tremor, headTilt, breath, alpha,
+      strideMul: still ? 1 : m.strideMul, liftMul: still ? 1 : m.liftMul, slipExtra: m.slipExtra, shoulderLift: m.shoulderLift,
+    }, pelvisOffset(path, sB, Hw));
+    lastFeet = r.feet;
+    lastContactS = sB + nudge;
     // Heel lifts in the grip push (φ .55 → 1 of that foot), the push-off that sells the drive.
     const heelOf = (off: number) => { const fph = (((ph + off) % 1) + 1) % 1; return fph >= 0.55 ? 22 * DEG * Math.pow((fph - 0.55) / 0.45, 2) : 0; };
     r.pose.heel = still ? [0, 0] : [heelOf(0), heelOf(0.5)];
@@ -1061,7 +1202,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const done = seq.kind;
       seq = null;
       if (done === 'mini') startSeq('rollback', t);
-      else if (done === 'rollback') { mode = 'climb'; phi = 0.0; }
+      else if (done === 'rollback') { mode = 'climb'; motion.phi = 0; }
     }
     if (desatK !== desatTarget) {
       const step = dt / 0.4;
@@ -1069,7 +1210,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     }
     ambientT += dt * (phase === 'paused' ? 0.25 : 1);
     advanceGait(dt, t);
-    stepParticles(dt);
+    stepParticles(dt, t);
     const ss = skyState(t);
     lastSky = ss;
     maybeRebuild(t, ss);
@@ -1199,7 +1340,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
     if (fig2) drawFigure(g, fig2.pose, () => {});
     const bcx = boulderC!, brot = rot!;
-    if (fig) drawFigure(g, fig.pose, () => drawBoulder(g, bcx, brot, lift), bcx);
+    if (fig) {
+      updateChains(fig.pose, dt, t, reduced);
+      drawFigure(g, fig.pose, () => drawBoulder(g, bcx, brot, lift), bcx, true);
+    }
     else drawBoulder(g, bcx, brot, lift);
     drawParticles(g);
 

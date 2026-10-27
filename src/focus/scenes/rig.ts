@@ -59,7 +59,8 @@ export function reach(root: V, target: V, a: number, b: number): V {
 /** Foot target along the slope (in H) relative to the pelvis ground point, its lift and slip speed. */
 export function footTarget(phi: number): { u: number; lift: number; slip: number } {
   const f = ((phi % 1) + 1) % 1;
-  if (f < 0.3) { const u = f / 0.3; return { u: lerp(-0.3, 0.16, easeInOut(u)), lift: 0.07 * Math.sin(Math.PI * u), slip: 0 }; }
+  // Swing arc peaks early (u = 0.4): the knee comes up and forward, then the foot reaches down (ROUND3 §3.7g).
+  if (f < 0.3) { const u = f / 0.3; return { u: lerp(-0.3, 0.16, easeInOut(u)), lift: 0.07 * Math.sin(Math.PI * Math.pow(u, 0.8)), slip: 0 }; }
   if (f < 0.55) { const u = (f - 0.3) / 0.25; return { u: lerp(0.16, -0.04, easeOut(u)), lift: 0, slip: 1 - u }; }
   const u = (f - 0.55) / 0.45;
   return { u: lerp(-0.04, -0.3, u), lift: 0, slip: 0 };
@@ -82,6 +83,13 @@ export interface PushParams {
   headTilt: number;    // degrees from vertical (neck direction)
   breath: number;
   alpha?: number;
+  /** Per-cycle stride / lift multipliers (micro-variation). */
+  strideMul?: number;
+  liftMul?: number;
+  /** Extra slide of the slipping foot (H), for the big slip. */
+  slipExtra?: number;
+  /** Shoulder rise (H): breathing and the shove. */
+  shoulderLift?: number;
 }
 
 export function boulderCentre(path: SlopePath, sB: number, R: number): V {
@@ -130,12 +138,13 @@ function pelvisY(path: SlopePath, pelvisS: number, gx: number, gy: number, hip: 
   return y;
 }
 
-function feetFor(path: SlopePath, pelvisS: number, phi: number, H: number) {
-  const k = strideScale(path, pelvisS);
+function feetFor(path: SlopePath, pelvisS: number, phi: number, H: number, strideMul = 1, liftMul = 1, slipExtra = 0) {
+  const k = strideScale(path, pelvisS) * strideMul;
   return [0, 0.5].map((off) => {
     const t = footTarget(phi + off);
-    const g = path.at(pelvisS + (t.u * k * H) / path.length);
-    return { foot: { x: g.x, y: g.y + t.lift * H }, slip: t.slip, lift: t.lift };
+    const extra = t.slip > 0 && off === 0 ? -slipExtra * (1 - t.slip) : 0;
+    const g = path.at(pelvisS + ((t.u * k + extra) * H) / path.length);
+    return { foot: { x: g.x, y: g.y + t.lift * liftMul * H }, slip: t.slip, lift: t.lift };
   });
 }
 
@@ -178,13 +187,13 @@ export function solvePush(p: PushParams, offset?: number): { pose: Pose; boulder
   const d = offset ?? pelvisOffset(path, p.sB, H);
   const pelvisS = p.sB - d / path.length;
   const g = path.at(pelvisS);
-  const feetInfo = feetFor(path, pelvisS, p.phi, H);
+  const feetInfo = feetFor(path, pelvisS, p.phi, H, p.strideMul, p.liftMul, p.slipExtra);
   const feet = feetInfo.map((f) => f.foot);
   const px = g.x + p.surge * H;
   const py = pelvisY(path, pelvisS, px, g.y, p.hip, H) + p.tremor * H;
   const lean = p.lean * DEG;
   const pelvis = { x: px, y: py };
-  let shoulder = { x: pelvis.x + BODY.torso * H * Math.sin(lean), y: pelvis.y + BODY.torso * H * Math.cos(lean) };
+  let shoulder = { x: pelvis.x + BODY.torso * H * Math.sin(lean), y: pelvis.y + BODY.torso * H * Math.cos(lean) + (p.shoulderLift ?? 0) * H };
   // If the stone is just out of reach (steep top of the climb), the body shifts toward it.
   const targets = handAngles(path, p.sB).map((deg) => handTarget(bc, R, H, deg));
   const maxArm = 0.99 * ARM() * H;
