@@ -114,6 +114,8 @@ export const sigmaAt = (thetaDeg: number) => (FRONT_FOOT + REAR_FOOT) * cosRatio
 /** Nominal cycle period: one stride at the pace. */
 export const periodAt = (thetaDeg: number) => sigmaAt(thetaDeg) / PACE;
 const SIM_DT = 1 / 120;
+/** V8: the cadence eases up from rest (after a hold or a strain beat) over this long. */
+const RAMP_T = 0.4;
 const PRESS_END = 0.24, PRESS_KNEE = 166, TOEOFF_KNEE = 150, TO_BLEND = 0.08;
 /** 0 → 1 at an even rate with eased ends (C2; the peak rate is 1.33×, against 1.875× for a quintic ease). */
 const trapRamp = (x: number) => {
@@ -282,7 +284,7 @@ export class Gait {
       st.PeV += (-4 * (st.Pe - st.P) - 4 * st.PeV) * dt; st.Pe += st.PeV * dt;
       // from rest (after a hold or a strain beat) the cadence eases up from zero (C2): no acceleration step
       st.rampT += dt;
-      const du = (dt * speed * ease5(st.rampT / 0.9)) / st.Pe;
+      const du = (dt * speed * ease5(st.rampT / RAMP_T)) / st.Pe;
       st.u += du;
       if (st.u >= PHASE.contact && st.u - du < PHASE.contact) this.events.stepEnd = true;
       if (st.u >= 1) {

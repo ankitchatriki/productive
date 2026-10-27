@@ -116,6 +116,20 @@ describe('push cycle harness', () => {
     }
   });
 
+  it('no stall after a strain beat (V8): ≤ 0.2 s under 0.35 v̄ once the trudge resumes', () => {
+    const run = simulate(lineTrail(22), 150);
+    let after = -1, slow = 0, beats = 0;
+    for (let i = 1; i < run.frames.length; i++) {
+      const a = run.frames[i - 1], b = run.frames[i];
+      if (a.mode === 'strain' && b.mode === 'trudge') { after = b.t; beats++; }
+      if (after >= 0 && b.mode === 'trudge' && a.mode === 'trudge' && b.t - after < 1.5) {
+        if (dist(b.pose.pelvis, a.pose.pelvis) / DT < 0.35 * PACE) slow += DT;
+      }
+      if (after >= 0 && b.t - after >= 1.5) { expect(slow).toBeLessThanOrEqual(0.2 + 1e-9); slow = 0; after = -1; }
+    }
+    expect(beats).toBeGreaterThan(2);
+  });
+
   it('the cycle curves are periodic C2: value, slope and curvature match across u = 1 → 0', () => {
     const d1 = (f: (u: number) => number, u: number) => (f(u + 1e-4) - f(u - 1e-4)) / 2e-4;
     const d2 = (f: (u: number) => number, u: number) => (f(u + 1e-4) - 2 * f(u) + f(u - 1e-4)) / 1e-8;
