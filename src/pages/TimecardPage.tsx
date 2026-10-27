@@ -74,7 +74,7 @@ function TimecardBody({ weekStart, currentWeek, go, fmt, setFmt, phoneMode, setP
   const rows = [...tc.rows].sort((a, b) => b.total - a.total);
 
   const exportCsv = () => {
-    downloadText(`productive-timecard-${weekStart}.csv`, timecardCsv(data, weekStart), 'text/csv');
+    downloadText(`strugglemore-timecard-${weekStart}.csv`, timecardCsv(data, weekStart), 'text/csv');
     toast.show('Timecard exported as CSV.');
   };
   const toggle = (id: Id) => setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });

@@ -4,6 +4,6 @@ import { useEffect } from 'react';
 export function useDocumentTitle(page: string) {
   useEffect(() => {
     document.documentElement.dataset.page = page;
-    if (!document.documentElement.dataset.timer) document.title = `${page} — Productive`;
+    if (!document.documentElement.dataset.timer) document.title = `${page} — StruggleMore`;
   }, [page]);
 }

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import styles from './Nav.module.css';
 import { Icon, type IconName } from './Icon';
 import { Modal } from './Modal';
+import { BrandMark, Wordmark } from './Brand';
 
 export interface NavItem { to: string; label: string; icon: IconName; key: string }
 
@@ -19,7 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
 export function pageTitleFor(pathname: string): string {
   if (pathname === '/' || pathname === '') return 'Today';
   const item = NAV_ITEMS.find((n) => n.to !== '/' && pathname.startsWith(n.to));
-  return item ? item.label : 'Productive';
+  return item ? item.label : 'StruggleMore';
 }
 
 function isActive(item: NavItem, pathname: string) {
@@ -60,9 +61,9 @@ export function Nav({ pill, idleSlot, onShowShortcuts }: NavProps) {
   return (
     <>
       <nav className={styles.sidebar} aria-label="Main" data-nav>
-        <NavLink to="/" className={styles.brand} aria-label="Productive, go to Today">
-          <span className={styles.mark}><Icon name="clock" size={14} /></span>
-          <span className={styles.label}>Productive</span>
+        <NavLink to="/" className={styles.brand} aria-label="StruggleMore, go to Today">
+          <BrandMark />
+          <Wordmark className={styles.label} />
         </NavLink>
         {main.map(link)}
         <div className={styles.flex} />
@@ -76,7 +77,7 @@ export function Nav({ pill, idleSlot, onShowShortcuts }: NavProps) {
       </nav>
 
       <header className={styles.topbar} data-nav>
-        <span className={styles.mark} aria-hidden="true"><Icon name="clock" size={14} /></span>
+        <BrandMark />
         <span className={styles.topTitle} aria-hidden="true">{pageTitleFor(pathname)}</span>
       </header>
 

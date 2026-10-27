@@ -1,5 +1,6 @@
 /* Focus overlay — always dark-chromed (FOCUS_DESIGN §3.7). */
 .overlay {
+  --focus-ring: var(--focus-mode-ring);
   position: fixed; inset: 0; z-index: 1000; color-scheme: dark; color: var(--focus-ink);
   background: var(--focus-bg); overflow: hidden; font-family: var(--font-sans);
   clip-path: circle(150vmax at var(--ox, 50%) var(--oy, 50%));

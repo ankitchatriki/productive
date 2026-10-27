@@ -98,7 +98,7 @@ export function FocusController({ announceApp, onStopAtLastActivity }: FocusCont
   useEffect(() => {
     if (!session) return;
     const course = data.courses.find((c) => c.id === session.target.courseId)?.name ?? '';
-    document.title = `${focusTitle(session, now, course)} — Productive`;
+    document.title = `${focusTitle(session, now, course)} — StruggleMore`;
   }, [session, now, data.courses]);
 
   if (!session || !session.immersive) return null;

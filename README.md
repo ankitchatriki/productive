@@ -1,4 +1,8 @@
-# Productive
+# StruggleMore
+
+> Would climbing up a mountain be impressive if the mountain was flat?
+
+Repository name: `productive`.
 
 A personal, local-first study timecard. Every minute of study is a **time entry** billed to a **course** and usually a **section**; you work through one section per day towards a daily goal (8 hours by default), plan the week on Monday, and review it on Sunday. Think Strava crossed with a consultant's timesheet.
 
@@ -26,6 +30,8 @@ The build uses a relative base (`./`) and hash routing, so `dist/` works from an
 - **Courses & sections** — colours, archive, bulk "add many" (`Title | hours`), reorder, estimates with logged-vs-estimate bars.
 - **Review & insights** — goal results (met / on track / behind / missed), planned vs actual by day, course breakdown, sections planned vs done, a weekly reflection, current and best streak, a 26-week heatmap and 12-week totals.
 - **Settings** — daily goal and rest-day defaults, week-grid hours, JSON export/import with validation, reset.
+- **Focus mode:** clock in for a block (25/50/90 min, planned, custom or open) and a full-screen scene plays: a figure pushes a boulder up a slope as the block runs, reaches the summit when it's done, and walks back down on a break. Canvas 2D, original artwork, a calmer Daylight scene as an alternative, and a static frame with reduced motion. `F` enters, `Esc` leaves.
+- Opening quote on load (skip with any key; turn it off in Settings → General; `?nosplash` skips it).
 - Keyboard shortcuts (`?` lists them), visible focus, dark mode via `prefers-color-scheme`, works from 360px phones to desktop.
 
 ## Stack

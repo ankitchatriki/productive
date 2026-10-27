@@ -103,6 +103,21 @@ describe('scene ids (STRUGGLEMORE §3.1)', () => {
     d2.settings.focus.scene = 'daylight';
     expect((validateAppData(d2) as AppData).settings.focus.scene).toBe('daylight');
   });
+  it('showSplash: v1 migration defaults it to true; v2 missing or invalid is repaired to true', () => {
+    const { showSplash: _x, ...noSplash } = v1().settings as Record<string, unknown>;
+    void _x;
+    expect((migrate({ ...v1(), settings: noSplash }) as AppData).settings.showSplash).toBe(true);
+    const d = data();
+    const { showSplash: _y, ...rest } = d.settings;
+    void _y;
+    const w: string[] = [];
+    expect((validateAppData({ ...d, settings: rest }, w) as AppData).settings.showSplash).toBe(true);
+    expect(w).toEqual([]);
+    const w2: string[] = [];
+    expect((validateAppData({ ...d, settings: { ...d.settings, showSplash: 'no' } }, w2) as AppData).settings.showSplash).toBe(true);
+    expect(w2).toEqual(['settings.showSplash was not true/false; it was reset to true.']);
+    expect((validateAppData({ ...d, settings: { ...d.settings, showSplash: false } }) as AppData).settings.showSplash).toBe(false);
+  });
   it('a v1 migration writes the new default scene', () => {
     expect((migrate({ ...data(), schemaVersion: 1 }) as AppData).settings.focus.scene).toBe('sisyphus');
   });

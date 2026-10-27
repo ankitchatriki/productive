@@ -40,7 +40,7 @@ export class LocalStorageAdapter implements Storage {
     if (raw === null) return null;
     const data = parseStored(raw);
     if (!data) {
-      console.warn('Productive: stored data was unreadable; starting fresh. A raw copy was kept under', CORRUPT_KEY);
+      console.warn('StruggleMore: stored data was unreadable; starting fresh. A raw copy was kept under', CORRUPT_KEY);
       try { this.store.setItem(CORRUPT_KEY, raw); } catch { /* ignore */ }
       this.corruptThisSession = true;
       return null;

@@ -160,7 +160,7 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Tab title while running: "● 1:23 · Course — Productive", updated each minute. */
+/** Tab title while running: "● 1:23 · Course — StruggleMore", updated each minute. */
 function TimerTitle() {
   const data = useStore();
   const [tick, setTick] = useState(0);
@@ -176,12 +176,12 @@ function TimerTitle() {
     if (hasFocus) { root.dataset.timer = '1'; return; } // FocusController owns the title
     if (!t) {
       delete root.dataset.timer;
-      document.title = `${root.dataset.page ?? 'Today'} — Productive`;
+      document.title = `${root.dataset.page ?? 'Today'} — StruggleMore`;
       return;
     }
     root.dataset.timer = '1';
     const course = data.courses.find((c) => c.id === t.courseId)?.name ?? '';
-    document.title = `● ${formatElapsed(Date.now() - Date.parse(t.startedAt)).slice(0, -3)} · ${course} — Productive`;
+    document.title = `● ${formatElapsed(Date.now() - Date.parse(t.startedAt)).slice(0, -3)} · ${course} — StruggleMore`;
   }, [t, data.courses, tick, hasFocus]);
   return null;
 }

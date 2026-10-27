@@ -13,6 +13,7 @@ import { DurationInput } from '../components/DurationInput';
 import { ColorSwatches } from '../components/CourseDialog';
 import { Icon } from '../components/Icon';
 import { CorruptBanner } from '../components/CorruptBanner';
+import { BrandMark, Wordmark } from '../components/Brand';
 
 export function WelcomePage() {
   useDocumentTitle('Welcome');
@@ -54,7 +55,7 @@ export function WelcomePage() {
     <div className={styles.screen}>
       <main className={styles.inner}>
         <CorruptBanner />
-        <div className={styles.brand}><span className={styles.mark}><Icon name="clock" size={14} /></span> Productive</div>
+        <div className={styles.brand}><BrandMark size={24} /> <Wordmark /></div>
         <div className={styles.dots} aria-label={`Step ${step} of 3`}>
           {[1, 2, 3].map((n) => <span key={n} className={n <= step ? styles.on : ''} />)}
         </div>

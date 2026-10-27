@@ -61,7 +61,7 @@ export function SettingsPage() {
   };
 
   const exportData = () => {
-    downloadText(`productive-backup-${toDateKey(new Date())}.json`, exportJson(data), 'application/json');
+    downloadText(`strugglemore-backup-${toDateKey(new Date())}.json`, exportJson(data), 'application/json');
     toast.show('Backup exported.');
   };
   const onFile = async (file: File | undefined) => {
@@ -116,9 +116,13 @@ export function SettingsPage() {
         <FocusSettingsCard />
 
         <section className={styles.group} aria-labelledby="g-display">
-          <h2 id="g-display" className="section-title">Week grid</h2>
+          <h2 id="g-display" className="section-title">General</h2>
           <div className={styles.row}>
-            <div><span className={styles.label}>Visible hours</span><p className="help">Range shown on Plan week and Today's timeline.</p></div>
+            <div><label htmlFor="show-splash" className={styles.label}>Show the opening quote</label><p className="help">A short quote when the app first loads. Any key or click skips it.</p></div>
+            <div className={styles.control}><input id="show-splash" type="checkbox" checked={s.showSplash} onChange={(e) => dispatch({ type: 'settings/update', patch: { showSplash: e.target.checked } })} /></div>
+          </div>
+          <div className={styles.row}>
+            <div><span className={styles.label}>Visible hours</span><p className="help">Range shown on the Plan week grid.</p></div>
             <div className={`${styles.control} row`} style={{ flexWrap: 'nowrap' }}>
               <label htmlFor="grid-start" className="visually-hidden">Grid start</label>
               <select id="grid-start" className="select" value={s.gridStartHour} onChange={(e) => dispatch({ type: 'settings/update', patch: { gridStartHour: Number(e.target.value) } })}>

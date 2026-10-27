@@ -2,15 +2,92 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Productive: a personal study timecard." />
-    <title>Today — Productive</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="StruggleMore: a personal study timecard." />
+    <title>Today — StruggleMore</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,400;1,9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      /* Opening splash (STRUGGLEMORE §2): inline so it paints before the bundle. Always dusk. */
+      #splash { position: fixed; inset: 0; z-index: 2147483000; overflow: hidden; color: #f4ead8;
+        background: radial-gradient(70vmax 70vmax at 50% 100%, rgba(201,138,74,.22), rgba(201,138,74,0) 70%),
+          linear-gradient(180deg, #1c1510 0%, #2b2118 55%, #4a3020 100%);
+        transition: opacity 400ms ease; }
+      #splash.out { opacity: 0; }
+      #splash.skip { transition-duration: 200ms; }
+      #splash .sp-q { position: absolute; left: 50%; top: 44%; width: min(22ch, 88vw); margin: 0;
+        font: italic 400 clamp(28px, 4.4vw, 60px)/1.16 Fraunces, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        text-align: center; text-wrap: balance; opacity: 0; transform: translate(-50%, calc(-50% + 6px));
+        transition: opacity 600ms cubic-bezier(.2,.7,.2,1), transform 600ms cubic-bezier(.2,.7,.2,1); }
+      #splash .sp-m { position: absolute; left: 50%; top: calc(44% + 2.4em); width: 96px; height: 40px; margin-left: -48px;
+        opacity: 0; transition: opacity 600ms cubic-bezier(.2,.7,.2,1) 120ms; font-size: clamp(28px, 4.4vw, 60px); }
+      #splash .sp-m svg { display: block; overflow: visible; }
+      #splash .sp-d { transition: transform 2200ms ease-in-out; }
+      #splash .sp-w { position: absolute; left: 0; right: 0; bottom: calc(40px + env(safe-area-inset-bottom, 0px)); text-align: center;
+        font: 600 13px Fraunces, Georgia, serif; color: rgba(244,234,216,.62); opacity: 0; transition: opacity 600ms ease 120ms; }
+      #splash .sp-w em { font-style: italic; }
+      #splash.in .sp-q { opacity: 1; transform: translate(-50%, -50%); }
+      #splash.in .sp-m, #splash.in .sp-w { opacity: 1; }
+      #splash.roll .sp-d { transform: translate(5.3px, -2.8px) rotate(50deg); }
+      @media (prefers-reduced-motion: reduce) {
+        #splash, #splash .sp-q, #splash .sp-m, #splash .sp-w { transition-duration: 150ms; transition-delay: 0ms; }
+        #splash .sp-q, #splash.in .sp-q { transform: translate(-50%, -50%); }
+        #splash.roll .sp-d { transform: none; }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash" role="presentation" aria-hidden="true">
+      <p class="sp-q">Would climbing up a mountain be impressive if the mountain was flat?</p>
+      <div class="sp-m"><svg width="96" height="40" viewBox="0 0 96 40" opacity="0.55"><line x1="4" y1="38" x2="92" y2="-8.8" stroke="#f4ead8" stroke-width="1.5" stroke-linecap="round"/><g transform="translate(30 16.2)"><g class="sp-d"><circle r="7" fill="#f4ead8"/><line x1="0" y1="-7" x2="0" y2="-3" stroke="#2b2118" stroke-width="1" opacity=".5"/></g></g></svg></div>
+      <div class="sp-w">Struggle<em>More</em></div>
+    </div>
+    <script>
+      (function () {
+        var el = document.getElementById('splash');
+        if (!el) return;
+        /* splash-skip:start */
+        function shouldSkipSplash(search, stored) {
+          if (/[?&]nosplash(=|&|$)/.test(search)) return true;
+          try {
+            var d = stored ? JSON.parse(stored) : null;
+            if (d && d.focus && d.focus.immersive === true) return true;
+            if (d && d.settings && d.settings.showSplash === false) return true;
+          } catch (e) { /* unreadable data: show the splash */ }
+          return false;
+        }
+        /* splash-skip:end */
+        var stored = null;
+        try { stored = localStorage.getItem('productive:v1'); } catch (e) { /* storage blocked */ }
+        if (shouldSkipSplash(location.search, stored)) { el.remove(); return; }
+        var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var gone = false, timers = [];
+        var evs = ['pointerdown', 'keydown', 'touchstart'];
+        function finish(skip) {
+          if (gone) return; gone = true;
+          timers.forEach(clearTimeout);
+          evs.forEach(function (t) { window.removeEventListener(t, onSkip, true); });
+          if (skip) el.classList.add('skip');
+          el.classList.add('out');
+          setTimeout(function () { el.remove(); try { performance.mark('splash-removed'); } catch (e) { /* noop */ } }, reduced ? 150 : skip ? 200 : 400);
+        }
+        function onSkip(e) { e.preventDefault(); e.stopImmediatePropagation(); finish(true); }
+        evs.forEach(function (t) { window.addEventListener(t, onSkip, { capture: true, passive: false }); });
+        var t0 = performance.now(), started = false;
+        function start() {
+          if (started || gone) return; started = true;
+          var fontWait = Math.min(350, performance.now() - t0);
+          el.classList.add('in');
+          var fadeIn = reduced ? 150 : 600;
+          timers.push(setTimeout(function () { el.classList.add('roll'); }, fadeIn));
+          timers.push(setTimeout(function () { finish(false); }, fadeIn + 2200 - (reduced ? 0 : fontWait)));
+        }
+        try { document.fonts.load('italic 400 48px Fraunces').then(function () { requestAnimationFrame(start); }, start); } catch (e) { /* no font API */ }
+        timers.push(setTimeout(start, 350));
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

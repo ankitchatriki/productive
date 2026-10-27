@@ -20,7 +20,7 @@ export function entry(id: string, courseId: string, start: string, end: string, 
 export function data(extra: Partial<AppData> = {}): AppData {
   return {
     schemaVersion: 2,
-    settings: { dailyGoalMinutes: 480, restDays: [], gridStartHour: 6, gridEndHour: 24, onboarded: true, focus: { ...defaultFocusSettings, lastChoice: { ...defaultFocusSettings.lastChoice } } },
+    settings: { dailyGoalMinutes: 480, restDays: [], gridStartHour: 6, gridEndHour: 24, onboarded: true, showSplash: true, focus: { ...defaultFocusSettings, lastChoice: { ...defaultFocusSettings.lastChoice } } },
     courses: [],
     sections: [],
     entries: [],

@@ -207,7 +207,7 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
     >
       <div className={styles.scene} aria-hidden="true">
         <SceneCanvas sceneId={s.scene} phase={scenePhase} progress={sceneProgress} completedAt={s.completedAt}
-          reducedMotion={reducedMotion} running={visible} accent={view.courseColor ?? '#3446c9'} />
+          reducedMotion={reducedMotion} running={visible} accent={view.courseColor ?? '#a3461a'} />
       </div>
       <div className={styles.scrim} aria-hidden="true" />
 

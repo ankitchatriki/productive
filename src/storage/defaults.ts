@@ -18,6 +18,7 @@ export const defaultSettings: Settings = {
   gridStartHour: 6,
   gridEndHour: 24,
   onboarded: false,
+  showSplash: true,
   focus: defaultFocusSettings,
 };
 

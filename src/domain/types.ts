@@ -78,6 +78,7 @@ export interface Settings {
   gridStartHour: number;      // default 6  (week grid visible range)
   gridEndHour: number;        // default 24
   onboarded: boolean;         // default false
+  showSplash: boolean;        // default true (StruggleMore §2: opening quote)
   focus: FocusSettings;       // round 2 (schema v2)
 }
 

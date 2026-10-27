@@ -10,7 +10,7 @@ export function migrate(raw: unknown): unknown {
   if (!isObj(raw)) return raw;
   if (raw.schemaVersion === 1) {
     const settings = isObj(raw.settings)
-      ? { ...raw.settings, focus: { ...defaultFocusSettings, lastChoice: { ...defaultFocusSettings.lastChoice } } }
+      ? { ...raw.settings, showSplash: true, focus: { ...defaultFocusSettings, lastChoice: { ...defaultFocusSettings.lastChoice } } }
       : raw.settings;
     return { ...raw, schemaVersion: 2, settings, focus: null };
   }

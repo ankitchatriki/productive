@@ -31,7 +31,7 @@ const isWeekdays = (v: unknown): v is Weekday[] => Array.isArray(v) && v.every((
 export function validateAppData(input: unknown, warnings: string[] = []): AppData | string[] {
   const errors: string[] = [];
   const raw = migrate(input);
-  if (!isObj(raw)) return ['File is not a Productive backup (expected a JSON object).'];
+  if (!isObj(raw)) return ['File is not a StruggleMore backup (expected a JSON object).'];
   if (raw.schemaVersion !== 2) errors.push(`Unsupported schemaVersion: ${JSON.stringify(raw.schemaVersion)} (expected 1 or 2).`);
 
   const s = raw.settings;
@@ -171,12 +171,15 @@ export function validateAppData(input: unknown, warnings: string[] = []): AppDat
   if (errors.length) return errors;
 
   const focusSettings = repairFocusSettings((raw.settings as Obj).focus, warnings);
+  const rawSplash = (raw.settings as Obj).showSplash;
+  if (rawSplash !== undefined && typeof rawSplash !== 'boolean') warnings.push('settings.showSplash was not true/false; it was reset to true.');
+  const showSplash = typeof rawSplash === 'boolean' ? rawSplash : true;
   let focus: FocusSession | null = null;
   if (isObj(raw.focus)) focus = validateFocusSession(raw.focus, courseIds, sectionCourse, activeTimer as AppData['activeTimer'], warnings);
 
   return {
     schemaVersion: 2,
-    settings: { ...(raw.settings as AppData['settings']), focus: focusSettings },
+    settings: { ...(raw.settings as AppData['settings']), showSplash, focus: focusSettings },
     courses: courses as AppData['courses'],
     sections: sections as AppData['sections'],
     entries: cleanEntries as AppData['entries'],
