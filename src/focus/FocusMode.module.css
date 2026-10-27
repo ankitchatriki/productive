@@ -31,6 +31,8 @@
 .hidden .fade, .hidden .fade * { pointer-events: none !important; }
 .shown .fade { transition-duration: var(--dur-chrome-reveal); }
 .reduced .fade { transition: none; }
+/* Reduced motion: the scene redraws every 15 s, so the timer and climb strip stay (dimmed) to carry the seconds (U7). */
+.reduced.hidden .readoutBox.fade { opacity: 0.6; }
 
 .top {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);

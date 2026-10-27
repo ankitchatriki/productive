@@ -233,7 +233,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   /** The range cap ahead of the stone applies while tracking (not in the wide summit / next-climb shots). */
   const capOn = () => renderCam.zoom > 0.99;
   function layerOffset(i: number): number { return -LAYERS[i].f * cam.pos.x * lay.Hpx; }
-  function layerTop(i: number, altK: number): number { return (LAYERS[i].baseY + LAYERS[i].k * altK) * h; }
+  /** 0 while tracking, 1 in the summit framing: the world drops away below the ledge (review U6). */
+  const summitK = () => Math.min(1, Math.max(0, (1 - cam.zoom) / (1 - (lay.landscape ? 0.62 : 0.72))));
+  const SUMMIT_SINK = [0.24, 0.32, 0.4];
+  function layerTop(i: number, altK: number): number { return (LAYERS[i].baseY + LAYERS[i].k * altK + SUMMIT_SINK[i] * summitK()) * h; }
 
   function stripColour(i: number) { return i === 0 ? stop.far : i === 1 ? stop.mid : stop.near; }
 
@@ -483,7 +486,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   function summitFrame(): { pos: V; anchor: V; zoom: number } {
     // portrait: frame the stone and the standing figure (the back side runs off to the right)
     const ledge = trail.at(trail.geom.ledgeStart + (lay.landscape ? 0.8 : 0.1));
-    return { pos: ledge, anchor: lay.landscape ? { x: 0.42 * w, y: 0.58 * h } : { x: 0.58 * w, y: 0.58 * h }, zoom: lay.landscape ? 0.62 : 0.72 };
+    return { pos: ledge, anchor: lay.landscape ? { x: 0.34 * w, y: 0.58 * h } : { x: 0.58 * w, y: 0.58 * h }, zoom: lay.landscape ? 0.62 : 0.72 };
   }
 
   function updateCamera(t: number, dt: number, target: V) {
@@ -577,7 +580,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stop = desatK > 0 ? pausedStop(ss.stop, Math.round(desatK * 4) / 4) : ss.stop;
     const g = ctx;
     g.setTransform(scale, 0, 0, scale, 0, 0);
-    drawSky(g, w, h, stop, layerTop(0, altNow) - 0.22 * (layerTop(0, altNow)), layerTop(0, altNow) + h, ss.band);
+    // paused: the horizon band greys with the rest of the palette (review U9)
+    const band = desatK > 0 ? pausedStop({ ...ss.stop, band: ss.band }, Math.round(desatK * 4) / 4).band : ss.band;
+    drawSky(g, w, h, stop, layerTop(0, altNow) - 0.22 * (layerTop(0, altNow)), layerTop(0, altNow) + h, band);
     if (ss.moon) drawMoon(g, ss.moon, 0.035 * h);
     drawStars(g, stars, ss.starVis, ss.twinkle ? ambientT : null);
     if (ss.sun) drawSun(g, ss.sun, 0.055 * h, stop, ss.sunRing);
@@ -652,7 +657,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const f = back ? 0.03 : 0.06, k = back ? 0.20 : 0.30;
       const pxp = -f * cam.pos.x * lay.Hpx;
       let x = ((c.x + pxp) % span + span) % span - c.mw * 0.2;
-      const y = c.y + k * altNow * h;
+      const y = c.y + k * altNow * h + (back ? 0.3 : 0.34) * summitK() * h; // the cloud sea sinks below the ledge
       if (phase === 'complete' && !back) {
         const st = seq?.kind === 'summit' ? smoothstep(1.2, 3.7, nowS() - seq.t0) : 1;
         x += (x + c.mw / 2 < w / 2 ? -1 : 1) * 0.18 * w * st;
@@ -816,6 +821,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       running = r;
       if (!r) { if (raf) cancelAnimationFrame(raf); raf = 0; return; }
       if (seq && nowS() - seq.t0 > seq.dur + 6) seq = null;
+      // Back from a hidden tab far behind: re-plant at the target under a short cross-fade, never a visible snap (U13).
+      if (!reduced && mode === 'climb' && stats.frames > 0 && Math.abs(sTarget() - gait.D) > 4 * sigmaAt(trail.angleAt(gait.D))) {
+        crossfade(nowS()); gait.snap(sTarget(), trail); camInit = false; chains = null;
+      }
       if (reduced) { drawNow(); scheduleReducedRedraw(); } else ensureLoop();
     },
     setReducedMotion(r: boolean) {
