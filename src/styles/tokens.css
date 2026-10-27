@@ -129,7 +129,7 @@
   --heat-4: #b86a2c;
   --heat-5: #8a3a15;
   /* Round 3: weekly card (ROUND3_DESIGN §4.8) */
-  --week-bar-past:  var(--heat-3);
+  --week-bar-past:  var(--heat-4);   /* review T7: 3:1 against the track in light */
   --week-bar-today: var(--accent);
   --week-bar-met:   var(--ontrack);
   --week-bar-over:  var(--over);

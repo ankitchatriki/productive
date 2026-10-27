@@ -18,7 +18,7 @@
 .start { grid-area: start; display: flex; flex-direction: column; gap: var(--space-4); border-left: 4px solid var(--c); min-height: 0; }
 .idle, .running { display: flex; flex-direction: column; gap: var(--space-4); }
 /* The TODAY block keeps the same offset in idle and running (ROUND3_PLAN §2.1). */
-@media (min-width: 768px) { .idle, .running { min-height: 268px; } }
+@media (min-width: 768px) { .idle, .running { min-height: 288px; } }
 .pickRow { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2) var(--space-3); align-items: center; }
 .pickLabel { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-muted); }
 .blockPick { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
