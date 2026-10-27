@@ -328,7 +328,7 @@ export function figureGeom(fr: FigureFrame, tier: Tier = 3): FigureGeom {
   const mk = () => ({ C: [] as V[][], F: [] as V[][], V: [] as V[][] });
   const lines: FigureGeom['lines'] = { farLeg: mk(), farArm: mk(), core: mk(), nearLeg: mk(), cloth: mk(), nearArm: mk() };
   const dots: FigureGeom['dots'] = { farLeg: [], farArm: [], core: [], nearLeg: [], cloth: [], nearArm: [] };
-  const veins = fr.veins ?? 0;
+  const veins = fr.veins ?? fr.pose.veins ?? 0;
   let strokes = 0;
   /** Emit the catalogue's lines for one part into a group. `maxTier` limits far-side detail to L1. */
   const emit = (gk: GroupKey, part: FramePart, frame: Frame, maxTier: Tier, local: 'bone' | 'hu', front = 1) => {
@@ -371,8 +371,22 @@ export function figureGeom(fr: FigureFrame, tier: Tier = 3): FigureGeom {
   emit('core', 'neck', nf, tier, 'bone');
   const ax = pose.headAxis ?? 0;
   const hf = axisFrame(hc, { x: Math.sin(ax), y: Math.cos(ax) }, -fc);
-  groups.core.push(HEAD_OUTLINE.map(([x, y]) => huW(hf, x, y)));
-  emit('core', 'head', hf, tier, 'hu');
+  // the beard swings about the chin (§4.5 tertiary): beard outline points and strokes rotate with it
+  const bAng = -(pose.beard ?? 0), cb = Math.cos(bAng), sbn = Math.sin(bAng);
+  const beardLocal = (x: number, y: number): Pt => {
+    if (!(x < -0.2 && y > 0.12) || bAng === 0) return [x, y];
+    const dx = x + 0.22, dy = y - 0.47;
+    return [-0.22 + dx * cb - dy * sbn, 0.47 + dx * sbn + dy * cb];
+  };
+  groups.core.push(HEAD_OUTLINE.map(([x, y]) => { const [bx, by] = beardLocal(x, y); return huW(hf, bx, by); }));
+  const hfB: Frame = hf;
+  for (const ln of DETAIL) {
+    if (ln.part !== 'head' || ln.tier > tier || (ln.strain && veins <= 0)) continue;
+    const P = ln.pts.map(([x, y]) => { const [bx, by] = beardLocal(x, y); return huW(hfB, bx, by); });
+    if (ln.dot) { dots.core.push([P[0], ln.dot * h]); continue; }
+    const Q = ln.strain ? partial(P, veins) : P;
+    if (Q.length >= 2) { lines.core[ln.w].push(Q); strokes++; }
+  }
 
   // Arms (far is index 1): upper arm + deltoid lobe, forearm, hand with fingers and thumb.
   (['nearArm', 'farArm'] as const).forEach((gk, i) => {

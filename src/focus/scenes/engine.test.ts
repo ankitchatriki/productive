@@ -40,7 +40,11 @@ describe('engine transitions (stub canvas)', () => {
     e.setClimb!(climb1(lenM * 0.999)); e.setProgress(0.999); e.setPhase('focus', { instant: true });
     run(1);
     e.setClimb!(climb1(lenM, true)); e.setProgress(0); e.setPhase('complete');
-    run(12);
+    // the heave walks the last ≈ 2 H to the ledge at the trudge's own pace, settles 0.8 s, then steps through
+    let waited = 0;
+    while (e.stats.gait !== 'stand' && waited < 30) { run(0.5); waited += 0.5; }
+    expect(waited).toBeLessThanOrEqual(18);
+    run(1);
     const camAtTop = e.stats.camX;
     expect(e.stats.gait).toBe('stand');
     e.setClimb!(climb1(lenM, true)); e.setProgress(0); e.setPhase('focus');

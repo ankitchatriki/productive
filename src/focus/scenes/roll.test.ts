@@ -52,8 +52,9 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
       }
       expect(sawSlip).toBe(true);
       expect(slipBack).toBeLessThan(-0.05); // ≈ −0.095 rad back during the slip
-      // strobe guard at 60 Hz sampling; S0 bound for the round-3 step cycle (tightened to 0.02 rad at 30 fps in S2)
-      expect(maxStep).toBeLessThan(0.05); // interim for the old step cycle at the new stride; S2 brings it under 0.02 at 30 fps
+      // strobe guard: the engine renders the climb at 30 fps; the continuous trudge turns the stone < 0.02 rad a frame
+      console.log(`max |Δrot| per frame ${maxStep.toFixed(4)} rad`);
+      expect(maxStep).toBeLessThan(0.02);
       // the sprite point at the stone's top at frame i, after ctx.rotate(+θ), sits at screen x = r·sin(θ(i+k) − θ(i))
       // relative to the centre: while the stone moves forward the top of the disc moves forward (rightwards)
       for (const i of [100, 400, 900]) {

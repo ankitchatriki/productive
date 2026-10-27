@@ -37,6 +37,10 @@ export interface Pose {
   breath: number;
   alpha: number;
   load?: number;
+  /** Beard swing about the chin (rad, + = forward), a tertiary follow-through channel. */
+  beard?: number;
+  /** Strain veins drawn on, 0..1. */
+  veins?: number;
 }
 
 /** Two-bone IK: joint position for root→target with lengths a, b. `pick` chooses between the two solutions. */
@@ -296,8 +300,14 @@ export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, b
   const ks = Math.min(1, Math.max(0, (k - 0.1) / 0.6)), es = easeInOut(ks);
   const sx = rear.x + (newFront - rear.x) * es;
   const lift = 0.05 * Math.sin(Math.PI * ks);
-  const moving = footAt({ x: sx, y: path.groundY(sx) + lift }, g(sx), (1 - es) * REAR_HEEL * DEG);
-  const planted = footAt(front, g(front.x), 0);
+  // the stepping foot leaves from the heel angle the hold had (continuous at k = 0)
+  const heel0 = g(rear.x) - hold.feet![1 - fi].angle;
+  const mv = footAt({ x: sx, y: path.groundY(sx) + lift }, g(sx), (1 - es) * heel0);
+  // exactly the hold's feet at k = 0 (the ground-angle estimate differs slightly from the trail's): the residual eases out
+  const m0 = footAt({ x: rear.x, y: path.groundY(rear.x) }, g(rear.x), heel0), hr = hold.feet![1 - fi], w = 1 - es;
+  const off = (a: V, b: V, c: V): V => ({ x: a.x + (b.x - c.x) * w, y: a.y + (b.y - c.y) * w });
+  const moving: FootPose = { ball: off(mv.ball, hr.ball, m0.ball), heel: off(mv.heel, hr.heel, m0.heel), ankle: off(mv.ankle, hr.ankle, m0.ankle), toe: off(mv.toe, hr.toe, m0.toe), angle: mv.angle + (hr.angle - m0.angle) * w };
+  const planted = hold.feet![fi];
   const feet = (fi === 0 ? [planted, moving] : [moving, planted]) as [FootPose, FootPose];
   const base = { x: b.pelvis.x, y: path.groundY(b.pelvis.x) };
   const hh = hipCeiling(base, { x: 0, y: 1 }, b.pelvis.y - base.y, feet.map((f) => f.ankle), 0.985);
@@ -316,16 +326,19 @@ export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, b
   // far hand: stays flat on the stone while the weight comes off it, then releases and drops to hang (review U12)
   const hf = hold.hands![1];
   const fa = Math.atan2(hf.y - centre.y, hf.x - centre.x);
+  // the far shoulder sits off the near one in the hold (farShoulder); that offset eases out with the blend
+  const fo = { x: (hold.arms[1].root.x - hold.shoulder.x) * (1 - e), y: (hold.arms[1].root.y - hold.shoulder.y) * (1 - e) };
+  const farRoot = { x: b.shoulder.x + fo.x, y: b.shoulder.y + fo.y };
   const onStone = { x: centre.x + Math.cos(fa) * (R + RIG.palm), y: centre.y + Math.sin(fa) * (R + RIG.palm) };
   const rel = easeInOut(Math.min(1, Math.max(0, (k - 0.35) / 0.55)));
   let farHand: V, far: Limb;
   if (rel <= 0) {
     farHand = onStone;
-    far = armIK(b.shoulder, { x: onStone.x + Math.cos(fa) * RIG.wristToPalm, y: onStone.y + Math.sin(fa) * RIG.wristToPalm });
+    far = armIK(farRoot, { x: onStone.x + Math.cos(fa) * RIG.wristToPalm, y: onStone.y + Math.sin(fa) * RIG.wristToPalm });
   } else {
     const w0 = { x: onStone.x + Math.cos(fa) * RIG.wristToPalm, y: onStone.y + Math.sin(fa) * RIG.wristToPalm };
     farHand = { x: w0.x + (stand.arms[1].end.x - w0.x) * rel, y: w0.y + (stand.arms[1].end.y - w0.y) * rel };
-    far = armIK(b.shoulder, farHand);
+    far = armIK(farRoot, farHand);
   }
   return { ...b, feet, legs, arms: [near, far], hands: [palm, rel <= 0 ? onStone : farHand] };
 }

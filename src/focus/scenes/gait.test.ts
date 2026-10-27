@@ -1,13 +1,14 @@
-// A3: the push cycle (ROUND3_ART §4) on a headless frame-sequence harness: pure gait + trail, 1/30 s frames,
-// 1440×900 scale (H = 216 px), 25- and 50-minute paces, slopes 16–32°.
+// The continuous trudge (ROUND4 §4, S2) on a headless frame-sequence harness: pure gait + trail, 1/30 s frames,
+// 1440×900 scale (H = 234 px), 25- and 50-minute paces, slopes 16–32°. The §7.7 motion limits live in
+// motion.clean.test.ts; these are the long-run invariants.
 import { describe, expect, it } from 'vitest';
 import { DEG, RIG, interior } from './rig';
-import { Gait, KEY, PACE, sigmaAt, type GaitFrame } from './gait';
+import { Gait, KEY, PACE, periodAt, sigmaAt, type GaitFrame } from './gait';
 import { makeTrail, type Trail } from './trail';
 import { M_PER_H, PACE_M } from '../../domain/mountain';
 import type { V } from './path';
 
-const HPX = 216, DT = 1 / 30;
+const HPX = 234, DT = 1 / 30;
 const dist = (a: V, b: V) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /** A straight trail at θ (deg) with the full Trail interface. */
@@ -21,9 +22,9 @@ function lineTrail(theta: number): Trail {
   };
 }
 
-interface Run { frames: Array<GaitFrame & { t: number; mode: string; u: number; D: number; target: number; strainT: number; baseS: number }>; snaps: number }
+interface Run { frames: Array<Omit<GaitFrame, 'mode'> & { t: number; mode: string; u: number; D: number; target: number; strainT: number; baseS: number }>; snaps: number }
 
-function simulate(trail: Trail, seconds: number, opts: { pace?: number; freezeAt?: number; seed?: number; lenH?: number } = {}): Run {
+function simulate(trail: Trail, seconds: number, opts: { pace?: number; freezeAt?: number; seed?: number; lenH?: number; climbing?: boolean } = {}): Run {
   const g = new Gait(opts.seed ?? 7);
   g.snap(0, trail);
   const frames: Run['frames'] = [];
@@ -32,7 +33,7 @@ function simulate(trail: Trail, seconds: number, opts: { pace?: number; freezeAt
     const t = i * DT;
     const target = (opts.freezeAt !== undefined ? Math.min(t, opts.freezeAt) : t) * (opts.pace ?? PACE);
     const before = g.D;
-    g.step(DT, target, trail, { climbing: true, lenH: opts.lenH ?? 400 });
+    g.step(DT, target, trail, { climbing: opts.climbing ?? true, lenH: opts.lenH ?? 400 });
     if (Math.abs(g.D - before) > 1) snaps++;
     frames.push({ ...g.pose(trail), t, mode: g.mode, u: g.u, D: g.D, target, strainT: g.strainT, baseS: g.baseS() });
   }
@@ -84,79 +85,60 @@ describe('push cycle harness', () => {
       expect(arc).toBeGreaterThan(10);
       expect(Math.abs(rot * RIG.boulderR - arc) / arc).toBeLessThan(0.005);
     }
+  }, 30000);
+
+  it('no rolling without travel: with the target frozen he comes to rest in the hold and the stone stays still', () => {
+    const run = simulate(lineTrail(22), 60, { freezeAt: 20, climbing: false });
+    const fr = run.frames.filter((f) => f.t > 28);
+    expect(fr.every((f) => f.mode === 'hold')).toBe(true);
+    for (let i = 1; i < fr.length; i++) expect(Math.abs(fr[i].rot - fr[i - 1].rot) / DEG / DT).toBeLessThan(0.1);
   });
 
-  // Round 4 S1: the step-and-hold cycle these two checks were written for is replaced by the S2 trudge
-  // (motion.clean.test.ts); skipped for the S1 commit only.
-  it.skip('no rolling without travel: with the target frozen the stone turns < 0.1°/s outside strain beats', () => {
-    const run = simulate(lineTrail(22), 90, { freezeAt: 20 });
-    const fr = run.frames.filter((f) => f.t > 26 && f.mode !== 'strain' && f.mode !== 'step');
-    for (let i = 1; i < fr.length; i++) {
-      if (fr[i].t - fr[i - 1].t > DT * 1.5) continue;
-      expect(Math.abs(fr[i].rot - fr[i - 1].rot) / DEG / DT).toBeLessThan(0.1);
-    }
-  });
-
-  it.skip('a step pair takes 1.6–2.2 s at 18–26°; the pelvis is at rest at contact and lowest at u 0.85–0.95', () => {
+  it('the trudge is continuous: one step per σ/v̄ (±25%), the pelvis never stops outside a strain beat', () => {
     for (const th of [18, 22, 26]) {
-      const trail = lineTrail(th);
-      const run = simulate(trail, 120);
-      const pairs: number[] = [];
-      let t0 = -1, steps = 0;
+      const run = simulate(lineTrail(th), 120);
+      const P = periodAt(th), wraps: number[] = [];
       for (let i = 1; i < run.frames.length; i++) {
         const a = run.frames[i - 1], b = run.frames[i];
-        if (a.mode !== 'step' && b.mode === 'step') { t0 = b.t; steps = 1; }
-        else if (a.mode === 'step' && b.mode === 'step' && b.u < a.u) steps++;
-        else if (a.mode === 'step' && b.mode !== 'step' && t0 >= 0) { if (steps === 2) pairs.push(b.t - t0); t0 = -1; }
+        if (a.mode === 'trudge' && b.mode === 'trudge' && b.u < a.u) wraps.push(b.t);
       }
-      expect(pairs.length).toBeGreaterThan(8);
-      for (const p of pairs) { expect(p).toBeGreaterThanOrEqual(1.6 - DT); expect(p).toBeLessThanOrEqual(2.2 + DT); } // ± one 1/30 s frame of measurement
-      // pelvis height above the ground under it, per step: minimum near u 0.9; vertical speed ~0 entering the hold
-      const hh = (f: Run['frames'][number]) => f.pose.pelvis.y - trail.groundY(f.pose.pelvis.x);
-      let cur: Array<{ u: number; h: number }> = [];
-      const mins: number[] = [];
-      for (const f of run.frames) {
-        if (f.mode === 'step') cur.push({ u: f.u, h: hh(f) });
-        else if (cur.length) { if (cur.length > 10) mins.push(cur.reduce((m, q) => (q.h < m.h ? q : m)).u); cur = []; }
-      }
-      const inBand = mins.filter((u) => u >= 0.85 - 0.035 && u <= 0.95 + 0.035).length; // ± one 1/30 s frame of u
-      expect(inBand / mins.length).toBeGreaterThan(0.8);
-      // keyed pelvis travel and height are at rest at contact (u = 0 and u = 1)
-      const d = (f: (u: number) => number, u: number) => (f(u + 1e-4) - f(u - 1e-4)) / 2e-4;
-      for (const u of [1e-4, 1 - 1e-4]) { expect(Math.abs(d(KEY.hipDy, u))).toBeLessThan(0.01); expect(Math.abs(d(KEY.travel, u))).toBeLessThan(0.01); }
+      const restT = run.frames.filter((f) => f.mode !== 'trudge').map((f) => f.t);
+      const gaps = wraps.slice(1).map((t, i) => t - wraps[i]).filter((_g, i) => !restT.some((r) => r > wraps[i] - P && r < wraps[i + 1]));
+      expect(gaps.length).toBeGreaterThan(20);
+      for (const g of gaps) { expect(g).toBeGreaterThanOrEqual(0.75 * P); expect(g).toBeLessThanOrEqual(1.25 * P); }
+      const tr = run.frames.slice(90).filter((f, i, arr) => f.mode === 'trudge' && arr[i - 1]?.mode === 'trudge' && arr[i + 1]?.mode === 'trudge');
+      const speeds = tr.slice(1).map((f, i) => (f.t - tr[i].t < DT * 1.5 ? dist(f.pose.pelvis, tr[i].pose.pelvis) / DT : Infinity));
+      // (the step out of a strain beat or a hold eases up from rest over 0.9 s)
+      const rest = run.frames.filter((f) => f.mode !== 'trudge').map((f) => f.t);
+      // (and the step into a strain beat decelerates to rest, C2: excluded too)
+      const moving = speeds.filter((_v, i) => !rest.some((t) => tr[i + 1].t - t > -1.3 * P && tr[i + 1].t - t < 1.3 + P));
+      expect(Math.min(...moving)).toBeGreaterThanOrEqual(0.35 * PACE);
     }
   });
 
-  it('the head pitch trails the torso lean by 80–120 ms; elbows give 6–14° after each push-off and stay ≥ 155°', () => {
+  it('the cycle curves are periodic C2: value, slope and curvature match across u = 1 → 0', () => {
+    const d1 = (f: (u: number) => number, u: number) => (f(u + 1e-4) - f(u - 1e-4)) / 2e-4;
+    const d2 = (f: (u: number) => number, u: number) => (f(u + 1e-4) - 2 * f(u) + f(u - 1e-4)) / 1e-8;
+    const travel = (u: number) => KEY.travel(u) - u; // travel advances by one stride per cycle
+    for (const f of [travel, KEY.hipDy, KEY.lean, KEY.pitch]) {
+      expect(Math.abs(f(1 - 1e-9) - f(0))).toBeLessThan(1e-6);
+      expect(Math.abs(d1(f, 0.9999) - d1(f, 0.0001))).toBeLessThan(0.02 * (1 + Math.abs(d1(f, 0.0001))));
+      expect(Math.abs(d2(f, 0.9998) - d2(f, 0.0002))).toBeLessThan(0.05 * (1 + Math.abs(d2(f, 0.0002))));
+    }
+    // the stop curve arrives at rest: zero speed and zero acceleration at u = 1
+    expect(Math.abs(d1(KEY.travelStop, 1 - 1e-3))).toBeLessThan(0.01);
+    expect(KEY.travelStop(1)).toBeCloseTo(1, 9);
+  });
+
+  it('lean 17–27° while trudging (≤ 29° in a strain beat); elbows stay 155–178° (spec 148 ± 5 in a slip), both arms alike', () => {
     const run = simulate(lineTrail(22), 120);
-    const fr = run.frames.filter((f) => f.mode !== 'strain');
-    const lean = run.frames.map((f) => f.pose.lean), pitch = run.frames.map((f) => -((f.pose.headAxis ?? 0) - 115 * DEG));
-    const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
-    const ml = mean(lean), mp = mean(pitch);
-    let best = -1, bestLag = 0;
-    for (let lag = 0; lag <= 9; lag++) {
-      let c = 0;
-      for (let i = 0; i + lag < lean.length; i++) c += (lean[i] - ml) * (pitch[i + lag] - mp);
-      if (c > best) { best = c; bestLag = lag; }
+    for (const f of run.frames) {
+      const l = f.pose.lean / DEG;
+      expect(l).toBeGreaterThanOrEqual(17);
+      expect(l).toBeLessThanOrEqual(f.mode === 'strain' ? 29 : 27);
+      for (const a of f.pose.arms) { expect(interior(a)).toBeGreaterThanOrEqual(f.mode === 'strain' ? 143 : 155); expect(interior(a)).toBeLessThanOrEqual(178); }
+      expect(Math.abs(interior(f.pose.arms[0]) - interior(f.pose.arms[1]))).toBeLessThanOrEqual(1);
     }
-    // 1/30 s frames: 3 frames = 100 ms
-    expect(bestLag * DT * 1000).toBeGreaterThanOrEqual(66);
-    expect(bestLag * DT * 1000).toBeLessThanOrEqual(134);
-    for (const f of fr) expect(f.elbow).toBeGreaterThanOrEqual(155);
-    const dips: number[] = [];
-    for (let i = 1; i < run.frames.length; i++) {
-      const a = run.frames[i - 1], b = run.frames[i];
-      if (b.mode === 'step' && (a.mode !== 'step' || b.u < a.u)) {
-        const T = 0.95 * (1 + (0.5 * 2) / 25);
-        const pushT = b.t + 0.2 * T;
-        const before = run.frames.filter((f) => f.t >= b.t - 0.3 && f.t <= pushT);
-        const win = run.frames.filter((f) => f.t >= pushT && f.t <= pushT + 0.25);
-        if (win.length && before.length) dips.push(Math.max(...before.map((f) => f.elbow)) - Math.min(...win.map((f) => f.elbow)));
-      }
-    }
-    expect(dips.length).toBeGreaterThan(10);
-    // Interim (round 4 S0): the stone ratchet straightens the elbows for a frame at a step boundary; the S2 trudge replaces this cycle.
-    for (const d of dips) { expect(d).toBeGreaterThanOrEqual(6); expect(d).toBeLessThanOrEqual(22); }
   });
 
   it('a strain beat happens in the first 2 minutes and the stone returns to within 0.5 px', () => {
