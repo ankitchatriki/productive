@@ -11,6 +11,7 @@ import {
 import { fbm1, fbm2, hash1, hash2, mulberry32, noise1, noise2, ridged, smoothstep } from './noise';
 import { NIGHT_LIGHT, lightState, mixLight, type LightKey } from './light';
 import { Motion, wind } from './motion';
+import { birdSchedule, birdsAt, cameraDrift, cloudTargetAlpha, type BirdGroup, type Rect } from './ambient';
 import { makeChain, solveRest, stepChain, type Chain } from './chain';
 import { clockwise, finite, footOutline, handOutline, headOutline, limbOutline, smoothPath, torsoOutline } from './figure';
 
@@ -250,18 +251,27 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     boulderTex = c;
   }
 
-  function buildClouds(col: RGB) {
-    clouds = [0, 1, 2].map((i) => {
-      const cw = Math.round((0.28 + 0.08 * i) * S * scale), ch = Math.round(0.07 * S * scale);
-      const c = mk(cw, ch * 2);
+  /** Clouds v2 (ROUND3 §3.6): five noise-built sprites, lit tops (sun) and shaded bottoms, rebuilt with the tint. */
+  function buildClouds(light: LightKey) {
+    const top = lighten(mixRGB(pal.horizon, light.key, 0.6), 0.1), bottom = mixRGB(mixRGB(pal.zenith, light.ambient, 0.4), pal.horizon, 0.55);
+    const res = Math.min(1, scale);
+    clouds = [0, 1, 2, 3, 4].map((i) => {
+      const cw = Math.max(8, Math.round(240 * res * (S / 900))), ch = Math.max(4, Math.round(80 * res * (S / 900)));
+      const c = mk(cw, ch);
       const g = c.getContext('2d')!;
-      g.filter = `blur(${Math.max(2, ch * 0.18)}px)`;
-      g.fillStyle = css(col, 0.55);
-      const pr = mulberry32(100 + i);
-      for (let k = 0; k < 7; k++) {
-        const x = cw * (0.15 + pr() * 0.7), y = ch * (0.9 + pr() * 0.4), rx = cw * (0.08 + pr() * 0.14), ry = ch * (0.22 + pr() * 0.2);
-        g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
+      const img = g.createImageData(cw, ch);
+      const d = img.data;
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+        const ex = (x / cw - 0.5) * 2, ey = (y / ch - 0.55) * 2;
+        const fall = Math.max(0, 1 - (ex * ex + ey * ey * 1.6));
+        const n = fbm2(x / (40 * res * S / 900) + i * 13.7, y / (22 * res * S / 900) + i * 5.1, 4);
+        const a = smoothstep(0.45, 0.70, n * (0.55 + 0.75 * fall)) * fall;
+        const k = smoothstep(0.25, 0.5, y / ch); // top 35% lit
+        const col = mixRGB(top, bottom, k);
+        const j = (y * cw + x) * 4;
+        d[j] = col[0] * 255; d[j + 1] = col[1] * 255; d[j + 2] = col[2] * 255; d[j + 3] = a * 255;
       }
+      g.putImageData(img, 0, 0);
       return c;
     });
   }
@@ -349,7 +359,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     yield;
     buildForeground(fgT, ss);
     yield;
-    buildClouds(lighten(mixRGB(pal.horizon, pal.zenith, 0.3), 0.15));
+    yield;
+    buildClouds(ss.light);
     buildBoulderTexture(pal.boulderBase);
     buildDustSprite(ss.light);
     // Bake the grade (vignette + wash) into sky and land: no full-screen blend per frame (perf at dpr 2).
@@ -695,6 +706,94 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (key !== palKey && t - lastCacheAt >= minGap) {
       rebuild = rebuildCaches(ss); rebuildKey = key; lastCacheAt = t; stats.rebuilds = (stats.rebuilds ?? 0) + 1;
       if (rebuild.next().done) { rebuild = null; palKey = key; }
+    }
+  }
+
+  // ---------- ambient (ROUND3 §3.6) ----------
+  const cam = { cs: 1, dx: 0, dy: 0, cx: 0, cy: 0, zoom: 1 };
+  /** CSS-px transform for a layer with parallax depth factor (0 = sky, 1 = mountain + figure). */
+  function setCam(g: CanvasRenderingContext2D, factor: number) {
+    const cs = factor > 0 ? cam.cs * (factor >= 1 ? cam.zoom : 1) : 1;
+    g.setTransform(scale * cs, 0, 0, scale * cs, scale * (cam.cx * (1 - cs) + cam.dx * factor), scale * (cam.cy * (1 - cs) + cam.dy * factor));
+  }
+  function updateCamera() {
+    const drift = !reduced && phase !== 'paused' && quality > 0.5;
+    const d = drift ? cameraDrift(ambientT, w, h) : { x: 0, y: 0 };
+    cam.dx = d.x; cam.dy = d.y;
+    // A hair of overscan so the drift never shows a cache edge.
+    cam.cs = drift ? 1 + (2 * (0.004 * w + 1)) / w : 1;
+    cam.cx = w / 2; cam.cy = h / 2;
+  }
+
+  const cloudAlpha = [1, 1, 1, 1, 1];
+  let cloudX = [0, 0, 0, 0, 0];
+  function drawClouds(g: CanvasRenderingContext2D, dt: number, avoid: Rect[]) {
+    if (!clouds.length || quality <= 0.5) return;
+    const Hy = HORIZON_Y;
+    const band: [number, number] = layout === 'landscape' ? [Hy + 0.22, Hy + 0.48] : [Hy + 0.30, Hy + 0.55];
+    const windF = wind(ambientT) / 0.06;
+    clouds.forEach((c, i) => {
+      const far = i < 3;
+      const sc = (far ? 0.7 : 1) * 1.6;
+      const cw = (c.width / Math.min(1, scale)) * sc, ch = (c.height / Math.min(1, scale)) * sc;
+      const speed = (far ? 2.5 : 5) * windF * (phase === 'paused' ? 0.25 : 1);
+      if (cloudX[i] === 0) cloudX[i] = (hash1(i * 7.3) * (w + cw)) - cw;
+      cloudX[i] += speed * dt;
+      if (cloudX[i] > w) cloudX[i] = -cw;
+      const wy = band[0] + (band[1] - band[0]) * [0.75, 0.35, 0.9, 0.15, 0.55][i];
+      const y = scrY(wy) - ch / 2;
+      const base = (far ? 0.55 : 0.75) * (phase === 'break' ? 0.5 : 1);
+      const target = cloudTargetAlpha(base, { x0: cloudX[i], y0: y, x1: cloudX[i] + cw, y1: y + ch }, avoid);
+      cloudAlpha[i] += (target - cloudAlpha[i]) * Math.min(1, dt / 1);
+      g.globalAlpha = Math.max(0, Math.min(1, cloudAlpha[i]));
+      g.drawImage(c, cloudX[i], y, cw, ch);
+    });
+    g.globalAlpha = 1;
+  }
+
+  let birds: BirdGroup[] = [];
+  let birdT0 = -1;
+  function drawBirds(g: CanvasRenderingContext2D, t: number) {
+    if (reduced || phase === 'paused' || phase === 'break' || quality < 1 || seq?.kind === 'summit' || seq?.kind === 'mini') return;
+    if (birdT0 < 0) { birdT0 = t; birds = birdSchedule(4242); }
+    const el = t - birdT0;
+    const gr = birds.find((b) => el >= b.start && el <= b.start + b.dur);
+    if (!gr) return;
+    const yBand: [number, number] = layout === 'landscape' ? [0.12, 0.30] : [0.30, 0.45];
+    const span = 0.010 * S;
+    g.strokeStyle = css(darken(pal.zenith, 0.55), 0.7);
+    g.lineWidth = Math.max(1, span * 0.12); g.lineCap = 'round';
+    for (const b of birdsAt(gr, el, w, h, S, yBand)) {
+      const a = (b.wing * Math.PI) / 180;
+      g.beginPath();
+      g.moveTo(b.x - span, b.y - Math.sin(a) * span);
+      g.quadraticCurveTo(b.x - span * 0.45, b.y - Math.sin(a) * span * 0.2 - span * 0.25, b.x, b.y);
+      g.quadraticCurveTo(b.x + span * 0.45, b.y - Math.sin(a) * span * 0.2 - span * 0.25, b.x + span, b.y - Math.sin(a) * span);
+      g.stroke();
+    }
+  }
+
+  const streaks = [0, 1, 2].map(() => ({ live: false, s: 0, h: 0, len: 0, age: 0 }));
+  let nextStreak = 0;
+  function drawStreaks(g: CanvasRenderingContext2D, dt: number) {
+    if (reduced || phase === 'paused' || quality < 1) return;
+    const wv = wind(ambientT);
+    if (ambientT >= nextStreak) {
+      const sl = streaks.find((q) => !q.live);
+      if (sl) { sl.live = true; sl.s = 0.05 + rng() * 0.8; sl.h = 0.01 + rng() * 0.03; sl.len = 0.04 + rng() * 0.04; sl.age = 0; }
+      nextStreak = ambientT + (wv > 0.08 ? 2 : 6) * (0.7 + rng() * 0.6);
+    }
+    g.lineWidth = 0.6;
+    for (const q of streaks) {
+      if (!q.live) continue;
+      q.age += dt;
+      if (q.age > 1.5) { q.live = false; continue; }
+      q.s += (wv * Hw * 6 * dt) / path.length;
+      const a = path.at(q.s), n = path.normalAt(Math.min(1, q.s)), tg = path.tangentAt(Math.min(1, q.s));
+      const p0 = toS({ x: a.x + n.x * q.h, y: a.y + n.y * q.h });
+      const p1 = toS({ x: a.x + n.x * q.h + tg.x * q.len, y: a.y + n.y * q.h + tg.y * q.len });
+      g.strokeStyle = css(lastSky?.light.key ?? [1, 1, 1], 0.10 * Math.sin((q.age / 1.5) * Math.PI));
+      g.beginPath(); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke();
     }
   }
 
@@ -1192,6 +1291,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   // ---------- frame ----------
   let lastSky: SkyState | null = null;
+  let lastBoulderC: V | null = null;
   let rollFrom: Palette | null = null;
   let rollLight: LightKey | null = null;
 
@@ -1209,6 +1309,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       desatK = desatTarget > desatK ? Math.min(desatTarget, desatK + step) : Math.max(desatTarget, desatK - step);
     }
     ambientT += dt * (phase === 'paused' ? 0.25 : 1);
+    updateCamera();
     advanceGait(dt, t);
     stepParticles(dt, t);
     const ss = skyState(t);
@@ -1237,22 +1338,15 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       g.fillStyle = `rgba(255,250,240,${0.9 * a})`;
       g.beginPath(); g.arc(w * 0.78, h * 0.16, 1.8, 0, Math.PI * 2); g.fill();
     }
-    // Clouds
-    if (clouds.length && quality > 0.5) {
-      const band0 = h - oy - (HORIZON_Y + 0.45) * S, band1 = h - oy - (HORIZON_Y + 0.12) * S;
-      clouds.forEach((c, i) => {
-        const cw = c.width / scale, ch = c.height / scale;
-        const span = w + cw;
-        const x = ((ambientT * 4 + i * span * 0.37 + i * 97) % span) - cw;
-        const y = band0 + (band1 - band0) * (0.2 + 0.3 * i);
-        g.globalAlpha = phase === 'break' ? 0.35 : 0.8;
-        g.drawImage(c, x, y, cw, ch);
-      });
-      g.globalAlpha = 1;
-    }
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.drawImage(land!, 0, 0);
-    g.setTransform(scale, 0, 0, scale, 0, 0);
+    drawBirds(g, t);
+    // Clouds (parallax 0.15): kept off the stone and the figure.
+    setCam(g, 0.15);
+    const bR = Rw * S;
+    const lastC = lastBoulderC ? toS(lastBoulderC) : null;
+    drawClouds(g, dt, lastC ? [{ x0: lastC.x - bR * 3.2, y0: lastC.y - bR * 1.6, x1: lastC.x + bR * 1.4, y1: lastC.y + bR * 1.4 }] : []);
+    // Land (range + mountain) moves with the camera.
+    setCam(g, 1);
+    g.drawImage(land!, 0, 0, w, h);
 
     // Figure + boulder state
     let fig: { pose: Pose; boulderC: V; rot: number; tremor?: number } | null = null;
@@ -1340,23 +1434,25 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
     if (fig2) drawFigure(g, fig2.pose, () => {});
     const bcx = boulderC!, brot = rot!;
+    lastBoulderC = bcx;
     if (fig) {
       updateChains(fig.pose, dt, t, reduced);
       drawFigure(g, fig.pose, () => drawBoulder(g, bcx, brot, lift), bcx, true);
     }
     else drawBoulder(g, bcx, brot, lift);
     drawParticles(g);
+    drawStreaks(g, dt);
 
     // Foreground rocks (L10).
     if (fgLayer) {
       // Blit only the rock rectangles, not the whole (mostly empty) layer.
-      g.setTransform(1, 0, 0, 1, 0, 0);
+      setCam(g, 1.15);
       for (const r of foregroundRocks(layout, w, h, S)) {
         const x0 = Math.max(0, Math.floor((r.cx - r.r - 4) * scale)), y0 = Math.max(0, Math.floor((r.cy - r.r - 4) * scale));
         const x1 = Math.min(fgLayer.width, Math.ceil((r.cx + r.r + 4) * scale)), y1 = Math.min(fgLayer.height, Math.ceil((r.cy + r.r + 4) * scale));
-        if (x1 > x0 && y1 > y0) g.drawImage(fgLayer, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+        if (x1 > x0 && y1 > y0) g.drawImage(fgLayer, x0, y0, x1 - x0, y1 - y0, x0 / scale, y0 / scale, (x1 - x0) / scale, (y1 - y0) / scale);
       }
-      g.setTransform(scale, 0, 0, scale, 0, 0);
+      setCam(g, 1);
     }
     // Grade (L11): vignette + warm/cool wash.
     // (baked into the sky and land caches at rebuild time)
