@@ -5,7 +5,7 @@ import { mulberry32, noise1, smoothstep } from './noise';
 import type { V } from './path';
 import type { Trail } from './trail';
 import {
-  ARM_CHAIN, DEG, H0, LEG_CHAIN, RIG, armIK, boulderSFor, cosRatio, footAt, headFrom, hipCeiling, lean0, legIK,
+  ARM_CHAIN, DEG, FRONT_FOOT, h0, LEG_CHAIN, LEG_MAX, REAR_FOOT, RIG, armIK, boulderSFor, cosRatio, footAt, headFrom, hipCeiling, lean0, legIK,
   type FootPose, type Limb, type Pose,
 } from './rig';
 
@@ -52,9 +52,9 @@ export const KEY = {
 };
 
 export const PACE = 0.1333;
-export const sigmaAt = (thetaDeg: number) => 0.34 * cosRatio(thetaDeg);
+export const sigmaAt = (thetaDeg: number) => (FRONT_FOOT + REAR_FOOT) * cosRatio(thetaDeg);
 export const tStepAt = (thetaDeg: number) => 0.95 * (1 + (0.5 * (thetaDeg - 20)) / 25);
-const FRONT = 0.10, REAR = 0.24;
+const FRONT = FRONT_FOOT, REAR = REAR_FOOT;
 const OMEGA_GIVE = 14;
 const EXT = 0.995;
 
@@ -294,10 +294,10 @@ export class Gait {
       swingFoot = footAt(trail.at(sT), trail.angleAt(sT) * DEG, 0);
     }
     // Pelvis height with the ceiling (never move a planted foot).
-    let hh = H0 + KEY.hipDy(k) + 0.004 * b * 0.5 + st.dy + st.tremor;
+    let hh = h0(theta) + KEY.hipDy(k) + 0.004 * b * 0.5 + st.dy + st.tremor;
     const ankles = [stanceFoot.ankle];
     if (swingPlanted) ankles.push(swingFoot.ankle);
-    hh = hipCeiling(base, { x: 0, y: 1 }, hh, ankles, 0.985);
+    hh = hipCeiling(base, { x: 0, y: 1 }, hh, ankles, LEG_MAX);
     const pelvis = { x: base.x, y: base.y + hh };
     // Swing leg in the air: keyed FK, blended to IK toward the plant target from u 0.62 to 0.80.
     let swingLeg: Limb;

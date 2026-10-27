@@ -272,7 +272,7 @@ export function figureGeom(fr: FigureFrame): FigureGeom {
         const a = P[Math.max(0, i - 1)], bq = P[Math.min(P.length - 1, i + 1)];
         const dx = bq.x - a.x, dy = bq.y - a.y, l = Math.hypot(dx, dy) || 1;
         const n = { x: -dy / l, y: dx / l };
-        const wd = (0.17 - 0.08 * (i / (P.length - 1))) * h;
+        const wd = (0.2 - 0.17 * (i / (P.length - 1))) * h; // tapers to a point: reads as cloth, not a stub
         left.push({ x: P[i].x + n.x * wd, y: P[i].y + n.y * wd }); right.push({ x: P[i].x - n.x * wd, y: P[i].y - n.y * wd });
       }
       groups.cloth.push([...left, ...right.reverse()]);

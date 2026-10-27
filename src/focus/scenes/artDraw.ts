@@ -110,17 +110,21 @@ export function buildCloudMass(seed: number, mw: number, mh: number, stop: ArtSt
     gg.lineTo(mw * 0.06 + mh * 0.125, baseY - mh * 0.25);
     gg.arc(mw * 0.06 + mh * 0.125, baseY - mh * 0.125, mh * 0.125, -Math.PI / 2, Math.PI / 2, true);
     gg.closePath();
+    gg.fill();
+    // scallops and the tail curl: painted separately (opposite windings must never cancel into holes)
+    gg.beginPath();
     for (const ci of circles) { gg.moveTo(ci.x + ci.r, ci.y); gg.arc(ci.x, ci.y, ci.r, 0, Math.PI * 2); }
     gg.moveTo(tail.x + tail.r, tail.y); gg.arc(tail.x, tail.y, tail.r, 0, Math.PI * 2);
+    gg.fill('nonzero');
   };
   // back tone: offset and slightly scaled
   g.save();
   g.translate(mw * 0.05, -mh * 0.10);
   g.translate(mw / 2, mh / 2); g.scale(1.04, 1.04); g.translate(-mw / 2, -mh / 2);
-  g.fillStyle = stop.cloudBack; union(g); g.fill('nonzero');
+  g.fillStyle = stop.cloudBack; union(g);
   g.restore();
   g.save();
-  g.fillStyle = stop.cloudFront; union(g); g.fill('nonzero');
+  g.fillStyle = stop.cloudFront; union(g);
   g.restore();
   if (swirls) {
     g.strokeStyle = INK.ochreDeep; g.lineWidth = 1.75; g.lineCap = 'round';

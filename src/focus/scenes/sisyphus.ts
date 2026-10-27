@@ -379,7 +379,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   // ---------- chains (loincloth flaps) ----------
   function updateChains(pose: Pose, dt: number, rest: boolean) {
     const anchors = clothAnchors(pose);
-    if (!chains) { chains = anchors.map((a) => makeChain(a, 3, 0.24 / 8, 30, 0.6)); rest = true; }
+    if (!chains) { chains = anchors.map((a) => makeChain(a, 3, 0.30 / 8, 30, 0.6)); rest = true; }
     const grav = 9;
     const wx = wind(ambientT) * 6;
     if (rest) { chains.forEach((c, i) => solveRest(c, anchors[i], { x: 0, y: -1 }, grav, wx)); return; }

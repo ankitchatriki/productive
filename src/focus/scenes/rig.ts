@@ -89,11 +89,17 @@ export function footAt(ball: V, groundRad: number, heel: number, facing: 1 | -1 
   };
 }
 
-/** Torso lean for a slope (deg): 17 + 0.30·(θ − 18), clamped 15–25 (§3.6). */
-export const lean0 = (thetaDeg: number) => clamp(17 + 0.3 * (thetaDeg - 18), 15, 25);
+/** Torso lean for a slope (deg): 20° at 22° (the §3.6 key pose), ±0.30°/°, clamped 15–25. */
+export const lean0 = (thetaDeg: number) => clamp(20 + 0.3 * (thetaDeg - 22), 15, 25);
 /** Stride scale on a slope relative to 22°. */
 export const cosRatio = (thetaDeg: number) => Math.cos(thetaDeg * DEG) / Math.cos(22 * DEG);
-export const H0 = 0.395;
+export const H0 = 0.38;
+/** Keyed pelvis height for a slope: higher on shallow ground so the rear leg stays long (the ceiling caps it). */
+export const h0 = (thetaDeg: number) => H0 + 0.006 * Math.max(0, 22 - thetaDeg);
+/** Hold-pose foot placement along the trail from the pelvis ground point (× cos θ / cos 22°). */
+export const FRONT_FOOT = 0.10, REAR_FOOT = 0.19;
+/** Max stance-leg extension: 0.996 keeps the rear knee at ≈ 168° (0.985 would cap it at 159°). */
+export const LEG_MAX = 0.996;
 
 /** Head centre from the shoulder: neck thrust 70° from vertical, head axis 100° (chin tucked). */
 export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {
@@ -103,7 +109,7 @@ export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {
 }
 
 /** Pelvis height ceiling: lower the pelvis so each given ankle is within 0.985·leg of the hip (never move a foot). */
-export function hipCeiling(base: V, up: V, h: number, ankles: V[], frac = 0.985): number {
+export function hipCeiling(base: V, up: V, h: number, ankles: V[], frac = LEG_MAX): number {
   let hh = h;
   const max = frac * LEG_CHAIN;
   for (let it = 0; it < 3; it++) {
@@ -159,11 +165,11 @@ export function solveHoldStatic(path: SlopePath, sP: number, R = RIG.boulderR): 
   const t = path.tangentAt(sP), n = path.normalAt(sP);
   const base = path.at(sP);
   const gA = (s: number) => path.angleAt(s) * DEG;
-  const sFront = sP + 0.10 * k, sRear = sP - 0.24 * k;
+  const sFront = sP + FRONT_FOOT * k, sRear = sP - REAR_FOOT * k;
   const front = footAt(path.at(sFront), gA(sFront), 0);
   const rear = footAt(path.at(sRear), gA(sRear), 25 * DEG);
   const up = { x: 0, y: 1 };
-  const hh = hipCeiling(base, up, H0, [front.ankle, rear.ankle]);
+  const hh = hipCeiling(base, up, h0(theta), [front.ankle, rear.ankle]);
   const pelvis = { x: base.x, y: base.y + hh };
   const lean = lean0(theta) * DEG;
   const shoulder = { x: pelvis.x + RIG.torso * Math.sin(lean) + t.x * 0.01, y: pelvis.y + RIG.torso * Math.cos(lean) + t.y * 0.01 };
