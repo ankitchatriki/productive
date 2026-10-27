@@ -7,13 +7,15 @@ interface FocusTrapOptions {
   onEscape?: () => void;
   /** Element to focus first; defaults to the first focusable. */
   initialFocus?: () => HTMLElement | null | undefined;
+  /** Selector to focus on close when the opener is gone (e.g. the Clock in button re-rendered). */
+  restoreFallback?: string;
 }
 
 /**
  * Shared by Modal and the focus overlay: focuses the first control, traps Tab,
  * handles Esc for the top-most dialog only, and restores focus on close.
  */
-export function useFocusTrap(ref: RefObject<HTMLElement>, { active, onEscape, initialFocus }: FocusTrapOptions) {
+export function useFocusTrap(ref: RefObject<HTMLElement>, { active, onEscape, initialFocus, restoreFallback }: FocusTrapOptions) {
   const escRef = useRef(onEscape);
   escRef.current = onEscape;
   const initRef = useRef(initialFocus);
@@ -45,7 +47,15 @@ export function useFocusTrap(ref: RefObject<HTMLElement>, { active, onEscape, in
     document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      if (previous && document.contains(previous)) previous.focus();
+      const prevOk = !!previous && previous !== document.body && document.contains(previous);
+      if (prevOk) previous!.focus();
+      if (!restoreFallback) return;
+      // After the page re-renders without the overlay, land on the opener (or its replacement).
+      window.setTimeout(() => {
+        if (prevOk && document.contains(previous!) && document.activeElement === previous) return;
+        if (document.activeElement && document.activeElement !== document.body) return;
+        document.querySelector<HTMLElement>(restoreFallback)?.focus();
+      }, 0);
     };
-  }, [active, ref]);
+  }, [active, ref, restoreFallback]);
 }

@@ -115,7 +115,7 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
   const exit = useCallback(() => close(() => dispatch({ type: 'focus/setImmersive', immersive: false })), [close, dispatch]);
 
   const initialFocus = useCallback(() => ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? null, []);
-  useFocusTrap(ref, { active: true, onEscape: exit, initialFocus });
+  useFocusTrap(ref, { active: true, onEscape: exit, initialFocus, restoreFallback: '[data-focus-origin]' });
   // Move focus to the phase's primary control when the phase changes (§8 initial focus).
   const focusKey = `${phase}:${view.breakOver ? 1 : 0}:${pending ?? ''}`;
   useEffect(() => {
@@ -207,6 +207,11 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
       ref={ref}
       role="dialog"
       aria-modal="true"
+      tabIndex={-1}
+      onMouseDown={(e) => {
+        // Review S7: a click on the scene must not drop focus out of the dialog.
+        if (!(e.target as HTMLElement).closest('button, select, a, input, label')) e.preventDefault();
+      }}
       aria-label="Focus mode"
       className={`${styles.overlay} ${opening ? styles.opening : ''} ${closing ? styles.closing : ''} ${reducedMotion ? styles.reduced : ''} ${chromeHidden ? `${styles.hidden} ${styles.idleCursor}` : styles.shown}`}
       style={{ ['--ox' as string]: origin.x, ['--oy' as string]: origin.y }}
