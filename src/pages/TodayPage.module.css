@@ -17,6 +17,8 @@
 /* Start card */
 .start { grid-area: start; display: flex; flex-direction: column; gap: var(--space-4); border-left: 4px solid var(--c); min-height: 0; }
 .idle, .running { display: flex; flex-direction: column; gap: var(--space-4); }
+/* The TODAY block keeps the same offset in idle and running (ROUND3_PLAN §2.1). */
+@media (min-width: 768px) { .idle, .running { min-height: 268px; } }
 .pickRow { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2) var(--space-3); align-items: center; }
 .pickLabel { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-muted); }
 .blockPick { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
@@ -37,20 +39,26 @@
 .livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--ontrack); animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .target { display: flex; align-items: center; gap: 8px; font-size: var(--text-lg); font-weight: var(--weight-semibold); margin: 0; min-width: 0; }
-.readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-display-compact); line-height: var(--lh-display-compact); font-weight: var(--weight-medium); }
+.readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--today-readout, 64px); line-height: 1.05; font-weight: var(--weight-medium); }
 .blockRow { display: flex; align-items: center; gap: var(--space-3); }
 .runActions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.todayBlock { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-4); border-top: var(--border-width) solid var(--border); }
+.todayBlock { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-4); border-top: var(--border-width) solid var(--border); }
 .keyRow { display: flex; justify-content: space-between; align-items: baseline; }
 .keyNumber { font-size: var(--text-3xl); line-height: var(--lh-3xl); font-weight: var(--weight-semibold); margin: 0; display: flex; align-items: center; }
 .keyGoal { font-size: var(--text-xl); color: var(--text-muted); font-weight: var(--weight-regular); margin-left: 6px; }
 .sectionLine { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
 
 /* Log card */
-.log { grid-area: log; display: flex; flex-direction: column; min-height: 0; padding-bottom: var(--space-3); }
+.log { display: flex; flex-direction: column; padding-bottom: var(--space-3); }
 .logHead { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 .logTitle { font-size: var(--text-lg); font-weight: var(--weight-semibold); margin: 0; }
-.logBody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 calc(-1 * var(--space-2)); padding: 0 var(--space-2); }
+.logBody { margin: 0 calc(-1 * var(--space-2)); padding: 0 var(--space-2); }
+.side { grid-area: log; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.upNext { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
+.upNext .logHead { margin-bottom: 0; }
+.upList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.upRow { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); min-height: 36px; padding: 0 6px; border-bottom: var(--border-width) solid var(--border); font-size: var(--text-md); }
+.upRow[data-now] { background: var(--accent-soft); border-radius: var(--radius-xs); }
 .logList { display: flex; flex-direction: column; }
 .logRow {
   display: grid; grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 0.8fr) auto 20px; align-items: center; gap: var(--space-2);
@@ -64,7 +72,7 @@
 .logEdit { color: var(--text-subtle); opacity: 0; display: grid; place-items: center; }
 .logRow:hover .logEdit, .logRow:focus-visible .logEdit { opacity: 1; }
 .liveDot { width: 8px; height: 8px; border-radius: 50%; background: var(--ontrack); animation: pulse 2s ease-in-out infinite; justify-self: center; }
-.logEmpty { height: 100%; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); text-align: center; }
+.logEmpty { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); text-align: center; }
 @media (max-width: 1099px) { .logNote { display: none; } .logRow { grid-template-columns: auto auto minmax(0, 1fr) auto 20px; } }
 @media (hover: none) { .logEdit { opacity: 1; } }
 

@@ -8,13 +8,14 @@ import { useToast } from '../hooks/useToast';
 import { useHotkeys } from '../hooks/useHotkeys';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { allIntervals, intervalsOnDate, minutesBySection, minutesOnDate } from '../domain/aggregate';
-import { createWeekPlan, dailyGoalFor, findCarryOver, isRestDate, shiftPlanFrom } from '../domain/plan';
+import { createWeekPlan, dailyGoalFor, findCarryOver, isRestDate, shiftPlanFrom, todayBlocks } from '../domain/plan';
 import { colorVar } from '../domain/colors';
-import { formatClock, formatDay, formatDuration, formatElapsed, toDateKey, weekStartOf } from '../domain/time';
+import { formatClock, formatDay, formatDuration, formatElapsed, minuteOfDay, toDateKey, weekStartOf } from '../domain/time';
 import { weekProgressAt } from '../state/selectors';
 import { StartCard } from './today/StartCard';
 import { LogCard } from './today/LogCard';
 import { WeekCard } from './today/WeekCard';
+import { UpNextCard } from './today/UpNextCard';
 import { useMediaQuery, PHONE_QUERY } from '../hooks/useMediaQuery';
 import { Icon } from '../components/Icon';
 
@@ -48,6 +49,7 @@ export function TodayPage() {
   // This week card (ROUND3_PLAN §1): recomputed when data changes or once a minute.
   const week = useMemo(() => weekProgressAt(data, new Date()), [data, minuteNow]); // eslint-disable-line react-hooks/exhaustive-deps
   const isPhone = useMediaQuery(PHONE_QUERY);
+  const upNext = useMemo(() => todayBlocks(plan, today, minuteOfDay(new Date(minuteNow * 60000))), [plan, today, minuteNow]);
 
   // Section of the day
   const todaySectionId = plan?.sectionByDay[today] ?? null;
@@ -151,7 +153,10 @@ export function TodayPage() {
         weekStart={ws}
       />
 
-      <LogCard intervals={todayIntervals} todayMinutes={todayMinutes} />
+      <div className={styles.side}>
+        <UpNextCard rows={upNext} data={data} weekStart={ws} />
+        <LogCard intervals={todayIntervals} todayMinutes={todayMinutes} />
+      </div>
     </div>
   );
 }
