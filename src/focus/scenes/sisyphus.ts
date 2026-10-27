@@ -934,6 +934,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const prev = phase;
       const t = nowS();
       const first = !phaseSet;
+      // A repeat of the current phase (e.g. the host re-sending it right after mount) must not reset the figure.
+      if (!first && next === prev && !opts?.instant) return;
       phaseSet = true;
       phase = next;
       desatTarget = next === 'paused' ? 1 : 0;
