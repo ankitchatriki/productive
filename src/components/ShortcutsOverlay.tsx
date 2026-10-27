@@ -1,7 +1,7 @@
 import { Modal } from './Modal';
 
 export const SHORTCUTS: Array<[string[], string]> = [
-  [['Space'], 'Clock in / clock out (works on every page)'],
+  [['Space'], 'Clock in (pick a focus block) / clock out; resumes a paused focus session'],
   [['S'], 'Switch section while the timer runs'],
   [['N'], 'New manual entry'],
   [['D'], "Mark today's section done (Today)"],

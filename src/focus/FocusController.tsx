@@ -24,6 +24,7 @@ export function FocusController({ announceApp, onStopAtLastActivity }: FocusCont
   const reducedMotion = useReducedMotion(data.settings.focus.motion);
   const [announcement, setAnnouncement] = useState('');
   const breakAnnounced = useRef<string | null>(null);
+  const completedKey = useRef<string | null>(null);
   const milestones = useRef<{ key: string; half: boolean; five: boolean }>({ key: '', half: false, five: false });
   const [animateIn, setAnimateIn] = useState(false);
   const prevImmersive = useRef<boolean | null>(null);
@@ -53,8 +54,12 @@ export function FocusController({ announceApp, onStopAtLastActivity }: FocusCont
     const t = new Date();
     if (isBlockDue(s, t)) {
       const at = blockEndsAt(s)!;
+      const key = `${s.id}:${s.blockStartedAt}:${at}`;
+      if (completedKey.current === key) return;
+      completedKey.current = key;
       dispatch({ type: 'focus/complete', at });
-      const live = t.getTime() - Date.parse(at) <= CHIME_WINDOW_MS;
+      // Chime once, in the tab that completed it, only if noticed live (not restored after reload).
+      const live = t.getTime() - Date.parse(at) <= CHIME_WINDOW_MS && document.visibilityState === 'visible';
       if (live && data.settings.focus.chime) playChime();
       if (live) announce(`Block complete. ${s.blockMinutes} minutes done.`);
       return;

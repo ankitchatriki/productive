@@ -20,14 +20,14 @@ function Layout() {
   const ui = useUi();
   const { pathname } = useLocation();
   const onToday = pathname === '/';
-  const showPill = !!data.activeTimer && !onToday;
+  const showPill = (!!data.activeTimer && !onToday) || (!!data.focus && !data.focus.immersive);
   const target = ui.effectiveTarget;
   const targetLabel = target ? data.sections.find((s) => s.id === target.sectionId)?.title ?? data.courses.find((c) => c.id === target.courseId)?.name ?? null : null;
   return (
     <div className={styles.shell}>
       <Nav
         pill={showPill ? <TimerPill onStop={ui.toggleTimer} /> : null}
-        idleSlot={data.activeTimer ? null : <TimerIdle label={targetLabel} onClockIn={ui.toggleTimer} />}
+        idleSlot={data.activeTimer || data.focus ? null : <TimerIdle label={targetLabel} onClockIn={ui.toggleTimer} />}
         onShowShortcuts={ui.openShortcuts}
       />
       <main className={`${styles.main} ${showPill ? styles.withPill : ''}`} id="main">
