@@ -51,6 +51,8 @@ export function TodayPage() {
   const elapsedStudy = studyDays.filter((d) => d < today).length;
   const expected = weekGoal * (elapsedStudy / Math.max(1, studyDays.length));
   const weekStatus = weekMinutes > weekGoal * 1.1 && weekGoal > 0 ? 'over' : weekMinutes >= expected ? 'ontrack' : 'behind';
+  // Review S8: no "Behind" before a single study day of the week has passed (unless already over).
+  const weekJudged = elapsedStudy > 0 || weekStatus === 'over';
   const streak = useMemo(() => streaksAt(data, new Date(minuteNow * 60000)).current, [data, minuteNow]);
 
   // Section of the day
@@ -130,9 +132,9 @@ export function TodayPage() {
       <header className={styles.head}>
         <h1 className={`page-title ${styles.title}`}>Today <span className={styles.date}>{formatDay(today)}</span></h1>
         <div className={styles.chips}>
-          <Link to="/timecard" className={`chip chip-${weekStatus} ${styles.headChip}`} title="This week, logged / goal">
+          <Link to="/timecard" className={`chip ${weekJudged ? `chip-${weekStatus}` : ''} ${styles.headChip}`} title="This week, logged / goal">
             Week <span className="num">{formatDuration(weekMinutes)} / {formatDuration(weekGoal)}</span>
-            <span aria-hidden="true">·</span> {weekStatus === 'ontrack' ? 'On track' : weekStatus === 'over' ? 'Over' : 'Behind'}
+            {weekJudged && <><span aria-hidden="true">·</span> {weekStatus === 'ontrack' ? 'On track' : weekStatus === 'over' ? 'Over' : 'Behind'}</>}
           </Link>
           {streak > 0 && <span className={`chip ${styles.headChip}`} title="Days in a row you hit your daily goal. Rest days don't break it.">{streak}-day streak</span>}
           <Link to="/plan" className={styles.planLink}>Plan →</Link>

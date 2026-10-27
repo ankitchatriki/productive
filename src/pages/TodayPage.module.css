@@ -29,7 +29,8 @@
 }
 .blockChip:hover { background: var(--surface-2); }
 .blockChip[aria-checked="true"] { background: var(--accent-soft); border: 1.5px solid var(--accent); color: var(--accent-text); }
-.plannedChip { border-left: 3px solid var(--pc); }
+.plannedChip { display: inline-flex; align-items: center; gap: 6px; }
+.plannedChip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--pc); flex: none; }
 .customField { display: inline-flex; align-items: center; gap: 6px; }
 .customField input { width: 72px; height: 36px; }
 .clockIn { width: 100%; height: 56px; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
@@ -74,6 +75,9 @@
   .today { height: 100dvh; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
   .today:not(:has(.bannerRow)) { grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head head" "start log"; }
   .start { overflow: hidden; }
+  /* Review S8: the pick / running block sits in the middle of the space above TODAY instead of leaving a blank gap. */
+  .idle, .running { flex: 1; justify-content: center; min-height: 0; }
+  .readout { font-size: clamp(48px, 8vh, 76px); line-height: 1.05; }
 }
 @media (max-width: 999px), (max-height: 699px) {
   .today { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "banner" "start" "log"; }
