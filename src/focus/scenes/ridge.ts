@@ -356,3 +356,27 @@ export function backSide(layout: Layout, plateauEnd: V, baseY: number, rightX: n
   }
   return pts;
 }
+
+// ---------- Foreground rocks (§3.3, L10) ----------
+export interface Box { x0: number; y0: number; x1: number; y1: number }
+export interface FgRock { cx: number; cy: number; r: number; seed: number }
+
+/** Screen-space foreground rocks at the bottom corners, overlapping the frame edge (pure). */
+export function foregroundRocks(layout: Layout, w: number, h: number, S: number): FgRock[] {
+  if (layout === 'portrait') return [{ cx: -0.2 * 0.07 * S, cy: h + 0.25 * 0.07 * S, r: 0.07 * S, seed: 3 }];
+  return [
+    { cx: -0.35 * 0.10 * S, cy: h + 0.32 * 0.10 * S, r: 0.10 * S, seed: 1 },
+    { cx: 0.07 * S, cy: h + 0.55 * 0.06 * S, r: 0.06 * S, seed: 2 },
+    { cx: w + 0.35 * 0.09 * S, cy: h + 0.4 * 0.09 * S, r: 0.09 * S, seed: 5 },
+  ];
+}
+
+/** Rock outline radius at angle a: noisy polygon with 11 vertices (radius varies 0.72–1.0). */
+export function rockRadius(rock: FgRock, k: number): number {
+  return rock.r * (0.72 + 0.28 * hash1(rock.seed * 13.1 + k * 3.7));
+}
+
+export function circleHitsBox(cx: number, cy: number, r: number, b: Box): boolean {
+  const nx = Math.max(b.x0, Math.min(cx, b.x1)), ny = Math.max(b.y0, Math.min(cy, b.y1));
+  return Math.hypot(nx - cx, ny - cy) < r;
+}

@@ -3,12 +3,12 @@
 import type { SceneEngine, SceneInitOptions, ScenePhase } from './types';
 import { NIGHT, PREDAWN, css, darken, desaturate, gradePalette, hex, lighten, mixPalette, mixRGB, palette, type Palette, type RGB } from './palette';
 import { FIGURE_H, layoutFor, startS, summitS, sunPosition, type Layout, type SlopePath, type V } from './path';
-import { RANGE_LAYERS, RIDGES, backSide, benchProgressMap, buildRidgePath, rangeSkyline, snowEdge, type RidgePath } from './ridge';
+import { RANGE_LAYERS, RIDGES, backSide, benchProgressMap, buildRidgePath, foregroundRocks, rangeSkyline, rockRadius, snowEdge, type RidgePath } from './ridge';
 import {
   BODY, DEG, blendPose, boulderCentre, easeInOut, easeOut, hipH, leanDeg, pelvisOffset, solvePush, solveSit, solveStand,
   surge as surgeCurve, type Limb, type Pose,
 } from './rig';
-import { hash2, mulberry32, noise2, ridged, smoothstep } from './noise';
+import { fbm1, fbm2, hash1, hash2, mulberry32, noise2, ridged, smoothstep } from './noise';
 import { NIGHT_LIGHT, lightState, mixLight, type LightKey } from './light';
 
 type Mode = 'climb' | 'stand' | 'sit';
@@ -59,6 +59,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let swayStart = 0, nextSway = 7;
   // Caches
   let sky: HTMLCanvasElement | null = null, land: HTMLCanvasElement | null = null, rimLayer: HTMLCanvasElement | null = null, gradeLayer: HTMLCanvasElement | null = null;
+  let detail: HTMLCanvasElement | null = null, fgLayer: HTMLCanvasElement | null = null;
+  let skyB: HTMLCanvasElement | null = null, landB: HTMLCanvasElement | null = null, gradeB: HTMLCanvasElement | null = null, fgB: HTMLCanvasElement | null = null;
+  let rebuild: Generator<void, void, void> | null = null, rebuildKey = '';
   let clouds: HTMLCanvasElement[] = [];
   let boulderTex: HTMLCanvasElement | null = null;
   let boulderOutline: Path2D | null = null;
@@ -113,8 +116,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     layoutWorld();
     buildStars();
     buildBoulderShape();
+    buildDetail();
     palKey = '';
     lastCacheAt = -1e9;
+    sky = null; land = null; rebuild = null;
   }
 
   // ---------- scene state per phase ----------
@@ -257,13 +262,16 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     g.fillRect(0, 0, w, h);
   }
 
-  function rebuildCaches(ss: SkyState) {
+  /** Tint rebuild, spread across frames (one stage per frame) into back buffers, then swapped (ROUND3 §3.12). */
+  function* rebuildCaches(ss: SkyState): Generator<void, void, void> {
     const cw = canvas!.width, ch = canvas!.height;
     pal = gradePalette(ss.pal);
     if (desatK > 0) pal = desaturate(pal, 0.35 * desatK, 0.08 * desatK);
+    const fit = (c: HTMLCanvasElement | null) => (c && c.width === cw && c.height === ch ? c : mk(cw, ch));
+    skyB = fit(skyB); landB = fit(landB); gradeB = fit(gradeB); fgB = fit(fgB);
+    const skyT = skyB, landT = landB, gradeT = gradeB, fgT = fgB;
     // Sky
-    if (!sky || sky.width !== cw || sky.height !== ch) sky = mk(cw, ch);
-    const g = sky.getContext('2d')!;
+    const g = skyT.getContext('2d')!;
     g.setTransform(scale, 0, 0, scale, 0, 0);
     const horizonPx = h - oy - HORIZON_Y * S;
     const grad = g.createLinearGradient(0, 0, 0, horizonPx);
@@ -300,8 +308,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       g.restore();
     }
     // Grade layer (L11): vignette + a faint warm/cool wash, applied once over everything per frame.
-    if (!gradeLayer || gradeLayer.width !== cw || gradeLayer.height !== ch) gradeLayer = mk(cw, ch);
-    const gl = gradeLayer.getContext('2d')!;
+    const gl = gradeT.getContext('2d')!;
     gl.setTransform(1, 0, 0, 1, 0, 0); gl.clearRect(0, 0, cw, ch);
     gl.setTransform(scale, 0, 0, scale, 0, 0);
     const warm = ss.light.warmth;
@@ -310,15 +317,25 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     vignette(gl);
 
     // Land (ROUND3_DESIGN §3.3): peaked range layers with snow and haze, then the main mountain.
-    if (!land || land.width !== cw || land.height !== ch) land = mk(cw, ch);
-    const l = land.getContext('2d')!;
+    yield;
+    const l = landT.getContext('2d')!;
     l.setTransform(1, 0, 0, 1, 0, 0);
     l.clearRect(0, 0, cw, ch);
     l.setTransform(scale, 0, 0, scale, 0, 0);
     drawRange(l, ss);
-    drawMountain(l, ss);
+    yield;
+    const { body, back } = drawMountainBase(l, ss);
+    yield;
+    drawSurface(l, body, back, ss);
+    yield;
+    drawMountainTop(l, body, back, ss);
+    yield;
+    buildForeground(fgT, ss);
+    yield;
     buildClouds(lighten(mixRGB(pal.horizon, pal.zenith, 0.3), 0.15));
     buildBoulderTexture(pal.boulderBase);
+    // Swap front and back buffers.
+    [sky, skyB] = [skyT, sky]; [land, landB] = [landT, land]; [gradeLayer, gradeB] = [gradeT, gradeLayer]; [fgLayer, fgB] = [fgT, fgLayer];
   }
 
   // ---------- terrain (ROUND3_DESIGN §3.3) ----------
@@ -426,6 +443,143 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     return -1;
   }
 
+  /** Detail grain (resize-only): half-resolution fBm + hash grit, greyscale. */
+  function buildDetail() {
+    const dw = Math.max(1, Math.round(w / 2)), dh = Math.max(1, Math.round(h / 2));
+    detail = mk(dw, dh);
+    const g = detail.getContext('2d')!;
+    const img = g.createImageData(dw, dh);
+    const d = img.data;
+    for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) {
+      const v = 0.5 + 0.22 * (fbm2(x / 9, y / 9, 3) * 2 - 1) + 0.08 * (hash2(x * 1.3, y * 0.7) * 2 - 1);
+      const c = Math.max(0, Math.min(255, Math.round(v * 255)));
+      const i = (y * dw + x) * 4;
+      d[i] = d[i + 1] = d[i + 2] = c; d[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+
+  /** Faces, strata, joints, gullies, scree and grain on the main mountain (ROUND3 §3.3.7). */
+  function drawSurface(l: CanvasRenderingContext2D, body: Path2D, back: V[], ss: SkyState) {
+    const sp = path.spec;
+    const L = ss.light;
+    const sEnd = 1 + (path.plateauEndS - 1) * 1.45;
+    l.save();
+    l.clip(body);
+    // Strata bands in mountain-local coordinates (u along the path, v depth along the normal).
+    const N = layout === 'landscape' ? 9 : 7;
+    const vk = (k: number, s: number) => 0.035 + k * 0.055 + 0.012 * (fbm1(s * 3.2 * path.length + k * 7.1) * 2 - 1);
+    // Offsets along one fixed direction (normal of the climb's chord), so bed lines are parallel copies that never cross.
+    const ch0 = path.at(0), ch1 = path.at(1);
+    const cl = Math.hypot(ch1.x - ch0.x, ch1.y - ch0.y);
+    const n0 = { x: -(ch1.y - ch0.y) / cl, y: (ch1.x - ch0.x) / cl };
+    const bandPt = (s: number, v: number) => { const g = path.at(s); return toS({ x: g.x - n0.x * v, y: g.y - n0.y * v }); };
+    const s0b = -0.25, steps = 90;
+    for (let k = 0; k < N - 1; k++) {
+      const lumK = (k % 2 === 0 ? 0.06 : -0.06) + (hash1(k * 3.3) - 0.5) * 0.08;
+      l.fillStyle = lumK > 0 ? css(L.key, lumK * 0.9) : css([0, 0, 0], -lumK);
+      l.beginPath();
+      for (let i = 0; i <= steps; i++) { const s = s0b + ((sEnd - s0b) * i) / steps; const p = bandPt(s, vk(k, s)); if (i === 0) l.moveTo(p.x, p.y); else l.lineTo(p.x, p.y); }
+      for (let i = steps; i >= 0; i--) { const s = s0b + ((sEnd - s0b) * i) / steps; const p = bandPt(s, vk(k + 1, s)); l.lineTo(p.x, p.y); }
+      l.closePath(); l.fill();
+    }
+    // Ledges: a lit top edge and a shadow line under it.
+    for (let k = 1; k < N; k++) {
+      for (const [dv, col, a, lw] of [[0, L.key, 0.18, 1.2], [2 / S, pal.rockShade, 0.22, 2]] as Array<[number, RGB, number, number]>) {
+        l.strokeStyle = css(col, a); l.lineWidth = lw;
+        l.beginPath();
+        for (let i = 0; i <= steps; i++) { const s = s0b + ((sEnd - s0b) * i) / steps; const p = bandPt(s, vk(k, s) + dv); if (i === 0) l.moveTo(p.x, p.y); else l.lineTo(p.x, p.y); }
+        l.stroke();
+      }
+    }
+    // Back face: one step darker, meeting the climb face along a soft ridge from the summit down to the right.
+    const sumS = toS(sp.plateauEnd);
+    const footR = toS({ x: (back[back.length - 1]?.x ?? sp.plateauEnd.x + 0.4), y: sp.p0.y - 0.05 });
+    const bf = new Path2D();
+    bf.moveTo(sumS.x - 2, sumS.y - 4);
+    for (const p of back) { const v = toS(p); bf.lineTo(v.x, v.y - 4); }
+    bf.lineTo(w + 4, h + 4); bf.lineTo(footR.x - 0.25 * S, h + 4);
+    bf.quadraticCurveTo(sumS.x + 0.05 * S, sumS.y + 0.35 * S, sumS.x - 2, sumS.y - 4);
+    bf.closePath();
+    const bg = l.createLinearGradient(sumS.x, sumS.y, sumS.x + 0.2 * S, sumS.y + 0.5 * S);
+    bg.addColorStop(0, css(mixRGB(pal.rockShade, L.ambient, 0.2), 0.8));
+    bg.addColorStop(1, css(darken(pal.rockShade, 0.25), 0.9));
+    l.fillStyle = bg; l.fill(bf);
+    // Joints: short cracks perpendicular to the strata, with a lit edge on the sun side.
+    const pr = mulberry32(53);
+    const nJ = 18 + Math.floor(pr() * 9);
+    for (let j = 0; j < nJ; j++) {
+      const s = pr() * 1.05, v = 0.02 + pr() * 0.35, len = 0.01 + pr() * 0.02;
+      const g = path.at(s), n = path.normalAt(Math.min(1, s));
+      let p = { x: g.x - n.x * v, y: g.y - n.y * v };
+      const pts: V[] = [toS(p)];
+      for (let q = 0; q < 3; q++) { p = { x: p.x - n.x * (len / 3) + (pr() - 0.5) * 0.004, y: p.y - n.y * (len / 3) }; pts.push(toS(p)); }
+      l.strokeStyle = css(darken(pal.rockShade, 0.3), 0.25); l.lineWidth = 1.2;
+      l.beginPath(); pts.forEach((q, i) => (i ? l.lineTo(q.x, q.y) : l.moveTo(q.x, q.y))); l.stroke();
+      l.strokeStyle = css(L.key, 0.12); l.lineWidth = 0.8;
+      l.beginPath(); pts.forEach((q, i) => (i ? l.lineTo(q.x - 1, q.y) : l.moveTo(q.x - 1, q.y))); l.stroke();
+    }
+    // Gullies below each false summit, with scree fans at their feet.
+    path.benches.forEach((b, k) => {
+      const g = path.at(b.sMid);
+      const top = toS({ x: g.x, y: g.y - 0.02 });
+      const wd = 0.028 * S;
+      const gg = l.createLinearGradient(top.x - wd, 0, top.x + wd, 0);
+      gg.addColorStop(0, css(L.ambient, 0)); gg.addColorStop(0.5, css(darken(L.ambient, 0.3), 0.15)); gg.addColorStop(1, css(L.ambient, 0));
+      l.fillStyle = gg;
+      l.beginPath();
+      l.moveTo(top.x - wd * 0.3, top.y);
+      l.quadraticCurveTo(top.x - wd * 0.2 + k * 3, top.y + 0.2 * S, top.x - wd, h + 2);
+      l.lineTo(top.x + wd, h + 2);
+      l.quadraticCurveTo(top.x + wd * 0.3, top.y + 0.2 * S, top.x + wd * 0.3, top.y);
+      l.closePath(); l.fill();
+    });
+    // Scree just below the walking line (never on it, so the feet stay clean).
+    for (let i = 0; i < 40; i++) {
+      const s = 0.02 + pr() * 0.98, depth = 0.008 + pr() * 0.05, sz = (0.004 + pr() * 0.008) * S;
+      const g = path.at(s), n = path.normalAt(s);
+      const c = toS({ x: g.x - n.x * depth, y: g.y - n.y * depth });
+      const nv = 4 + Math.floor(pr() * 3);
+      l.beginPath();
+      for (let q = 0; q < nv; q++) { const a = (q / nv) * Math.PI * 2; const rr = sz * (0.6 + 0.4 * pr()); const x = c.x + Math.cos(a) * rr, y = c.y + Math.sin(a) * rr * 0.55; q ? l.lineTo(x, y) : l.moveTo(x, y); }
+      l.closePath();
+      l.fillStyle = css(darken(pal.rockShade, 0.1), 0.55); l.fill();
+      l.strokeStyle = css(L.key, 0.3); l.lineWidth = 0.8;
+      l.beginPath(); l.moveTo(c.x - sz * 0.6, c.y - sz * 0.35); l.lineTo(c.x + sz * 0.5, c.y - sz * 0.4); l.stroke();
+    }
+    // Grain overlay (one drawImage per tint rebuild).
+    if (detail && quality > 0.5) {
+      l.globalCompositeOperation = 'overlay';
+      l.globalAlpha = 0.35;
+      l.drawImage(detail, 0, 0, w, h);
+      l.globalCompositeOperation = 'source-over';
+      l.globalAlpha = 1;
+    }
+    l.restore();
+  }
+
+  /** Foreground rocks (L10): dark, slightly blurred, at the bottom corners; never over the path or the HUD. */
+  function buildForeground(target: HTMLCanvasElement, ss: SkyState) {
+    const cw = target.width, ch = target.height;
+    const g = target.getContext('2d')!;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cw, ch);
+    g.setTransform(scale, 0, 0, scale, 0, 0);
+    if (quality > 0.5) g.filter = 'blur(1.5px)';
+    const rocks = foregroundRocks(layout, w, h, S);
+    for (const r of rocks) {
+      const pts: V[] = [];
+      for (let k = 0; k < 11; k++) { const a = (k / 11) * Math.PI * 2; const rr = rockRadius(r, k); pts.push({ x: r.cx + Math.cos(a) * rr, y: r.cy + Math.sin(a) * rr * 0.8 }); }
+      g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath();
+      g.fillStyle = css(darken(pal.rockShade, 0.35)); g.fill();
+      const L = sunDir({ x: r.cx, y: r.cy });
+      g.save(); g.clip();
+      g.strokeStyle = css(ss.light.key, 0.4 * ss.light.rim); g.lineWidth = 3;
+      g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p.x - L.x * 1.5, p.y - L.y * 1.5) : g.moveTo(p.x - L.x * 1.5, p.y - L.y * 1.5))); g.closePath(); g.stroke();
+      g.restore();
+    }
+    g.filter = 'none';
+  }
+
   function drawCairn(l: CanvasRenderingContext2D, base: V, size: number, lit: number, L: LightKey) {
     let cy = base.y;
     for (const [wid, ht] of [[0.030, 0.010], [0.022, 0.009], [0.014, 0.008]]) {
@@ -440,7 +594,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     }
   }
 
-  function drawMountain(l: CanvasRenderingContext2D, ss: SkyState) {
+  function drawMountainBase(l: CanvasRenderingContext2D, ss: SkyState) {
     const { body, back } = mountainShape();
     mountainBody = body;
     const sp = path.spec;
@@ -449,6 +603,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     mg.addColorStop(0, css(mixRGB(pal.rockLit, ss.light.key, 0.12)));
     mg.addColorStop(1, css(mixRGB(pal.rockShade, ss.light.ambient, 0.3)));
     l.fillStyle = mg; l.fill(body);
+    return { body, back };
+  }
+
+  function drawMountainTop(l: CanvasRenderingContext2D, body: Path2D, back: V[], ss: SkyState) {
+    const sp = path.spec;
     // Snow: a full cap on the twin peak, only a dusting near the true summit, never near the path.
     l.save(); l.clip(body);
     const snowline = SNOWLINE[layout];
@@ -484,10 +643,20 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const key = [ss.pal.zenith, ss.pal.horizon, ss.pal.rockLit].map((c) => c.map((v) => Math.round(v * 200)).join(',')).join('|')
       + `|${benchesLit}|${Math.round(ss.light.rim * 20)}|${Math.round(ss.light.warmth * 20)}|${ss.moon ? Math.round(ss.moon.x / 3) : ''}|${Math.round(ss.glow * 20)}|${Math.round(desatK * 10)}|${Math.round(ss.predawn * 20)}`;
     const minGap = seq || (desatK !== desatTarget) ? 0.1 : 2;
-    if (key !== palKey && (t - lastCacheAt >= minGap || !sky)) {
-      rebuildCaches(ss);
-      palKey = key;
-      lastCacheAt = t;
+    if (!sky || !land) {
+      // First paint (or after a resize): build synchronously.
+      const gen = rebuildCaches(ss);
+      while (!gen.next().done) { /* run all stages */ }
+      rebuild = null; palKey = key; lastCacheAt = t;
+      return;
+    }
+    if (rebuild) {
+      if (rebuild.next().done) { rebuild = null; palKey = rebuildKey; }
+      return;
+    }
+    if (key !== palKey && t - lastCacheAt >= minGap) {
+      rebuild = rebuildCaches(ss); rebuildKey = key; lastCacheAt = t;
+      if (rebuild.next().done) { rebuild = null; palKey = key; }
     }
   }
 
@@ -1031,6 +1200,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     else drawBoulder(g, bcx, brot, lift);
     drawParticles(g);
 
+    // Foreground rocks (L10).
+    if (fgLayer) { g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fgLayer, 0, 0); g.setTransform(scale, 0, 0, scale, 0, 0); }
     // Grade (L11): vignette + warm/cool wash.
     if (gradeLayer) { g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(gradeLayer, 0, 0); g.setTransform(scale, 0, 0, scale, 0, 0); }
 
@@ -1197,7 +1368,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       mounted = false; running = false;
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
-      sky = land = rimLayer = gradeLayer = boulderTex = snapshot = null;
+      sky = land = rimLayer = gradeLayer = detail = fgLayer = boulderTex = snapshot = null;
+      skyB = landB = gradeB = fgB = null; rebuild = null;
       clouds = [];
       canvas = null; ctx = null;
     },

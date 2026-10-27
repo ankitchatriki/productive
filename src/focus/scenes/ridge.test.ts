@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RANGE_LAYERS, RIDGES, backSide, benchProgressMap, buildRidgePath, monotoneCubic, rangeSkyline, snowEdge } from './ridge';
+import { RANGE_LAYERS, RIDGES, backSide, benchProgressMap, buildRidgePath, circleHitsBox, foregroundRocks, monotoneCubic, rangeSkyline, snowEdge, type Box } from './ridge';
 import { FIGURE_H, layoutFor, startS, summitS } from './path';
 import { BODY } from './rig';
 
@@ -84,4 +84,28 @@ describe('neighbouring range (§3.3.4)', () => {
   it('snow edge stays near the snowline', () => {
     for (let i = 0; i < 100; i++) { const e = snowEdge(i / 10, 0.62); expect(e).toBeGreaterThan(0.55); expect(e).toBeLessThan(0.66); }
   });
+});
+
+describe('foreground rocks (§3.3 L10)', () => {
+  const viewports: Array<[number, number]> = [[1440, 900], [1280, 800], [390, 844], [3440, 1440]];
+  for (const [w, h] of viewports) {
+    it(`${w}×${h}: rocks never cover the climb, the readout or the control bar`, () => {
+      const l = layoutFor(w, h);
+      const path = buildRidgePath(RIDGES[l.layout]);
+      const H = FIGURE_H[l.layout], R = BODY.boulderR * H;
+      const toS = (x: number, y: number) => ({ x: l.ox + x * l.S, y: h - l.oy - y * l.S });
+      const rocks = foregroundRocks(l.layout, w, h, l.S);
+      const s0 = startS(H, R, path.length) - 0.05;
+      for (let i = 0; i <= 300; i++) {
+        const s = s0 + ((path.plateauEndS - s0) * i) / 300;
+        const g = path.at(s), p = toS(g.x, g.y);
+        // the figure stands up to ~1.2 H above the ground
+        for (const r of rocks) for (const up of [0, 0.5, 1.2]) expect(Math.hypot(p.x - r.cx, p.y - up * H * l.S - r.cy)).toBeGreaterThan(r.r);
+      }
+      const boxes: Box[] = l.layout === 'landscape'
+        ? [{ x0: w * 0.92 - 300, y0: h * 0.84 - 130, x1: w * 0.92, y1: h * 0.84 }, { x0: w / 2 - 230, y0: h - 90, x1: w / 2 + 230, y1: h - 28 }]
+        : [{ x0: w / 2 - 160, y0: h - 150, x1: w / 2 + 160, y1: h - 28 }];
+      for (const r of rocks) for (const b of boxes) expect(circleHitsBox(r.cx, r.cy, r.r, b)).toBe(false);
+    });
+  }
 });
