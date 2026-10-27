@@ -198,3 +198,25 @@ describe('fingers (V6)', () => {
     expect(fingers.length).toBe(4);
   });
 });
+
+describe('figure draw cost (V10)', () => {
+  it('the opaque figure is drawn straight onto the scene: no offscreen layer copy, no destination-in mask pass, no halos on the back limbs', async () => {
+    const { drawFigureArt } = await import('./figureArt');
+    const calls: string[] = [];
+    const ctx = new Proxy({} as Record<string, unknown>, {
+      get: (o, k) => (k in o ? o[k as string] : (..._a: unknown[]) => { calls.push(String(k)); }),
+      set: (o, k, v) => { if (k === 'globalCompositeOperation') calls.push(`gco:${v}`); o[k as string] = v; return true; },
+    }) as unknown as CanvasRenderingContext2D;
+    const g0 = globalThis as unknown as { Path2D?: unknown };
+    const savedP = g0.Path2D;
+    g0.Path2D = class { moveTo() {} lineTo() {} closePath() {} arc() {} bezierCurveTo() {} quadraticCurveTo() {} };
+    const path = line(22);
+    const { pose, centre } = solveHoldStatic(path, 5);
+    drawFigureArt(ctx, { pose, centre, R: RIG.boulderR, Hpx: HPX, toS: (v) => v, chains: null, trail: path as unknown as Trail, facing: 1, quality: 1 }, 2);
+    g0.Path2D = savedP;
+    expect(calls.filter((c) => c === 'drawImage').length).toBe(0);
+    expect(calls.some((c) => c.startsWith('gco:destination'))).toBe(false);
+    expect(calls.filter((c) => c === 'clip').length).toBe(2); // the outer incision's ground/stone clip and the silhouette
+    expect(calls.filter((c) => c === 'stroke').length).toBeLessThan(40);
+  });
+});

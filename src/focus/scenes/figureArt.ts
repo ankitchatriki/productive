@@ -484,6 +484,59 @@ let layerCanvas: HTMLCanvasElement | null = null;
 export let lastDetailMs = 0;
 
 /** Draw the figure onto the scene (screen space; `g` already has the back-buffer scale transform). */
+/**
+ * V10: the opaque figure is drawn straight onto the scene, clipped to its own silhouette (one clip), instead of into
+ * an offscreen layer that was then masked (destination-in) and copied — the same image, a third of the raster work.
+ */
+function drawDirect(g: CanvasRenderingContext2D, fr: FigureFrame, geom: FigureGeom, scr: Record<string, V[][]>, S: (v: V) => V,
+  lw: ReturnType<typeof LW>, wOf: Record<Weight, number>, x0: number, x1: number, y1: number, tA: number) {
+  const union = new Path2D();
+  for (const k of ORDER) for (const pts of scr[k]) loopPath(union, pts);
+  g.save();
+  // outer incision only where the figure lies over the stone or the slope (drawn first; the figure covers its inner half)
+  if (fr.quality > 0.5) {
+    const clip = new Path2D();
+    const c = S(fr.centre);
+    clip.arc(c.x, c.y, fr.R * fr.Hpx, 0, Math.PI * 2);
+    const a = S({ x: 0, y: 0 }), b2 = S({ x: 1, y: 0 }), pts: V[] = [];
+    for (let sx = x0 - 0.15 * fr.Hpx; sx <= x1 + 0.15 * fr.Hpx + 12; sx += 12) { const wx = (sx - a.x) / (b2.x - a.x); pts.push(S({ x: wx, y: fr.trail.groundY(wx) })); }
+    if (pts.length > 1) {
+      clip.moveTo(pts[0].x, pts[0].y);
+      for (const p of pts) clip.lineTo(p.x, p.y);
+      clip.lineTo(pts[pts.length - 1].x, y1 + 2000); clip.lineTo(pts[0].x, y1 + 2000); clip.closePath();
+    }
+    g.save(); g.clip(clip);
+    g.lineWidth = 2 * lw.incise; g.strokeStyle = INK.ochre; g.lineJoin = 'round';
+    g.stroke(union);
+    g.restore();
+  }
+  g.clip(union);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  let detailMs = performance.now() - tA;
+  for (const k of ORDER) {
+    const gp = new Path2D();
+    for (const pts of scr[k]) loopPath(gp, pts);
+    g.lineWidth = 2 * lw.incise; g.strokeStyle = INK.ochre; if (k !== 'farLeg' && k !== 'farArm') g.stroke(gp); // (the back limbs overlap nothing earlier: no halo)
+    g.fillStyle = INK.black; g.fill(gp);
+    const td = performance.now();
+    for (const wk of ['C', 'F', 'V'] as const) {
+      const ls = geom.lines[k as GroupKey][wk];
+      if (!ls.length) continue;
+      const lp = new Path2D();
+      for (const pl of ls) openPath(lp, pl.map(S));
+      g.lineWidth = wOf[wk]; g.stroke(lp);
+    }
+    if (geom.dots[k as GroupKey].length) {
+      const dp = new Path2D();
+      for (const [c, r] of geom.dots[k as GroupKey]) { const q = S(c), rr = Math.max(0.8, r * fr.Hpx); dp.moveTo(q.x + rr, q.y); dp.arc(q.x, q.y, rr, 0, Math.PI * 2); }
+      g.fillStyle = INK.ochre; g.fill(dp);
+    }
+    detailMs += performance.now() - td;
+  }
+  lastDetailMs = detailMs;
+  g.restore();
+}
+
 export function drawFigureArt(g: CanvasRenderingContext2D, fr: FigureFrame, scale: number) {
   if (fr.tierFree !== false) currentTier = tierFor(fr.Hpx, fr.quality);
   const tA = performance.now();
@@ -498,6 +551,7 @@ export function drawFigureArt(g: CanvasRenderingContext2D, fr: FigureFrame, scal
     scr[k] = geom.groups[k].map((pts) => pts.map((p) => { const q = S(p); if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y; return q; }));
   }
   if (!Number.isFinite(x0)) return;
+  if (fr.pose.alpha >= 1) { drawDirect(g, fr, geom, scr, S, lw, wOf, x0, x1, y1, tA); return; }
   const pad = 0.15 * fr.Hpx;
   x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
   const ox = Math.floor(x0 * scale), oy = Math.floor(y0 * scale);

@@ -724,8 +724,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     drawBoulder(g, centre, rot, sB);
     updateChains(pose, dt, still);
     fig = { pose, centre, R, Hpx: lay.Hpx * cam.zoom, toS: S, chains, trail, facing: pose.facing, quality, veins: pose.veins ?? 0, tierFree };
+    // (measurement hook: with __flushTiming set, rasterise before and after so figureMs is the figure's real cost)
+    const flush = (globalThis as { __flushTiming?: boolean }).__flushTiming === true;
+    if (flush) g.getImageData(0, 0, 1, 1);
     const tF = performance.now();
     drawFigureArt(g, fig, scale);
+    if (flush) g.getImageData(0, 0, 1, 1);
     stats.figureMs = performance.now() - tF; stats.detailMs = lastDetailMs; stats.tier = figureTier();
     stats.figureAvg = stats.frames ? (stats.figureAvg ?? stats.figureMs) * 0.95 + stats.figureMs * 0.05 : stats.figureMs;
     stats.detailAvg = stats.frames ? (stats.detailAvg ?? lastDetailMs) * 0.95 + lastDetailMs * 0.05 : lastDetailMs;
