@@ -87,6 +87,11 @@ describe('mountain bookkeeping (schema v3)', () => {
 
   it('open-ended blocks climb a summit every 60 focused minutes; clock out folds them in', () => {
     const s = run(base(), start(T(0), null));
+    // the hour's summit is held for the mini summit beat, then the next climb begins in the col (U8)
+    const top = liveClimb(s.mountain, s.focus!, new Date(T(60, 3)));
+    expect(top).toMatchObject({ stage: 1, atSummit: true, summits: 1 });
+    expect(top.posM).toBeCloseTo(3600 * PACE_M, 2);
+    expect(liveClimb(s.mountain, s.focus!, new Date(T(60, 9)))).toMatchObject({ stage: 2, atSummit: false, fromSummit: true });
     const c = liveClimb(s.mountain, s.focus!, new Date(T(75)));
     expect(c.stage).toBe(2);
     expect(c.summits).toBe(1);
