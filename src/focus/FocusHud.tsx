@@ -33,7 +33,7 @@ export function FocusHud({ view, now, readoutMode, onCycleReadout }: FocusHudPro
     else caption = `left · ends ${formatClock(new Date(now.getTime() + remaining))}`;
     if (mode === 'hidden') readout = '';
   } else if (phase === 'complete') {
-    status = 'Block complete';
+    status = 'Summit.';
     readout = formatCountdown(-Math.max(1000, view.overtimeMs));
     if (view.overtimeMs < 1000) readout = formatCountdown((session.blockMinutes ?? 0) * 60_000);
     caption = view.overtimeMs >= 1000 ? `past your ${session.blockMinutes} min block` : `${session.blockMinutes} minutes done`;
@@ -55,7 +55,10 @@ export function FocusHud({ view, now, readoutMode, onCycleReadout }: FocusHudPro
 
   return (
     <>
-      <div className={styles.status} aria-hidden={!status}>{status}</div>
+      <div className={`${styles.status} ${phase === 'complete' ? styles.summit : ''}`} aria-hidden={!status}
+        style={phase === 'complete' && session.completedAt ? { animationDelay: `${Math.max(0, 3.6 - (now.getTime() - Date.parse(session.completedAt)) / 1000)}s` } : undefined}>
+        {status}
+      </div>
       {phase === 'paused' && <div className={styles.paused}>PAUSED</div>}
       {readout ? (
         <button type="button" className={`${styles.readout} ${muted ? styles.muted : ''}`} onClick={onCycleReadout}

@@ -46,7 +46,7 @@ export function CompletePanel(p: CompletePanelProps) {
   }
   return (
     <div className={styles.card} role="group" aria-label="Block complete">
-      <p className={styles.cardText}>Nice work: {s.blockMinutes} minutes on {view.courseName}.</p>
+      <p className={styles.cardText}>{s.blockMinutes} minutes on {view.courseName}.</p>
       <div className={styles.row}>
         <button type="button" className={`${styles.pill} ${styles.primary}`} data-autofocus onClick={p.onKeepGoing}>Keep going · {s.blockMinutes} min <kbd>K</kbd></button>
         {EXTEND_PRESETS.map((m) => (

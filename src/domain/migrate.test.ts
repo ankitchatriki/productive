@@ -50,7 +50,7 @@ describe('focus validation (repair first)', () => {
     (d.settings as unknown as Record<string, unknown>).focus = { ...defaultFocusSettings, breakMinutes: 0, scene: 'ice', motion: 'wild', lastChoice: { kind: 'custom', minutes: 2 } };
     const warnings: string[] = [];
     const r = validateAppData(d, warnings) as AppData;
-    expect(r.settings.focus).toMatchObject({ breakMinutes: 10, scene: 'daylight', motion: 'system', lastChoice: { kind: 'preset', minutes: 50 } });
+    expect(r.settings.focus).toMatchObject({ breakMinutes: 10, scene: 'sisyphus', motion: 'system', lastChoice: { kind: 'preset', minutes: 50 } });
     expect(warnings).toHaveLength(4);
   });
   it('missing settings.focus becomes defaults', () => {
@@ -89,5 +89,31 @@ describe('focus validation (repair first)', () => {
   it('focus that is not an object makes the file invalid', () => {
     const d = { ...data(), focus: 5 };
     expect(validateAppData(d)).toEqual(['focus must be null or an object.']);
+  });
+});
+
+describe('scene ids (STRUGGLEMORE §3.1)', () => {
+  it("a stored 'nightfall' scene is repaired to 'sisyphus' with a warning; 'daylight' stays", () => {
+    const d = data();
+    (d.settings.focus as unknown as Record<string, unknown>).scene = 'nightfall';
+    const warnings: string[] = [];
+    expect((validateAppData(d, warnings) as AppData).settings.focus.scene).toBe('sisyphus');
+    expect(warnings).toEqual(['settings.focus.scene was invalid and was reset.']);
+    const d2 = data();
+    d2.settings.focus.scene = 'daylight';
+    expect((validateAppData(d2) as AppData).settings.focus.scene).toBe('daylight');
+  });
+  it('a v1 migration writes the new default scene', () => {
+    expect((migrate({ ...data(), schemaVersion: 1 }) as AppData).settings.focus.scene).toBe('sisyphus');
+  });
+  it("a session with scene 'nightfall' is dropped as inconsistent", () => {
+    const timer = { courseId: 'c1', sectionId: null, startedAt: iso(2026, 10, 27, 9), note: '' };
+    const d = data({ courses: [course('c1')], activeTimer: timer });
+    (d as unknown as Record<string, unknown>).focus = {
+      id: 'f', target: { courseId: 'c1', sectionId: null, note: '' }, choice: 'preset', blockMinutes: 50,
+      blockStartedAt: timer.startedAt, focusedMsBefore: 0, segmentStartedAt: timer.startedAt, phase: 'focus',
+      completedAt: null, pausedAt: null, breakMinutes: null, breakStartedAt: null, breakEndsAt: null, blocksCompleted: 0, scene: 'nightfall', immersive: true,
+    };
+    expect((validateAppData(d) as AppData).focus).toBeNull();
   });
 });

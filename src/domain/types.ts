@@ -94,8 +94,8 @@ export interface AppData {
 
 // ---------- Focus mode (docs/FOCUS_PLAN.md §4) ----------
 
-/** Scene ids come from the registry; FOCUS_DESIGN.md fixes the list: Daylight (+ Nightfall). */
-export type SceneId = 'daylight' | 'nightfall';
+/** Scene ids from the registry (STRUGGLEMORE_DESIGN §3.1): Sisyphus (default) and Daylight. */
+export type SceneId = 'sisyphus' | 'daylight';
 
 export type FocusPhase = 'focus' | 'paused' | 'complete' | 'break';
 
@@ -139,7 +139,7 @@ export interface FocusSettings {
   enterOnClockIn: boolean;           // default true
   breakMinutes: number;              // default 10; integer 1..60
   chime: boolean;                    // default true
-  scene: SceneId;                    // default 'daylight'
+  scene: SceneId;                    // default 'sisyphus'
   motion: MotionPref;                // default 'system'
 }
 

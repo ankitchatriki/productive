@@ -202,6 +202,8 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
       className={`${styles.overlay} ${opening ? styles.opening : ''} ${closing ? styles.closing : ''} ${reducedMotion ? styles.reduced : ''} ${chromeHidden ? `${styles.hidden} ${styles.idleCursor}` : styles.shown}`}
       style={{ ['--ox' as string]: origin.x, ['--oy' as string]: origin.y }}
       data-phase={phase}
+      data-scene={s.scene}
+      data-sticky={sticky ? 'true' : undefined}
     >
       <div className={styles.scene} aria-hidden="true">
         <SceneCanvas sceneId={s.scene} phase={scenePhase} progress={sceneProgress} completedAt={s.completedAt}
@@ -244,7 +246,9 @@ function FocusModeInner({ announcement, announce, reducedMotion, animateIn, onSt
             </div>
           )}
           {hud && <div className={styles.hud} role="status">{hud}</div>}
-          <FocusHud view={view} now={now} readoutMode={readoutMode} onCycleReadout={cycleReadout} />
+          <div className={styles.readoutBox}>
+            <FocusHud view={view} now={now} readoutMode={readoutMode} onCycleReadout={cycleReadout} />
+          </div>
           {phase === 'focus' || phase === 'paused' ? (
             <div className={styles.fade}>
               <FocusControls view={view} onPause={doPause} onResume={doResume} onExtend={() => doExtend(5)} onClockOut={requestClockOut} />

@@ -134,8 +134,8 @@ describe('interaction with v1 actions', () => {
     let s = reducer(base(), start());
     s = reducer(s, { type: 'focus/setImmersive', immersive: false });
     expect(s.focus?.immersive).toBe(false);
-    s = reducer(s, { type: 'focus/setScene', scene: 'nightfall' });
-    expect(s.focus?.scene).toBe('nightfall');
+    s = reducer(s, { type: 'focus/setScene', scene: 'sisyphus' });
+    expect(s.focus?.scene).toBe('sisyphus');
     s = reducer(s, { type: 'focus/settings', patch: { breakMinutes: 15 } });
     expect(s.settings.focus.breakMinutes).toBe(15);
     expect(s.settings.focus.chime).toBe(true);
