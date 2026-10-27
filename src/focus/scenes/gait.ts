@@ -108,6 +108,7 @@ export class Gait {
     this.plant(this.front, D + FRONT * k, trail, 0);
     this.plant((this.front ^ 1) as 0 | 1, D - REAR * k, trail, REAR_HEEL * DEG);
     this.hist = [];
+    this.sBfloor = -Infinity;
     this.lastPelvisS = D;
     this.vel = 0; this.velPrev = 0; this.accF = 0;
   }
@@ -196,6 +197,16 @@ export class Gait {
       }
     }
     this.tick(dt, trail);
+    this.ratchet(trail);
+  }
+
+  /** Lowest stone position allowed outside a slip (the ratchet); −∞ until the first pose after a snap. */
+  sBfloor = -Infinity;
+  /** The slip, catch and recover of a strain beat: the stone may roll back, then forward again. */
+  slipping(): boolean { return this.mode === 'strain' && this.strainT >= 1.4 && this.strainT < 2.6; }
+  private ratchet(trail: Trail) {
+    if (this.mode === 'strain') return;
+    this.sBfloor = Math.max(this.sBfloor, this.pose(trail).sB);
   }
 
   private tick(dt: number, trail: Trail) {
@@ -208,7 +219,7 @@ export class Gait {
     const v0 = this.velPrev; this.velPrev = this.vel;
     const acc = dt > 0 ? (this.vel - v0) / dt : 0;
     this.accF += (acc - this.accF) * Math.min(1, dt * 20);
-    const target = Math.min(13, Math.max(0, this.accF) * (4.0 * this.v.T * this.v.T / this.v.sigma)); // elbow give, degrees
+    const target = Math.min(13, Math.max(0, this.accF) * (2.8 * this.v.T * this.v.T / this.v.sigma)); // elbow give, degrees
     const a = -OMEGA_GIVE * OMEGA_GIVE * (this.give - target) - 2 * OMEGA_GIVE * this.giveV;
     this.giveV += a * dt; this.give = Math.max(0, this.give + this.giveV * dt);
     // raw channels for the lagged torso/head
@@ -342,7 +353,10 @@ export class Gait {
     const eGive = Math.sqrt(ua * ua + fa * fa - 2 * ua * fa * Math.cos(el)) / ARM_CHAIN;
     const e = Math.max(0.94, Math.min(eGive, EXT - st.ext));
     const A = stoneDistance(e, R);
-    const sB = boulderSFor(trail, shoulder, A, pelvisS + 0.3, pelvisS + 3, R);
+    const solved = boulderSFor(trail, shoulder, A, pelvisS + 0.3, pelvisS + 3, R);
+    // Ratchet (ROUND4 §5.2): outside a slip the stone never rolls back; the elbows take up any shoulder dip.
+    // In a strain beat the stone holds, then slips back with the body and is driven forward again (net zero).
+    const sB = this.mode === 'strain' && Number.isFinite(this.sBfloor) ? this.sBfloor - st.back : Math.max(solved, this.sBfloor);
     const centre = trail.centreAt(sB, R);
     const dx = centre.x - shoulder.x, dy = centre.y - shoulder.y, dl = Math.hypot(dx, dy) || 1;
     const ux = dx / dl, uy = dy / dl;

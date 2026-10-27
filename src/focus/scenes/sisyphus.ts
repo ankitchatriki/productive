@@ -24,9 +24,11 @@ interface Seq { kind: SeqKind; t0: number; dur: number }
 const SUMMIT_DUR = 6.0, MINI_DUR = 6.0, NEXT_DUR = 3.2, CROSSFADE_DUR = 0.4, STAND_DUR = 1.2;
 const MAX_GRIT = 12;
 const R = RIG.boulderR; // H units
+/** Screen direction of travel along the trail (+1: the climb runs left → right in every layout). */
+const ROLL_DIR = 1;
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number }
 
 interface Grit { live: boolean; x: number; y: number; vx: number; vy: number; age: number }
 
@@ -395,7 +397,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const size = boulderSprite.width / (scale * 2);
     g.save();
     g.translate(c.x, c.y);
-    g.rotate(-rot); // world rotation (rolling uphill = clockwise on screen)
+    // Rolling forward = clockwise on the y-down canvas: rotate by +arc/R (ROUND4 §5.1; round 3 had the sign wrong).
+    const rotCanvas = ROLL_DIR * rot;
+    g.rotate(rotCanvas);
+    stats.rot = rotCanvas; stats.sB = sB;
     g.drawImage(boulderSprite, -size / 2, -size / 2, size, size);
     g.restore();
     const slope = (trail.angleAt(sB) * Math.PI) / 180;
@@ -545,13 +550,15 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const st = t - sw.t0;
       if (sw.standT0 === null) {
         const D1 = standState().D;
-        const target = sw.Dend + (D1 - sw.Dend) * Math.min(1, Math.max(0, (st - 0.5) / 2.2));
-        gait.step(dt, target, trail, { climbing: false, lenH: lenH(), speed: 2.0, idles: false });
+        // walk up at a brisk but real pace; the target never runs more than 2.5 strides ahead (no snap, no jump)
+        const ramp = sw.Dend + (D1 - sw.Dend) * Math.min(1, Math.max(0, (st - 0.5) / 4.5));
+        const target = Math.min(ramp, gait.D + 2.5 * sigmaAt(trail.angleAt(gait.D)));
+        gait.step(dt, target, trail, { climbing: false, lenH: lenH(), speed: 1.4, idles: false });
         const fr = gait.pose(trail);
         pose = fr.pose; centre = fr.centre; rot = fr.rot; sB = fr.sB;
         if (gait.events.stepEnd && rng() < 0.6) spawnGrit(trail.at(sB), 1);
         const arrived = gait.mode === 'hold' && Math.abs(D1 - gait.D) < 0.5 * sigmaAt(trail.angleAt(gait.D));
-        if ((st > 0.8 && arrived) || st > 4.6) { sw.standT0 = t; sw.hold = fr.pose; sw.centre = fr.centre; sw.sB = fr.sB; sw.rot = fr.rot; }
+        if ((st > 0.8 && arrived) || st > 8) { sw.standT0 = t; sw.hold = fr.pose; sw.centre = fr.centre; sw.sB = fr.sB; sw.rot = fr.rot; }
       } else {
         centre = sw.centre!; sB = sw.sB; rot = sw.rot;
         const k = (t - sw.standT0) / STAND_DUR;
@@ -640,7 +647,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stats.slopeFrac = below / 16;
     stats.zoom = cam.zoom; stats.rangesDrawn = drawnRanges; stats.cloudsDrawn = drawnClouds; stats.stripBuilds = stripBuilds;
     cam.pos = keepPos;
-    stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS(); stats.gait = mode === "climb" ? gait.mode : mode;
+    stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS(); stats.gait = mode === "climb" ? gait.mode : mode; stats.strainT = gait.mode === "strain" ? gait.strainT : -1;
     void t0;
   }
 

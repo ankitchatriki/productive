@@ -164,51 +164,85 @@ export function buildBoulderSprite(Rpx: number, scale: number, seed = 31, lw = 1
   const g = c.getContext('2d')!;
   g.setTransform(res, 0, 0, res, size / 2, size / 2);
   const r = mulberry32(seed);
+  const D = Math.PI / 180;
+  // Outline with two chipped facets (flat notches at 130° and 310°, 0.025 R deep, 0.18 R chord): the silhouette
+  // itself turns with the stone (ROUND4 §5.3).
+  const facets = [130 * D, 310 * D], half = Math.asin(0.09);
+  const radiusAt = (a: number) => {
+    let rr = Rpx * (1 - 0.006 * (Math.sin(a * 7 + 1.3) + Math.sin(a * 13 + 0.4) + 1));
+    for (const f of facets) {
+      let d = a - f; d = Math.atan2(Math.sin(d), Math.cos(d));
+      if (Math.abs(d) < half) rr = Math.min(rr, (Rpx * (1 - 0.025)) / Math.cos(d));
+    }
+    return rr;
+  };
   g.fillStyle = INK.black;
   g.beginPath();
-  for (let i = 0; i <= 96; i++) {
-    const a = (i / 96) * Math.PI * 2;
-    const rr = Rpx * (1 - 0.006 * (Math.sin(a * 7 + 1.3) + Math.sin(a * 13 + 0.4) + 1));
-    const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
-    if (i) g.lineTo(x, y); else g.moveTo(x, y);
+  for (let i = 0; i <= 180; i++) {
+    const a = (i / 180) * Math.PI * 2, rr = radiusAt(a);
+    if (i) g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); else g.moveTo(rr, 0);
   }
   g.closePath(); g.fill();
-  g.strokeStyle = INK.ochre; g.lineWidth = lw; g.lineCap = 'round';
+  g.strokeStyle = INK.ochre; g.lineCap = 'round'; g.lineJoin = 'round';
+  // Rim speckle, thinned 30%: dots and uneven strokes just inside the edge.
+  g.lineWidth = lw;
   g.beginPath();
-  const n = 90 + Math.floor(r() * 20);
+  const n = 63 + Math.floor(r() * 14);
   for (let i = 0; i < n; i++) {
-    // denser on the lower half (the half that faces the slope in the sprite's rest frame)
     let a = r() * Math.PI * 2;
     if (Math.sin(a) < 0 && r() < 0.4) a = -a;
     const inset = 1 + r() * 6;
-    const len = r() < 0.25 ? 0.6 : 1.5 + Math.pow(r(), 1.6) * 9; // a speckle: dots and strokes of uneven length (U14)
-    const rr = Rpx - inset;
+    const len = r() < 0.25 ? 0.6 : 1.5 + Math.pow(r(), 1.6) * 9;
+    const rr = radiusAt(a) - inset;
     const t = { x: -Math.sin(a), y: Math.cos(a) };
     const p = { x: Math.cos(a) * rr, y: Math.sin(a) * rr };
     g.moveTo(p.x - t.x * len / 2, p.y - t.y * len / 2); g.lineTo(p.x + t.x * len / 2, p.y + t.y * len / 2);
   }
   g.stroke();
-  // interior chips: small angular chisel marks (two short strokes meeting at a point)
+  // Three incised strata: curved chords at signed offsets, non-parallel, never through the centre.
+  g.lineWidth = Math.max(1.2, lw * 1.05);
   g.beginPath();
-  for (let i = 0; i < 5; i++) {
-    const a = r() * Math.PI * 2, d = Rpx * (0.2 + r() * 0.5), cl = Rpx * (0.05 + r() * 0.04);
-    const x = Math.cos(a) * d, y = Math.sin(a) * d;
-    const b = r() * Math.PI * 2, open = 0.5 + r() * 0.5;
-    g.moveTo(x + Math.cos(b) * cl, y + Math.sin(b) * cl); g.lineTo(x, y); g.lineTo(x + Math.cos(b + open) * cl * 0.6, y + Math.sin(b + open) * cl * 0.6);
+  for (const [off, ang, span] of [[0.35, 20, 1.1], [0.55, 35, 0.9], [-0.45, 200, 1.3]] as const) {
+    const a = ang * D, nx = -Math.sin(a), ny = Math.cos(a);
+    for (let i = 0; i <= 12; i++) {
+      const k = i / 12 - 0.5;
+      const wav = 0.01 * Math.sin(k * 9 + off * 7) * Rpx;
+      const bow = 0.06 * (1 - 4 * k * k) * Rpx;
+      const x = Math.cos(a) * k * span * Rpx + nx * (off * Rpx + wav + bow), y = Math.sin(a) * k * span * Rpx + ny * (off * Rpx + wav + bow);
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+  }
+  g.stroke();
+  // Two forked cracks from the rim (70°, 250°), forking at 60% of their length.
+  g.beginPath();
+  for (const [ang, len] of [[70, 0.30], [250, 0.22]] as const) {
+    const a = ang * D, start = { x: Math.cos(a) * radiusAt(a) * 0.97, y: Math.sin(a) * radiusAt(a) * 0.97 };
+    const dir = { x: -Math.cos(a + 0.25), y: -Math.sin(a + 0.25) };
+    const mid = { x: start.x + dir.x * len * 0.6 * Rpx, y: start.y + dir.y * len * 0.6 * Rpx };
+    const end = { x: start.x + dir.x * len * Rpx + dir.y * 0.03 * Rpx, y: start.y + dir.y * len * Rpx - dir.x * 0.03 * Rpx };
+    g.moveTo(start.x, start.y); g.lineTo(mid.x, mid.y); g.lineTo(end.x, end.y);
+    const fa = Math.atan2(dir.y, dir.x) - 35 * D;
+    g.moveTo(mid.x, mid.y); g.lineTo(mid.x + Math.cos(fa) * 0.08 * Rpx, mid.y + Math.sin(fa) * 0.08 * Rpx);
+  }
+  g.stroke();
+  // Six pock arcs.
+  g.lineWidth = Math.max(1, lw * 0.8);
+  g.beginPath();
+  for (const [ang, d] of [[15, 0.2], [100, 0.62], [160, 0.3], [215, 0.7], [290, 0.5], [340, 0.75]] as const) {
+    const a = ang * D, x = Math.cos(a) * d * Rpx, y = Math.sin(a) * d * Rpx, pr = 0.02 * Rpx + 1;
+    g.moveTo(x + pr * Math.cos(a), y + pr * Math.sin(a)); g.arc(x, y, pr, a, a + Math.PI * 1.1);
   }
   g.stroke();
   return c;
 }
 
-/** Non-rotating broken ochre contact arc on the outline (200°–340°), separating the stone from the black slope. */
+/** Non-rotating contact arc (ROUND4 §5.3): 70° centred on the contact normal, 3 short dashes within 3 px of the rim. */
 export function drawContactArc(g: CanvasRenderingContext2D, c: V, Rpx: number, slopeRad: number, lw: number) {
   g.strokeStyle = INK.ochre; g.lineWidth = lw; g.lineCap = 'round';
-  // Canvas angles (y down): the lower side is 20°–160°; tilt with the slope so the arc hugs the contact.
-  const a0 = (20 * Math.PI) / 180 - slopeRad, a1 = (160 * Math.PI) / 180 - slopeRad;
-  const segs = 7;
-  for (let i = 0; i < segs; i++) {
-    const s0 = a0 + ((a1 - a0) * i) / segs, e = s0 + ((a1 - a0) / segs) * 0.7;
-    g.beginPath(); g.arc(c.x, c.y, Rpx - 1.5, s0, e); g.stroke();
+  const mid = Math.PI / 2 - slopeRad, half = (35 * Math.PI) / 180;
+  for (let i = 0; i < 3; i++) {
+    const a0 = mid - half + ((2 * half) * i) / 3 + 0.08, a1 = a0 + ((2 * half) / 3) * 0.6;
+    g.beginPath(); g.arc(c.x, c.y, Rpx - 1.5, a0, a1); g.stroke();
   }
 }
 
