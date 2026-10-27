@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import styles from './TodayPage.module.css';
 import { useDispatch, useStore } from '../state/store';
 import { useUi } from '../state/ui';
@@ -7,13 +7,15 @@ import { useNow } from '../hooks/useNow';
 import { useToast } from '../hooks/useToast';
 import { useHotkeys } from '../hooks/useHotkeys';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { allIntervals, intervalsOnDate, minutesBySection, minutesInDates, minutesOnDate } from '../domain/aggregate';
+import { allIntervals, intervalsOnDate, minutesBySection, minutesOnDate } from '../domain/aggregate';
 import { createWeekPlan, dailyGoalFor, findCarryOver, isRestDate, shiftPlanFrom } from '../domain/plan';
 import { colorVar } from '../domain/colors';
-import { formatClock, formatDay, formatDuration, formatElapsed, toDateKey, weekDates, weekStartOf } from '../domain/time';
-import { streaksAt } from '../state/selectors';
+import { formatClock, formatDay, formatDuration, formatElapsed, toDateKey, weekStartOf } from '../domain/time';
+import { weekProgressAt } from '../state/selectors';
 import { StartCard } from './today/StartCard';
 import { LogCard } from './today/LogCard';
+import { WeekCard } from './today/WeekCard';
+import { useMediaQuery, PHONE_QUERY } from '../hooks/useMediaQuery';
 import { Icon } from '../components/Icon';
 
 const LONG_RUN_MIN = 10 * 60;
@@ -43,17 +45,9 @@ export function TodayPage() {
   const goal = dailyGoalFor(today, data);
   const rest = isRestDate(today, data);
 
-  // Week chip + streak chip
-  const dates = weekDates(ws);
-  const weekMinutes = minutesInDates(intervals, dates);
-  const weekGoal = dates.reduce((s, d) => s + (isRestDate(d, data) ? 0 : dailyGoalFor(d, data)), 0);
-  const studyDays = dates.filter((d) => !isRestDate(d, data));
-  const elapsedStudy = studyDays.filter((d) => d < today).length;
-  const expected = weekGoal * (elapsedStudy / Math.max(1, studyDays.length));
-  const weekStatus = weekMinutes > weekGoal * 1.1 && weekGoal > 0 ? 'over' : weekMinutes >= expected ? 'ontrack' : 'behind';
-  // Review S8: no "Behind" before a single study day of the week has passed (unless already over).
-  const weekJudged = elapsedStudy > 0 || weekStatus === 'over';
-  const streak = useMemo(() => streaksAt(data, new Date(minuteNow * 60000)).current, [data, minuteNow]);
+  // This week card (ROUND3_PLAN §1): recomputed when data changes or once a minute.
+  const week = useMemo(() => weekProgressAt(data, new Date()), [data, minuteNow]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isPhone = useMediaQuery(PHONE_QUERY);
 
   // Section of the day
   const todaySectionId = plan?.sectionByDay[today] ?? null;
@@ -131,14 +125,6 @@ export function TodayPage() {
     <div className={styles.today}>
       <header className={styles.head}>
         <h1 className={`page-title ${styles.title}`}>Today <span className={styles.date}>{formatDay(today)}</span></h1>
-        <div className={styles.chips}>
-          <Link to="/timecard" className={`chip ${weekJudged ? `chip-${weekStatus}` : ''} ${styles.headChip}`} title="This week, logged / goal">
-            Week <span className="num">{formatDuration(weekMinutes)} / {formatDuration(weekGoal)}</span>
-            {weekJudged && <><span aria-hidden="true">·</span> {weekStatus === 'ontrack' ? 'On track' : weekStatus === 'over' ? 'Over' : 'Behind'}</>}
-          </Link>
-          {streak > 0 && <span className={`chip ${styles.headChip}`} title="Days in a row you hit your daily goal. Rest days don't break it.">{streak}-day streak</span>}
-          <Link to="/plan" className={styles.planLink}>Plan →</Link>
-        </div>
       </header>
 
       {shownBanner && (
@@ -147,6 +133,8 @@ export function TodayPage() {
           {banners.length > 1 && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setBannerIdx((i) => i + 1)}>{banners.length - 1} more</button>}
         </div>
       )}
+
+      <WeekCard w={week} courseName={(id) => courseById.get(id)?.name} compact={isPhone} />
 
       <StartCard
         running={running}
