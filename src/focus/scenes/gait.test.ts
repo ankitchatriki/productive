@@ -117,7 +117,7 @@ describe('push cycle harness', () => {
         if (f.mode === 'step') cur.push({ u: f.u, h: hh(f) });
         else if (cur.length) { if (cur.length > 10) mins.push(cur.reduce((m, q) => (q.h < m.h ? q : m)).u); cur = []; }
       }
-      const inBand = mins.filter((u) => u >= 0.85 && u <= 0.95).length;
+      const inBand = mins.filter((u) => u >= 0.85 - 0.035 && u <= 0.95 + 0.035).length; // ± one 1/30 s frame of u
       expect(inBand / mins.length).toBeGreaterThan(0.8);
       // keyed pelvis travel and height are at rest at contact (u = 0 and u = 1)
       const d = (f: (u: number) => number, u: number) => (f(u + 1e-4) - f(u - 1e-4)) / 2e-4;

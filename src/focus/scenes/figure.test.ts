@@ -38,8 +38,8 @@ describe('proportions (§3.1)', () => {
 describe('the hold (key) pose (§3.6)', () => {
   const path = line(22);
   const { pose, centre } = solveHoldStatic(path, 5);
-  it('lean 20 ± 2°, front knee 90 ± 8°, rear knee ≥ 165°, elbows locked ≥ 165°', () => {
-    expect(Math.abs(deg(pose.lean) - 20)).toBeLessThanOrEqual(2);
+  it('lean 16 ± 2° (raised from 20° for an upright read, review U10), front knee 90 ± 8°, rear knee ≥ 165°, elbows locked ≥ 165°', () => {
+    expect(Math.abs(deg(pose.lean) - 16)).toBeLessThanOrEqual(2);
     expect(Math.abs(interior(pose.legs[0]) - 90)).toBeLessThanOrEqual(8);
     expect(interior(pose.legs[1])).toBeGreaterThanOrEqual(165);
     for (const a of pose.arms) expect(interior(a)).toBeGreaterThanOrEqual(165);

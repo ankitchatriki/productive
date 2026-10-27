@@ -5,7 +5,7 @@ import { mulberry32, noise1, smoothstep } from './noise';
 import type { V } from './path';
 import type { Trail } from './trail';
 import {
-  ARM_CHAIN, DEG, FRONT_FOOT, h0, LEG_CHAIN, LEG_MAX, REAR_FOOT, RIG, armIK, boulderSFor, cosRatio, footAt, headFrom, hipCeiling, lean0, legIK,
+  ARM_CHAIN, DEG, FRONT_FOOT, HAND_FAR, HAND_NEAR, REAR_HEEL, farShoulder, stoneDistance, h0, LEG_CHAIN, LEG_MAX, REAR_FOOT, RIG, armIK, boulderSFor, cosRatio, footAt, headFrom, hipCeiling, lean0, legIK,
   type FootPose, type Limb, type Pose,
 } from './rig';
 
@@ -41,14 +41,14 @@ export function keyCurve(xs: number[], ys: number[]): (x: number) => number {
 const U = [0, 0.10, 0.20, 0.45, 0.68, 0.80, 0.90, 1.0];
 export const KEY = {
   travel: keyCurve(U, [0, 0.03, 0.12, 0.55, 0.85, 0.95, 0.985, 1]),
-  hipDy: keyCurve(U, [0, -0.008, -0.008, 0.014, 0.004, -0.004, -0.020, 0]),
+  hipDy: keyCurve(U, [0, -0.008, -0.008, 0.014, 0.006, 0.0, -0.024, 0]),
   lean: keyCurve(U, [0, 1, 3, 1, 0, -1, -1.5, 0]),
   pitch: keyCurve(U, [0, -1, -3, -1, 0, 1, 2, 0]),
   drive: keyCurve(U, [0, 0.5, 1, 0.3, 0, 0, 0, 0]),
   swingThigh: keyCurve(U, [-24, -25, -27, 15, 42, 46, 45, 45]),
   swingKnee: keyCurve(U, [172, 174, 176, 85, 100, 90, 88, 92]),
-  swingPitch: keyCurve(U, [25, 34, 48, -15, -5, 0, 0, 0]),
-  stanceHeel: keyCurve([0, 0.45, 0.68, 0.8, 0.9, 1], [0, 0, 8, 18, 22, 25]),
+  swingPitch: keyCurve(U, [30, 38, 50, -15, -5, 0, 0, 0]),
+  stanceHeel: keyCurve([0, 0.45, 0.68, 0.8, 0.9, 1], [0, 0, 9, 20, 26, 30]),
 };
 
 export const PACE = 0.1333;
@@ -106,7 +106,7 @@ export class Gait {
     this.v = { sigma: sigmaAt(this.thetaF), T: tStepAt(this.thetaF), clear: 1, lean: 0 };
     const k = cosRatio(this.thetaF);
     this.plant(this.front, D + FRONT * k, trail, 0);
-    this.plant((this.front ^ 1) as 0 | 1, D - REAR * k, trail, 25 * DEG);
+    this.plant((this.front ^ 1) as 0 | 1, D - REAR * k, trail, REAR_HEEL * DEG);
     this.hist = [];
     this.lastPelvisS = D;
     this.vel = 0; this.velPrev = 0; this.accF = 0;
@@ -172,7 +172,7 @@ export class Gait {
           const swing = (this.front ^ 1) as 0 | 1;
           const k = cosRatio(this.thetaF);
           this.plant(swing, this.D + this.v.sigma + FRONT * k, trail, 0);
-          this.feet[this.front].heel = 25 * DEG;
+          this.feet[this.front].heel = REAR_HEEL * DEG;
           this.D += this.v.sigma; this.front = swing; this.u = 0; this.pairLeft--;
           this.events.stepEnd = true;
           this.thetaF = this.footprintSlope(trail, this.D);
@@ -208,7 +208,7 @@ export class Gait {
     const v0 = this.velPrev; this.velPrev = this.vel;
     const acc = dt > 0 ? (this.vel - v0) / dt : 0;
     this.accF += (acc - this.accF) * Math.min(1, dt * 20);
-    const target = Math.min(13, Math.max(0, this.accF) * (5.5 * this.v.T * this.v.T / this.v.sigma)); // elbow give, degrees
+    const target = Math.min(13, Math.max(0, this.accF) * (4.0 * this.v.T * this.v.T / this.v.sigma)); // elbow give, degrees
     const a = -OMEGA_GIVE * OMEGA_GIVE * (this.give - target) - 2 * OMEGA_GIVE * this.giveV;
     this.giveV += a * dt; this.give = Math.max(0, this.give + this.giveV * dt);
     // raw channels for the lagged torso/head
@@ -341,17 +341,18 @@ export class Gait {
     const ua = RIG.upperArm, fa = RIG.foreArm, el = (170 - this.give) * DEG;
     const eGive = Math.sqrt(ua * ua + fa * fa - 2 * ua * fa * Math.cos(el)) / ARM_CHAIN;
     const e = Math.max(0.94, Math.min(eGive, EXT - st.ext));
-    const A = e * ARM_CHAIN + RIG.wristToPalm + R + RIG.palm;
+    const A = stoneDistance(e, R);
     const sB = boulderSFor(trail, shoulder, A, pelvisS + 0.3, pelvisS + 3, R);
     const centre = trail.centreAt(sB, R);
     const dx = centre.x - shoulder.x, dy = centre.y - shoulder.y, dl = Math.hypot(dx, dy) || 1;
     const ux = dx / dl, uy = dy / dl;
     const handAt = (o: number): V => { const ang = Math.atan2(-uy, -ux) + o / R; return { x: centre.x + Math.cos(ang) * (R + RIG.palm), y: centre.y + Math.sin(ang) * (R + RIG.palm) }; };
-    const hands: [V, V] = [handAt(-0.015 - id.regrip), handAt(0.02)];
-    const arms = hands.map((p) => {
+    const hands: [V, V] = [handAt(HAND_NEAR - id.regrip), handAt(HAND_FAR)];
+    const arms = hands.map((p, i) => {
       const nx = (p.x - centre.x) / (R + RIG.palm), ny = (p.y - centre.y) / (R + RIG.palm);
       const tr = { x: nx * st.tremor * 0.5, y: ny * st.tremor * 0.5 };
-      return armIK(shoulder, { x: p.x + nx * RIG.wristToPalm + tr.x, y: p.y + ny * RIG.wristToPalm + tr.y });
+      const wrist = { x: p.x + nx * RIG.wristToPalm + tr.x, y: p.y + ny * RIG.wristToPalm + tr.y };
+      return armIK(i === 1 ? farShoulder(shoulder, wrist) : shoulder, wrist);
     }) as [Limb, Limb];
     const pitch = this.lagged('pitch', 0.15) + st.head + id.look;
     const { head, axis } = headFrom(shoulder, pitch);
