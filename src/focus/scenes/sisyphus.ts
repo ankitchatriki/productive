@@ -6,20 +6,22 @@ import { buildBoulderSprite, buildCloudMass, buildStrip, drawContactArc, drawMoo
 import { camLayout, clampCamX, follow, toScreen, type Cam, type CamLayout } from './camera';
 import { detailsIn, makeTrail, type Trail } from './trail';
 import { M_PER_H, PACE_M } from '../../domain/mountain';
+import { sigmaAt } from './gait';
 import { hash1, mulberry32, noise1, ridged, smoothstep } from './noise';
 import type { V } from './path';
-import { RIG, solveHoldStatic, solveSit, solveStand, type Pose } from './rig';
+import { RIG, holdDForStone, solveSit, stepToStand, type Pose } from './rig';
+import { PREFIX_LEN } from '../../domain/mountain';
 import { Gait } from './gait';
 import { drawFigureArt, type FigureFrame } from './figureArt';
 import { makeChain, solveRest, stepChain, type Chain } from './chain';
 import { wind } from './gait';
 import { birdSchedule, birdsAt, type BirdGroup } from './ambient';
 
-type Mode = 'climb' | 'stand' | 'sit';
-type SeqKind = 'summit' | 'mini' | 'next' | 'standup' | 'fadein' | 'crossfade';
+type Mode = 'climb' | 'summit' | 'stand' | 'sit';
+type SeqKind = 'summit' | 'mini' | 'next';
 interface Seq { kind: SeqKind; t0: number; dur: number }
 
-const SUMMIT_DUR = 6.0, MINI_DUR = 2.4, NEXT_DUR = 3.2, STANDUP_DUR = 1.0, FADEIN_DUR = 0.6, CROSSFADE_DUR = 0.4;
+const SUMMIT_DUR = 6.0, MINI_DUR = 2.4, NEXT_DUR = 3.2, CROSSFADE_DUR = 0.4, STAND_DUR = 1.2;
 const MAX_GRIT = 12;
 const R = RIG.boulderR; // H units
 
@@ -49,15 +51,40 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   const sTarget = () => (climbSet ? (climb.posM - climb.stageStartM) / M_PER_H : progress * (climb.stageLenM / M_PER_H));
   const lenH = () => climb.stageLenM / M_PER_H;
 
-  function ensureTrail() {
+  /** Rebuild the trail when the climb changes; true when a new climb (stage) began. */
+  function ensureTrail(): boolean {
     const key = `${climb.stage}|${climb.stageStartM.toFixed(2)}|${Math.round(climb.stageLenM * 10)}|${climb.fromSummit}`;
-    if (key === trailKey) return;
+    if (key === trailKey) return false;
     const prevStage = trail.geom.spec.stage;
     trail = makeTrail({ stage: climb.stage, startH: climb.stageStartM / M_PER_H, lenH: lenH(), fromSummit: climb.fromSummit });
     trailKey = key;
     chunkCache.clear();
-    if (prevStage !== climb.stage) gait.snap(sTarget(), trail);
+    standCache = null;
+    if (prevStage !== climb.stage) { gait.snap(sTarget(), trail); return true; }
+    return false;
   }
+
+  // ---------- summit / stand state ----------
+  /** Pelvis position (H) whose hold pose puts the stone at rest at the start of the summit ledge. */
+  function standD(): number { return holdDForStone(trail, trail.geom.ledgeStart + 0.1); }
+  interface StandCache { hold: Pose; centre: V; sB: number; rot: number; D: number }
+  let standCache: StandCache | null = null;
+  /** The resting summit tableau (hold pose at standD, stone on the ledge), computed once per climb. */
+  function standState(): StandCache {
+    if (standCache) return standCache;
+    const D = standD();
+    const g2 = new Gait(5);
+    g2.snap(D, trail);
+    const fr = g2.pose(trail);
+    standCache = { hold: fr.pose, centre: fr.centre, sB: fr.sB, rot: fr.rot, D };
+    return standCache;
+  }
+  /** The summit beat's walk: from the climb's end up onto the ledge, then the stand. */
+  let summitWalk: { t0: number; Dend: number; standT0: number | null; hold: Pose | null; centre: V | null; sB: number; rot: number } | null = null;
+  /** The next-climb beat: the stone rolls forward from the previous summit's ledge into the col. */
+  let nextRoll: { sStart: number; resume: boolean } | null = null;
+  let stageAtSummit = -1;
+  let xfadeT0 = -1;
 
   // ---------- camera ----------
   let lay: CamLayout = camLayout(800, 600);
@@ -146,8 +173,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   function skyState(t: number): SkyState {
     const moonPath = (q: number): V => ({ x: (0.08 + 0.5 * q) * w, y: (0.30 - 0.18 * Math.sin(Math.PI * q)) * h });
     if (phase === 'complete') {
-      const st = seq && (seq.kind === 'summit' || seq.kind === 'crossfade') ? Math.min(SUMMIT_DUR, t - seq.t0) : SUMMIT_DUR;
-      const k = seq?.kind === 'crossfade' ? 1 : smoothstep(1.0, 4.0, st);
+      const st = seq && seq.kind === 'summit' ? Math.min(SUMMIT_DUR, t - seq.t0) : SUMMIT_DUR;
+      const k = smoothstep(1.0, 4.0, st);
       let s = artStop(0.86 + 0.14 * k);
       const night = Math.min(1, progress * 6);
       if (night > 0) s = mixStop(s, NIGHT, night);
@@ -160,7 +187,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       return { stop: NIGHT, sun: null, sunRing: 1, starVis: 1, moon: moonPath(Math.min(1, progress)), twinkle: !reduced, band: mixOk(NIGHT.band, PREDAWN_BAND, pre) };
     }
     let p = progress;
-    if (seq && seq.kind === 'next') p = 0.0 + 0.0 * p;
+    if (seq && seq.kind === 'next') p = 0;
     let s = artStop(0.86 * Math.round(p * 200) / 200); // palette steps (caches rebuild staged, not every frame)
     if (seq && seq.kind === 'next') {
       const k = smoothstep(1.0, 2.6, t - seq.t0);
@@ -196,6 +223,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     return Math.max(0, best + L.amp * 0.06 * (ridged(u * 3 + L.seed) - 0.5));
   }
 
+  /** The range cap ahead of the stone applies while tracking (not in the wide summit / next-climb shots). */
+  const capOn = () => renderCam.zoom > 0.99;
   function layerOffset(i: number): number { return -LAYERS[i].f * cam.pos.x * lay.Hpx; }
   function layerTop(i: number, altK: number): number { return (LAYERS[i].baseY + LAYERS[i].k * altK) * h; }
 
@@ -209,7 +238,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const band = (L.amp * 1.25 + 0.04) * h; // the strip holds only the peaks; below it is a plain fillRect
     const base = band - 0.02 * h;            // skyline zero row inside the strip
     // Clarity: ahead of the stone, ranges stay below a 16° line through the anchor (never above the slope's horizon).
-    const capY = (X: number) => (X > lay.anchor.x + px(1.2) ? lay.anchor.y - (X - lay.anchor.x) * Math.tan((16 * Math.PI) / 180) + 0.04 * h : -1e9);
+    const capY = (X: number) => (capOn() && X > lay.anchor.x + px(1.2) ? lay.anchor.y - (X - lay.anchor.x) * Math.tan((16 * Math.PI) / 180) + 0.04 * h : -1e9);
     const top0 = layerTop(i, altNow);
     const strip = buildStrip(2 * w, band, scale, stripColour(i), (x) => {
       const X = x - 0.5 * w;
@@ -217,7 +246,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       return Math.max(yScreen, capY(X)) - top0 + base;
     });
     strips[i].canvas = strip; strips[i].offAtBuild = off; strips[i].uStart = uStart; strips[i].band = band;
-    strips[i].key = `${stripColour(i)}|${Math.round(top0)}`;
+    strips[i].key = `${stripColour(i)}|${Math.round(top0)}|${capOn()}`;
   }
 
   function drawStrip(g: CanvasRenderingContext2D, i: number, altK: number) {
@@ -320,8 +349,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
 
   // ---------- summit cairn ----------
-  function drawCairn(g: CanvasRenderingContext2D, reached: boolean) {
-    const base = trail.at(trail.geom.ledgeEnd - 0.25);
+  function drawCairn(g: CanvasRenderingContext2D, s: number, reached: boolean) {
+    const base = trail.at(s);
+    const sx = S(base).x;
+    if (sx < -px(0.5) || sx > w + px(0.5)) return;
     let y = 0;
     const widths = [0.22, 0.16, 0.10];
     widths.forEach((wd, i) => {
@@ -398,11 +429,29 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   // ---------- sequences ----------
   function startSeq(kind: SeqKind, t: number) {
-    const dur = kind === 'summit' ? SUMMIT_DUR : kind === 'mini' ? MINI_DUR : kind === 'next' ? NEXT_DUR : kind === 'standup' ? STANDUP_DUR : kind === 'fadein' ? FADEIN_DUR : CROSSFADE_DUR;
+    const dur = kind === 'summit' ? SUMMIT_DUR : kind === 'mini' ? MINI_DUR : NEXT_DUR;
     seq = { kind, t0: t, dur };
     if (kind === 'next') nextFrom = lastSky ? lastSky.stop : null;
-    if (reduced && kind !== 'crossfade') seq = null;
+    if (reduced) seq = null;
     ensureLoop();
+  }
+
+  /** A 400 ms cross-fade from the current frame (a cut that never pops). */
+  function crossfade(t: number) {
+    if (!mounted || !canvas || stats.frames === 0) return;
+    takeSnapshot();
+    xfadeT0 = t;
+    ensureLoop();
+  }
+
+  /** Start the next climb's beat (or simply resume climbing when the climb did not change). */
+  function beginNext(t: number, resume: boolean) {
+    mode = 'climb';
+    summitWalk = null;
+    gait.snap(sTarget(), trail);
+    chains = null;
+    nextRoll = resume ? { sStart: 0, resume: true } : { sStart: climb.fromSummit ? -PREFIX_LEN + 0.75 : -2.5, resume: false };
+    if (!reduced) { if (!resume) crossfade(t); startSeq('next', t); }
   }
 
   // ---------- frame ----------
@@ -411,8 +460,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   /** Summit framing: zoom 0.62 (portrait 0.72) with the ledge at (0.55 w, 0.58 h) (portrait (0.45 w, 0.62 h)). */
   function summitFrame(): { pos: V; anchor: V; zoom: number } {
-    const ledge = trail.at(trail.geom.ledgeStart + 0.8);
-    return { pos: ledge, anchor: lay.landscape ? { x: 0.55 * w, y: 0.58 * h } : { x: 0.45 * w, y: 0.62 * h }, zoom: lay.landscape ? 0.62 : 0.72 };
+    // portrait: frame the stone and the standing figure (the back side runs off to the right)
+    const ledge = trail.at(trail.geom.ledgeStart + (lay.landscape ? 0.8 : 0.1));
+    return { pos: ledge, anchor: lay.landscape ? { x: 0.42 * w, y: 0.58 * h } : { x: 0.58 * w, y: 0.58 * h }, zoom: lay.landscape ? 0.62 : 0.72 };
   }
 
   function updateCamera(t: number, dt: number, target: V) {
@@ -422,17 +472,21 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       zoomK = seq?.kind === 'summit' ? smoothstep(0.5, 4.0, t - seq.t0) : 1;
       if (reduced) zoomK = 1;
     }
-    if (seq?.kind === 'next') zoomK = 1 - smoothstep(1.0, 2.6, t - seq.t0);
+    let from = sf;
+    if (seq?.kind === 'next') {
+      zoomK = 1 - smoothstep(1.0, 2.6, t - seq.t0);
+      if (nextRoll && !nextRoll.resume) from = { pos: trail.at(nextRoll.sStart * 0.55), anchor: { x: 0.5 * w, y: (lay.landscape ? 0.55 : 0.6) * h }, zoom: lay.landscape ? 0.62 : 0.72 };
+    }
     const ez = zoomK * zoomK * (3 - 2 * zoomK);
     // tracking target with the end clamp (the crest never on screen during a block)
     const crestX = trail.at(trail.geom.crestS - 0.3).x;
     if (!camInit || reduced) { cam.pos = { ...target }; cam.vel = { x: 0, y: 0 }; camInit = true; }
     else follow(cam, target, dt, 2.2);
     const trackPos = { x: clampCamX(cam.pos.x, crestX, w, lay.anchor.x, lay.Hpx), y: cam.pos.y };
-    if (trackPos.x !== cam.pos.x) { cam.pos.x = trackPos.x; cam.vel.x = Math.min(0, cam.vel.x); cam.pos.y = trail.groundY(cam.pos.x); }
+    if (trackPos.x !== cam.pos.x) { cam.pos.x = trackPos.x; cam.vel.x = Math.min(0, cam.vel.x); } // y keeps following: he walks into the frame, not out of its top
     if (ez > 0) {
-      const p = { x: trackPos.x + (sf.pos.x - trackPos.x) * ez, y: trackPos.y + (sf.pos.y - trackPos.y) * ez };
-      renderCam = { pos: p, anchor: { x: lay.anchor.x + (sf.anchor.x - lay.anchor.x) * ez, y: lay.anchor.y + (sf.anchor.y - lay.anchor.y) * ez }, zoom: 1 + (sf.zoom - 1) * ez };
+      const p = { x: trackPos.x + (from.pos.x - trackPos.x) * ez, y: trackPos.y + (from.pos.y - trackPos.y) * ez };
+      renderCam = { pos: p, anchor: { x: lay.anchor.x + (from.anchor.x - lay.anchor.x) * ez, y: lay.anchor.y + (from.anchor.y - lay.anchor.y) * ez }, zoom: 1 + (from.zoom - 1) * ez };
     } else renderCam = { pos: { ...trackPos }, anchor: { ...lay.anchor }, zoom: 1 };
     void t;
   }
@@ -444,32 +498,61 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (seq && t - seq.t0 >= seq.dur) {
       const done = seq.kind;
       seq = null;
-      if (done === 'mini') startSeq('next', t);
+      if (done === 'next') nextRoll = null;
     }
     if (desatK !== desatTarget) { const step = dt / 0.4; desatK = desatTarget > desatK ? Math.min(desatTarget, desatK + step) : Math.max(desatTarget, desatK - step); }
     ambientT += dt * (phase === 'paused' ? 0.25 : 1);
-    ensureTrail();
+    // A new climb while focusing (an open-ended block's hourly summit): the stone rolls on into the next col.
+    if (ensureTrail() && (phase === 'focus' || phase === 'open') && phaseSet && stats.frames > 0) beginNext(t, false);
 
     // Figure state.
     const still = reduced || phase === 'paused';
     let pose: Pose, centre: V, rot: number, sB: number;
     if (mode === 'climb') {
-      if (!still) gait.step(dt, sTarget(), trail, { climbing: !seq && (phase === 'focus' || phase === 'open'), lenH: lenH() });
+      if (!still) gait.step(dt, sTarget(), trail, { climbing: !seq && (phase === 'focus' || phase === 'open'), lenH: lenH(), idles: quality >= 1 });
       else gait.settle(sTarget(), trail, reduced);
       const fr = gait.pose(trail);
       pose = fr.pose; centre = fr.centre; rot = fr.rot; sB = fr.sB;
       if (gait.events.grit) spawnGrit(trail.at(sB), 2 + Math.floor(rng() * 2));
+      if (seq?.kind === 'next' && nextRoll && !nextRoll.resume) {
+        // §5.4: the stone rolls forward off the last summit into the col (s = s0 + ½ g′ t²), turning by distance;
+        // the climber appears behind it in the col as it arrives.
+        const nt = t - seq.t0, kk = Math.min(1, nt / 1.8);
+        const s1 = sB;
+        sB = nextRoll.sStart + (s1 - nextRoll.sStart) * kk * kk;
+        centre = trail.centreAt(sB, R);
+        rot = trail.centreArc(sB, R) / R;
+        if (kk < 1 && rng() < dt * 10) spawnGrit(trail.at(sB - 0.2), 1);
+        pose = { ...pose, alpha: smoothstep(1.75, 2.3, nt) }; // appears once the stone has rolled past into the col
+      }
+    } else if (mode === 'summit' && summitWalk) {
+      // §5.2: heave onto the ledge (quick steps, the stone rolls by distance), then step through and stand.
+      const sw = summitWalk;
+      const st = t - sw.t0;
+      if (sw.standT0 === null) {
+        const D1 = standState().D;
+        const target = sw.Dend + (D1 - sw.Dend) * Math.min(1, Math.max(0, (st - 0.5) / 2.2));
+        gait.step(dt, target, trail, { climbing: false, lenH: lenH(), speed: 2.0, idles: false });
+        const fr = gait.pose(trail);
+        pose = fr.pose; centre = fr.centre; rot = fr.rot; sB = fr.sB;
+        if (gait.events.stepEnd && rng() < 0.6) spawnGrit(trail.at(sB), 1);
+        const arrived = gait.mode === 'hold' && Math.abs(D1 - gait.D) < 0.5 * sigmaAt(trail.angleAt(gait.D));
+        if ((st > 0.8 && arrived) || st > 4.6) { sw.standT0 = t; sw.hold = fr.pose; sw.centre = fr.centre; sw.sB = fr.sB; sw.rot = fr.rot; }
+      } else {
+        centre = sw.centre!; sB = sw.sB; rot = sw.rot;
+        const k = (t - sw.standT0) / STAND_DUR;
+        pose = stepToStand(trail, sw.hold!, centre, Math.min(1, k), 1 + 0.015 * Math.sin(ambientT * 1.85));
+        if (k >= 1) { standCache = { hold: sw.hold!, centre, sB, rot, D: gait.D }; summitWalk = null; mode = 'stand'; }
+      }
     } else {
-      const sStone = trail.geom.ledgeStart + 0.04 + 0.07 + R + 0.25 + 0.6;
-      centre = trail.centreAt(sStone, R);
-      sB = sStone;
-      rot = trail.centreArc(sStone, R) / R;
-      const pelvisX = centre.x - R - 0.25;
-      pose = mode === 'stand' ? solveStand(trail, 1, pelvisX, centre, { sway: 0, breath: 1, handDeg: 150 }) : solveSit(trail, 1, centre, 1);
+      const sc = standState();
+      centre = sc.centre; sB = sc.sB; rot = sc.rot;
+      const breath = 1 + 0.015 * Math.sin(ambientT * 1.85);
+      pose = mode === 'sit' ? solveSit(trail, 1, centre, breath) : stepToStand(trail, sc.hold, centre, 1, breath);
     }
 
     // Camera target: the pelvis ground point without the bob.
-    const targetS = mode === 'climb' ? gait.baseS() : trail.geom.ledgeStart + 0.5;
+    const targetS = mode === 'climb' || (mode === 'summit' && summitWalk?.standT0 === null) ? gait.baseS() : standState().D;
     const tp = trail.at(targetS);
     updateCamera(t, dt, tp);
     cam.anchor = renderCam.anchor; const keepPos = cam.pos; cam.pos = renderCam.pos; cam.zoom = renderCam.zoom;
@@ -489,13 +572,13 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (ss.sun) drawSun(g, ss.sun, 0.055 * h, stop, ss.sunRing);
 
     // Strips: rebuild at most one per frame when out of range or recoloured.
-    cacheBudget = 1;
+    cacheBudget = stats.frames === 0 ? 0 : stats.frames < 12 ? 2 : 1; // first frame: sky, slope, stone, figure only
     for (let i = 0; i < LAYERS.length; i++) {
       const s = strips[i];
       const off = layerOffset(i);
-      const key = `${stripColour(i)}|${Math.round(layerTop(i, altNow))}`;
-      const stale = !s.canvas || Math.abs(off - s.offAtBuild) > 0.12 * w || (s.key !== key && Math.abs(Number(s.key.split('|')[1]) - layerTop(i, altNow)) > 0.03 * h) || s.key.split('|')[0] !== key.split('|')[0];
-      if (stale && (cacheBudget > 0 || !s.canvas)) { buildStripFor(i); cacheBudget--; }
+      const key = `${stripColour(i)}|${Math.round(layerTop(i, altNow))}|${capOn()}`;
+      const stale = !s.canvas || Math.abs(off - s.offAtBuild) > 0.12 * w || (s.key !== key && Math.abs(Number(s.key.split('|')[1]) - layerTop(i, altNow)) > 0.03 * h) || s.key.split('|')[0] !== key.split('|')[0] || s.key.split('|')[2] !== key.split('|')[2];
+      if (stale && cacheBudget > 0) { buildStripFor(i); cacheBudget--; }
     }
     drawStrip(g, 0, altNow);
     drawClouds(g, dt, true);
@@ -504,7 +587,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     drawStrip(g, 2, altNow);
     drawBirds(g, t);
     drawSlope(g, { left: 2 });
-    if (mode !== 'climb' || phase === 'complete' || phase === 'break' || seq?.kind === 'next') drawCairn(g, phase === 'complete' || phase === 'break' || mode !== 'climb');
+    // Cairns only on summits: this climb's (once reached) and, behind the start, the last one's.
+    if (mode !== 'climb' || phase === 'complete' || phase === 'break') drawCairn(g, trail.geom.ledgeEnd - 0.25, true);
+    if (climb.fromSummit) drawCairn(g, -PREFIX_LEN + 1.5 - 0.25, true);
 
     // Boulder + figure.
     drawBoulder(g, centre, rot, sB);
@@ -514,9 +599,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stepGrit(dt);
     drawGrit(g);
 
-    if (seq && seq.kind === 'crossfade' && snapshot) {
-      const k = 1 - Math.min(1, (t - seq.t0) / CROSSFADE_DUR);
-      g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = k; g.drawImage(snapshot, 0, 0); g.globalAlpha = 1;
+    if (xfadeT0 >= 0 && snapshot) {
+      const k = 1 - Math.min(1, (t - xfadeT0) / CROSSFADE_DUR);
+      if (k <= 0) { xfadeT0 = -1; snapshot = null; }
+      else { g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = k; g.drawImage(snapshot, 0, 0); g.globalAlpha = 1; }
     }
     cam.pos = keepPos;
     stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS(); stats.gait = mode === "climb" ? gait.mode : mode;
@@ -528,7 +614,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     for (const c of clouds) {
       if (c.back !== back) continue;
       const key = `${stop.cloudFront}|${stop.cloudBack}|${Math.round(c.mw)}`;
-      if (!c.canvas || (c.key !== key && cacheBudget > 0)) { if (c.canvas) cacheBudget--; c.canvas = buildCloudMass(c.seed, c.mw, c.mh, stop, scale, quality > 0.5); c.key = key; }
+      if ((!c.canvas || c.key !== key) && cacheBudget > 0) { cacheBudget--; c.canvas = buildCloudMass(c.seed, c.mw, c.mh, stop, scale, quality > 0.5); c.key = key; }
+      if (!c.canvas) continue; // staged: appears within the first frames, under the overlay's fade-in
       c.x -= drift * dt;
       const span = w + c.mw * 1.3;
       if (c.x < -c.mw * 1.2) c.x += span;
@@ -565,7 +652,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   // ---------- loop ----------
   function targetFps(): number {
-    if (seq) return 60;
+    if (seq || xfadeT0 >= 0 || mode === 'summit') return 60;
     if (typeof document !== 'undefined' && !document.hasFocus()) return 15;
     return 30;
   }
@@ -581,7 +668,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const a = performance.now();
     sceneFrame(t, dt);
     record(performance.now() - a, t);
-    if (reduced && !seq) return;
+    if (reduced && !seq && xfadeT0 < 0) return;
     raf = requestAnimationFrame(loop);
   }
 
@@ -646,7 +733,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     },
     setProgress(p: number) {
       const q = Math.min(1, Math.max(0, p));
-      if (phase === 'break' && q >= 1 && progress < 1 && mode === 'sit' && phaseSet) { mode = 'stand'; if (!reduced) startSeq('standup', nowS()); }
+      if (phase === 'break' && q >= 1 && progress < 1 && mode === 'sit' && phaseSet) { crossfade(nowS()); mode = 'stand'; if (reduced) drawNow(); }
       progress = q;
     },
     setClimb(c: ClimbInput) {
@@ -661,25 +748,25 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       phaseSet = true;
       phase = next;
       desatTarget = next === 'paused' ? 1 : 0;
+      ensureTrail();
       if (first || opts?.instant) {
-        seq = null;
+        seq = null; summitWalk = null; nextRoll = null;
         mode = next === 'complete' ? 'stand' : next === 'break' ? (progress >= 1 ? 'stand' : 'sit') : 'climb';
         desatK = desatTarget;
         chains = null;
-        if (mode === 'climb') gait.snap(sTarget(), trail);
+        if (mode === 'climb') gait.snap(sTarget(), trail); else stageAtSummit = climb.stage;
       } else if (next === 'complete' && (prev === 'focus' || prev === 'open' || prev === 'paused')) {
-        mode = 'stand';
-        if (reduced) { takeSnapshot(); seq = { kind: 'crossfade', t0: t, dur: CROSSFADE_DUR }; ensureLoop(); }
-        else startSeq('summit', t);
+        stageAtSummit = climb.stage;
+        if (reduced) { crossfade(t); mode = 'stand'; }
+        else { mode = 'summit'; summitWalk = { t0: t, Dend: gait.D, standT0: null, hold: null, centre: null, sB: 0, rot: 0 }; startSeq('summit', t); }
       } else if (next === 'break') {
+        crossfade(t);
+        seq = null; summitWalk = null;
         mode = 'sit';
-        startSeq('fadein', t);
       } else if ((next === 'focus' || next === 'open') && (prev === 'complete' || prev === 'break')) {
-        mode = 'climb';
-        gait.snap(sTarget(), trail);
-        if (!reduced) startSeq('next', t);
-      } else {
-        mode = 'climb';
+        beginNext(t, climb.stage === stageAtSummit);
+      } else if (mode !== 'climb' && (next === 'focus' || next === 'open' || next === 'paused')) {
+        mode = 'climb'; summitWalk = null; gait.snap(sTarget(), trail);
       }
       if (reduced) drawNow(); else ensureLoop();
     },
@@ -696,7 +783,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     },
     setReducedMotion(r: boolean) {
       reduced = r;
-      if (r) { if (raf) cancelAnimationFrame(raf); raf = 0; seq = seq?.kind === 'crossfade' ? seq : null; drawNow(); scheduleReducedRedraw(); }
+      if (r) {
+        if (raf) cancelAnimationFrame(raf); raf = 0;
+        seq = null; nextRoll = null; xfadeT0 = -1;
+        if (mode === 'summit') { summitWalk = null; mode = 'stand'; }
+        drawNow(); scheduleReducedRedraw();
+      }
       else ensureLoop();
     },
     destroy() {
@@ -711,5 +803,5 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       canvas = null; ctx = null;
     },
   };
-  void solveHoldStatic; void noise1; void lastDraw;
+  void noise1; void lastDraw;
 }

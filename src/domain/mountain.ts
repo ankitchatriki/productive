@@ -95,7 +95,7 @@ export interface StageGeom {
 
 /** Integrate the heading into a polyline at 16 samples per H. */
 export function buildStage(spec: StageSpec): StageGeom {
-  const back = spec.fromSummit ? PREFIX_LEN : 4;
+  const back = spec.fromSummit ? PREFIX_LEN + 6 : 4; // room behind the col for the next-climb shot (the ledge runs on flat)
   const s0 = -back, s1 = spec.lenH + END_LEAD + TAIL_TO_COL + BEYOND_LEN;
   const n = Math.ceil((s1 - s0) * SAMPLES_PER_H) + 1;
   const xs = new Float32Array(n), ys = new Float32Array(n);

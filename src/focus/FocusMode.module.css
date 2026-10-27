@@ -166,3 +166,9 @@
 .meander path { fill: none; stroke-linecap: square; stroke-linejoin: miter; vector-effect: non-scaling-stroke; }
 .meanderRest { stroke: #CF9450; stroke-opacity: 0.35; stroke-width: 1.5; }
 .meanderDone { stroke: #F1E4C4; stroke-width: 1.5; }
+
+/* Summit framing pulls the slope down: the readout sits on a cartouche over the sky (ROUND3_ART §2.6). */
+.overlay[data-scene="sisyphus"][data-phase="complete"] .readoutBox,
+.overlay[data-scene="sisyphus"][data-phase="break"] .readoutBox {
+  background: rgba(21, 16, 13, 0.88); border-radius: 6px; padding: 10px 16px;
+}

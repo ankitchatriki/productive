@@ -183,7 +183,7 @@ export function solveHoldStatic(path: SlopePath, sP: number, R = RIG.boulderR): 
 }
 
 /** Standing on the summit ledge with the near hand resting on the stone's upper flank (150°). */
-export function solveStand(path: SlopePath, _H: number, pelvisX: number, bc: V, opts: { sway: number; breath: number; leanDeg?: number; alpha?: number; handDeg?: number; chin?: number }): Pose {
+export function solveStand(path: SlopePath, _H: number, pelvisX: number, bc: V, opts: { sway: number; breath: number; leanDeg?: number; alpha?: number; handDeg?: number; chin?: number; feetX?: [number, number] }): Pose {
   const gy = path.groundY(pelvisX);
   const pelvis = { x: pelvisX + opts.sway, y: gy + 0.505 };
   const lean = (opts.leanDeg ?? 3) * DEG;
@@ -193,8 +193,8 @@ export function solveStand(path: SlopePath, _H: number, pelvisX: number, bc: V, 
   const axis = (8 - 20 * chin) * DEG;
   const head = { x: neckEnd.x + Math.sin(axis) * RIG.head * 0.5, y: neckEnd.y + Math.cos(axis) * RIG.head * 0.5 };
   const g = (x: number) => Math.atan2(path.groundY(x + 0.01) - path.groundY(x - 0.01), 0.02);
-  const fx = [pelvisX + 0.07, pelvisX - 0.05];
-  const feet = fx.map((x) => footAt({ x: x + RIG.heelToBall * 0.4, y: path.groundY(x + RIG.heelToBall * 0.4) }, g(x), 0)) as [FootPose, FootPose];
+  const fx = opts.feetX ?? [pelvisX + 0.07 + RIG.heelToBall * 0.4, pelvisX - 0.05 + RIG.heelToBall * 0.4];
+  const feet = fx.map((x) => footAt({ x, y: path.groundY(x) }, g(x), 0)) as [FootPose, FootPose];
   const legs = feet.map((f) => legIK(pelvis, f.ankle, { x: 1, y: 0 })) as [Limb, Limb];
   const R = RIG.boulderR;
   const a = (opts.handDeg ?? 150) * DEG;
@@ -209,10 +209,15 @@ export function solveStand(path: SlopePath, _H: number, pelvisX: number, bc: V, 
 /** Sitting with the back against the stone, facing downhill (break): thighs 15° up, shins down, forearms on knees. */
 export function solveSit(path: SlopePath, _H: number, bc: V, breath: number, alpha = 1): Pose {
   const R = RIG.boulderR;
-  const px = bc.x - R * 0.92 - 0.05;
+  const lean = 14 * DEG; // leaning back into the stone (+x); faces −x
+  // place the pelvis so the back (shoulder joint + its depth) just touches the stone
+  let px = bc.x - R - 0.1;
+  for (let i = 0; i < 6; i++) {
+    const sh = { x: px + RIG.torso * Math.sin(lean), y: path.groundY(px) + 0.07 + RIG.torso * Math.cos(lean) };
+    px += (Math.hypot(sh.x - bc.x, sh.y - bc.y) - (R + 0.065)) * 0.9;
+  }
   const gy = path.groundY(px);
   const pelvis = { x: px, y: gy + 0.07 };
-  const lean = 14 * DEG; // leaning back into the stone (+x); faces −x
   const shoulder = { x: pelvis.x + RIG.torso * Math.sin(lean), y: pelvis.y + RIG.torso * Math.cos(lean) };
   const axis = -(10 + 8) * DEG;
   const neckEnd = { x: shoulder.x - Math.sin(15 * DEG) * RIG.neck, y: shoulder.y + Math.cos(15 * DEG) * RIG.neck };
@@ -260,4 +265,49 @@ export function interior(l: Limb): number {
   const a = { x: l.root.x - l.joint.x, y: l.root.y - l.joint.y }, b = { x: l.end.x - l.joint.x, y: l.end.y - l.joint.y };
   const c = (a.x * b.x + a.y * b.y) / ((Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y)) || 1);
   return Math.acos(clamp(c, -1, 1)) / DEG;
+}
+
+/**
+ * From the hold to standing beside the stone (§5.2): the front foot stays planted, the rear foot steps through in a
+ * low arc to become the new front foot; the pelvis rises and the lean eases from ~20° to 3°; the near palm slides
+ * around the stone to rest on its upper flank, the far arm drops to hang. k: 0 → 1.
+ */
+export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, breath = 1): Pose {
+  const R = RIG.boulderR;
+  const fi = hold.feet![0].ball.x > hold.feet![1].ball.x ? 0 : 1; // hold's front foot
+  const front = hold.feet![fi].ball, rear = hold.feet![1 - fi].ball;
+  const pelvisX = centre.x - R - 0.25;
+  const newFront = Math.max(front.x + 0.1, pelvisX + 0.12);
+  const feetX: [number, number] = fi === 0 ? [front.x, newFront] : [newFront, front.x];
+  const stand = solveStand(path, 1, pelvisX, centre, { sway: 0, breath, handDeg: 150, feetX });
+  if (k >= 1) return stand;
+  const e = easeInOut(Math.min(1, Math.max(0, k)));
+  const b = blendPose(hold, stand, e);
+  // feet: the planted one stays; the stepping one arcs (lift peaks mid-step), heel rolls flat
+  const g = (x: number) => Math.atan2(path.groundY(x + 0.01) - path.groundY(x - 0.01), 0.02);
+  const ks = Math.min(1, Math.max(0, (k - 0.1) / 0.6)), es = easeInOut(ks);
+  const sx = rear.x + (newFront - rear.x) * es;
+  const lift = 0.05 * Math.sin(Math.PI * ks);
+  const moving = footAt({ x: sx, y: path.groundY(sx) + lift }, g(sx), (1 - es) * 25 * DEG);
+  const planted = footAt(front, g(front.x), 0);
+  const feet = (fi === 0 ? [planted, moving] : [moving, planted]) as [FootPose, FootPose];
+  const legs = feet.map((f) => legIK(b.pelvis, f.ankle, { x: 1, y: 0 })) as [Limb, Limb];
+  // near hand slides around the stone surface from the pushing face to 150°
+  const a0 = Math.atan2(hold.hands![0].y - centre.y, hold.hands![0].x - centre.x);
+  let a1 = 150 * DEG;
+  while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI;
+  while (a0 - a1 > Math.PI) a1 += 2 * Math.PI;
+  const an = a0 + (a1 - a0) * e;
+  const palm = { x: centre.x + Math.cos(an) * (R + RIG.palm), y: centre.y + Math.sin(an) * (R + RIG.palm) };
+  const near = armIK(b.shoulder, { x: palm.x + Math.cos(an) * RIG.wristToPalm, y: palm.y + Math.sin(an) * RIG.wristToPalm });
+  const farEnd = { x: hold.arms[1].end.x + (stand.arms[1].end.x - hold.arms[1].end.x) * e, y: hold.arms[1].end.y + (stand.arms[1].end.y - hold.arms[1].end.y) * e };
+  const far = armIK(b.shoulder, farEnd);
+  return { ...b, feet, legs, arms: [near, far], hands: [palm, farEnd] };
+}
+
+/** Pelvis position whose hold pose rests the stone at `stoneS` (the summit ledge's start), by fixed-point iteration. */
+export function holdDForStone(path: SlopePath, stoneS: number): number {
+  let D = stoneS - 1.0;
+  for (let i = 0; i < 5; i++) D += stoneS - solveHoldStatic(path, D).sB;
+  return D;
 }

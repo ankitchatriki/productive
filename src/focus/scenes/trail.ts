@@ -31,12 +31,12 @@ export function makeTrail(spec: StageSpec): Trail {
     return ys[lo] + (ys[hi] - ys[lo]) * k;
   };
   /** Offset-curve centre: ground + n·R, pushed out of any ground sample closer than R (concave spots). */
-  const centreAt = (s: number, R: number): V => {
+  const centreAt = (s: number, R: number, coarse = false): V => {
     const p = at(s), n = normalAt(s);
     const c = { x: p.x + n.x * R, y: p.y + n.y * R };
-    const span = 1.3 * R;
-    for (let pass = 0; pass < 2; pass++) {
-      for (let d = -span; d <= span; d += 1 / SAMPLES_PER_H) {
+    const span = 1.3 * R, step = coarse ? 2 / SAMPLES_PER_H : 1 / SAMPLES_PER_H;
+    for (let pass = 0; pass < (coarse ? 1 : 2); pass++) {
+      for (let d = -span; d <= span; d += step) {
         const q = at(s + d);
         const dx = c.x - q.x, dy = c.y - q.y, dist = Math.hypot(dx, dy);
         if (dist < R && dist > 1e-9) { c.x = q.x + (dx / dist) * R; c.y = q.y + (dy / dist) * R; }
@@ -51,8 +51,8 @@ export function makeTrail(spec: StageSpec): Trail {
     if (!tab) {
       const n = Math.ceil((g.s1 - g.s0) * 4) + 1;
       tab = new Float32Array(n);
-      let prev = centreAt(g.s0, R);
-      for (let i = 1; i < n; i++) { const c = centreAt(g.s0 + i / 4, R); tab[i] = tab[i - 1] + Math.hypot(c.x - prev.x, c.y - prev.y); prev = c; }
+      let prev = centreAt(g.s0, R, true);
+      for (let i = 1; i < n; i++) { const c = centreAt(g.s0 + i / 4, R, true); tab[i] = tab[i - 1] + Math.hypot(c.x - prev.x, c.y - prev.y); prev = c; }
       arcCache.set(key, tab);
     }
     const f = Math.min(tab.length - 1.000001, Math.max(0, (s - g.s0) * 4));
