@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { LIGHT_STOPS, lightState } from './light';
 
 describe('light model (ROUND3_DESIGN §3.2)', () => {
-  it('lightState is continuous: no channel jumps more than 5% between steps of 0.01', () => {
+  it('lightState is continuous: no channel jumps more than 5% between progress steps of 0.01', () => {
+    // In focus, paletteP = 0.86·p (the 0.86 → 1 range is the time-driven summit beat).
     let prev = lightState(0);
     const span = { rim: 1, rimW: 3, shadowLen: 4, haze: 1, warmth: 2 };
     for (let i = 1; i <= 100; i++) {
-      const cur = lightState(i / 100);
+      const cur = lightState(0.86 * (i / 100));
       for (const c of [0, 1, 2]) {
         expect(Math.abs(cur.key[c] - prev.key[c])).toBeLessThanOrEqual(0.05);
         expect(Math.abs(cur.ambient[c] - prev.ambient[c])).toBeLessThanOrEqual(0.05);
