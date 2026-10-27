@@ -207,9 +207,9 @@ export const DETAIL: DetailLine[] = [
   ...[0.34, 0.42, 0.50].map((t) => D('torso', [[t, 0.46], [t + 0.015, 0.33], [t, 0.20]], 'F', 2)), // ab grid
   D('torso', [[0.20, 0.40], [0.30, 0.14], [0.44, -0.04]], 'C', 2),                // external oblique
   D('torso', [[0.17, 0.46], [0.11, 0.22]], 'C', 1),                               // iliac line
-  ...[0.52, 0.57, 0.62].map((t) => D('torso', [[t, 0.20], [t - 0.03, 0.34]], 'F', 3)), // serratus
-  D('torso', [[0.40, -0.42], [0.62, -0.56], [0.80, -0.55]], 'C', 2),              // latissimus edge
-  D('torso', [[0.30, -0.40], [0.56, -0.45]], 'F', 3),                             // spine groove
+  // (V13: the serratus ticks read as a scratch cluster at 1×; dropped)
+  D('torso', [[0.46, -0.48], [0.64, -0.58], [0.78, -0.56]], 'F', 2),              // latissimus edge (fine, set in from the contour)
+  // (V13: the spine groove doubled the back contour; dropped)
   D('torso', [[0.72, -0.50], [0.80, -0.33], [0.88, -0.43]], 'F', 3),              // shoulder blade
   D('torso', [[0.92, -0.56], [1.0, -0.30]], 'C', 1),                              // trapezius into the neck
   // neck
