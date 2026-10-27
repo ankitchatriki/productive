@@ -23,14 +23,14 @@ export interface RidgeSpec {
 
 export const RIDGES: Record<Layout, RidgeSpec> = {
   landscape: {
-    p0: { x: 0.10, y: 0.12 }, summit: { x: 1.24, y: 0.74 },
+    p0: { x: 0.10, y: 0.12 }, summit: { x: 1.12, y: 0.70 },
     pitchDeg: [[20, 25], [24, 30], [29, 36], [35, 41]], pitchRun: [1.75, 1.0, 0.95, 0.85],
-    benchLen: 0.11, benchDeg: [3, 7], jitterDeg: 3, roughAmp: 0.001, roughWave: 0.1, platformLen: 0.21, filterLen: 0.045, maxDeg: 43,
+    benchLen: 0.11, benchDeg: [3, 7], jitterDeg: 3, roughAmp: 0.001, roughWave: 0.1, platformLen: 0.24, filterLen: 0.045, maxDeg: 43,
   },
   portrait: {
-    p0: { x: 0.0, y: 0.14 }, summit: { x: 0.532, y: 0.494 },
-    pitchDeg: [[26, 31], [30, 37], [36, 43], [41, 47]], pitchRun: [3.0, 1.0, 0.9, 0.8],
-    benchLen: 0.07, benchDeg: [3, 7], jitterDeg: 3, roughAmp: 0.001, roughWave: 0.1, platformLen: 0.2, filterLen: 0.03, maxDeg: 48,
+    p0: { x: -0.10, y: 0.11 }, summit: { x: 0.43, y: 0.45 },
+    pitchDeg: [[26, 31], [30, 37], [36, 43], [41, 47]], pitchRun: [3.6, 1.0, 0.9, 0.8],
+    benchLen: 0.07, benchDeg: [3, 7], jitterDeg: 3, roughAmp: 0.001, roughWave: 0.1, platformLen: 0.235, filterLen: 0.03, maxDeg: 48,
   },
 };
 
@@ -330,33 +330,58 @@ export function snowEdge(x: number, snowline: number): number {
   return snowline + 0.025 * (noise1(x * 9) * 2 - 1) * 0.8 + 0.012 * (noise1(x * 23 + 5) - 0.5) - 0.04 * Math.max(0, ridged(x * 22, 3) - 0.55);
 }
 
-/** Main mountain back side (summit → col → twin peak → serrated arête), world points left to right. */
-export function backSide(layout: Layout, plateauEnd: V, baseY: number, rightX: number): V[] {
-  const summitY = plateauEnd.y;
-  const pts: V[] = [plateauEnd];
-  const H = summitY - baseY;
-  if (layout === 'landscape') {
-    pts.push({ x: plateauEnd.x + 0.018, y: summitY - 0.045 });
-    pts.push({ x: plateauEnd.x + 0.042, y: summitY - 0.115 });              // col
-    pts.push({ x: plateauEnd.x + 0.062, y: summitY - 0.092 });
-    pts.push({ x: plateauEnd.x + 0.088, y: baseY + 0.88 * H });           // twin peak
-    pts.push({ x: plateauEnd.x + 0.112, y: baseY + 0.79 * H });
-    // arête teeth stepping down to the right
-    let x = plateauEnd.x + 0.112, y = baseY + 0.79 * H;
-    for (let t = 0; t < 5; t++) {
-      const up = 0.025 + hash1(t * 3.7 + 1) * 0.025, run = 0.035 + hash1(t * 5.1) * 0.02;
-      pts.push({ x: x + run * 0.35, y: y + up * 0.5 });
-      x += run; y -= 0.05 + hash1(t * 2.3) * 0.025;
-      pts.push({ x, y });
-    }
-    pts.push({ x: Math.max(rightX, x + 0.1), y: baseY + 0.18 * H });
-  } else {
-    pts.push({ x: plateauEnd.x + 0.03, y: summitY - 0.06 });
-    pts.push({ x: plateauEnd.x + 0.06, y: summitY - 0.12 });               // col
-    pts.push({ x: plateauEnd.x + 0.12, y: baseY + 0.88 * H });            // twin (partly off screen)
-    pts.push({ x: Math.max(rightX, plateauEnd.x + 0.3), y: baseY + 0.3 * H });
+/**
+ * The summit massif beyond the ledge (ROUND3 §3.3.1/§3.3.7, review T2): a pointed true summit rising just behind
+ * the ledge where the stone rests, a col, a twin peak at 0.88 of the summit's height, then an irregular seeded
+ * arête of teeth and inset steps down to the right. World points, left to right, starting at the ledge end.
+ */
+export function backSide(layout: Layout, ledgeEnd: V, baseY: number, rightX: number, seed = TERRAIN_SEED): V[] {
+  const r = mulberry32(seed ^ 0x9e37);
+  const E = ledgeEnd;
+  const land = layout === 'landscape';
+  const rise = land ? 0.10 : 0.085;
+  const peak = { x: E.x + (land ? 0.045 : 0.035), y: E.y + rise };
+  const pts: V[] = [E,
+    { x: E.x + 0.008, y: E.y + rise * 0.25 },
+    { x: E.x + (land ? 0.022 : 0.016), y: E.y + rise * 0.62 },
+    { x: peak.x - 0.008, y: peak.y - 0.012 },
+    peak,
+    { x: peak.x + 0.012, y: peak.y - 0.03 },
+  ];
+  const H = peak.y - baseY;
+  const col = { x: peak.x + (land ? 0.045 : 0.03), y: peak.y - (land ? 0.13 : 0.10) };
+  pts.push({ x: col.x - 0.015, y: col.y + 0.035 }, col);
+  const twin = { x: col.x + (land ? 0.055 : 0.032), y: baseY + 0.88 * H };
+  pts.push({ x: twin.x - (land ? 0.025 : 0.016), y: twin.y - 0.05 }, { x: twin.x - 0.008, y: twin.y - 0.012 }, twin, { x: twin.x + 0.01, y: twin.y - 0.035 });
+  // Irregular arête: teeth of varied height and spacing, with the odd inset step.
+  let x = twin.x + (land ? 0.02 : 0.014), y = twin.y - 0.06;
+  pts.push({ x, y });
+  if (!land) {
+    // a close first tooth so the phone frame shows summit, twin and arête
+    pts.push({ x: x + 0.008, y: y + 0.025 }, { x: x + 0.016, y: y - 0.01 });
+    x += 0.016; y -= 0.01;
   }
+  while (x < rightX + 0.05) {
+    const run = 0.025 + r() * 0.06, up = 0.008 + r() * 0.05, down = 0.03 + r() * 0.07;
+    if (r() < 0.3) { x += 0.01 + r() * 0.015; pts.push({ x, y: y - 0.004 }); }   // inset step
+    pts.push({ x: x + run * (0.3 + r() * 0.3), y: y + up });
+    x += run; y = Math.max(baseY + 0.12 * H, y + up - down);
+    pts.push({ x, y });
+  }
+  pts.push({ x: x + 0.1, y: baseY + 0.12 * H });
   return pts;
+}
+
+/** The true summit: the highest point of the massif. */
+export function summitPeak(back: V[]): V {
+  return back.reduce((m, p) => (p.y > m.y ? p : m), back[0]);
+}
+
+/** Indices of local maxima (peaks) of a left-to-right polyline within [x0, x1]. */
+export function localMaxima(pts: V[], x0: number, x1: number): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < pts.length - 1; i++) if (pts[i].x >= x0 && pts[i].x <= x1 && pts[i].y > pts[i - 1].y && pts[i].y >= pts[i + 1].y) out.push(i);
+  return out;
 }
 
 // ---------- Foreground rocks (§3.3, L10) ----------
@@ -381,4 +406,12 @@ export function rockRadius(rock: FgRock, k: number): number {
 export function circleHitsBox(cx: number, cy: number, r: number, b: Box): boolean {
   const nx = Math.max(b.x0, Math.min(cx, b.x1)), ny = Math.max(b.y0, Math.min(cy, b.y1));
   return Math.hypot(nx - cx, ny - cy) < r;
+}
+
+/** Summit ledge layout (review T3): back foot ≥ inset inside the lip, the stone (R + gap) beyond the pelvis. */
+export function summitLayout(path: SlopePath, layout: Layout, H: number, R: number): { pelvisX: number; sStone: number } {
+  const pelvisX = path.spec.p3.x + (layout === 'landscape' ? 0.04 : 0.03) + 0.07 * H;
+  const gap = (layout === 'landscape' ? 0.25 : 0.2) * H;
+  const sStone = 1 + (pelvisX + R + gap - path.spec.p3.x) / (path.length * Math.cos(1.5 * Math.PI / 180));
+  return { pelvisX, sStone };
 }

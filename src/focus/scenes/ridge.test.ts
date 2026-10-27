@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RANGE_LAYERS, RIDGES, backSide, benchProgressMap, buildRidgePath, circleHitsBox, foregroundRocks, monotoneCubic, rangeSkyline, snowEdge, type Box } from './ridge';
+import { RANGE_LAYERS, RIDGES, backSide, localMaxima, summitPeak, benchProgressMap, buildRidgePath, circleHitsBox, foregroundRocks, monotoneCubic, rangeSkyline, snowEdge, type Box } from './ridge';
 import { FIGURE_H, layoutFor, startS, summitS } from './path';
 import { BODY } from './rig';
 
@@ -66,14 +66,16 @@ describe('neighbouring range (§3.3.4)', () => {
     it(`${w}×${hgt}: the true summit is the highest skyline point`, () => {
       const l = layoutFor(w, hgt);
       const path = buildRidgePath(RIDGES[l.layout]);
-      const summit = path.spec.plateauEnd;
+      const back = backSide(l.layout, path.spec.plateauEnd, path.spec.p0.y, (w - l.ox) / l.S);
+      const summit = summitPeak(back);
       const frame = { horizonY: HORIZON_Y, summit, baseY: path.spec.p0.y };
       const x0 = -l.ox / l.S, x1 = (w - l.ox) / l.S;
       for (const layer of RANGE_LAYERS) for (let i = 0; i <= 400; i++) {
         const x = x0 + ((x1 - x0) * i) / 400;
         expect(rangeSkyline(layer, x, frame).y).toBeLessThanOrEqual(summit.y - 0.02 + 1e-9);
       }
-      for (const p of backSide(l.layout, summit, path.spec.p0.y, x1)) expect(p.y).toBeLessThanOrEqual(summit.y + 1e-9);
+      for (const p of back) expect(p.y).toBeLessThanOrEqual(summit.y + 1e-9);
+      for (let i = 0; i <= 200; i++) expect(path.at(i / 200 * path.plateauEndS).y).toBeLessThan(summit.y);
     });
   }
   it('deterministic and seamless across world cells', () => {
@@ -83,6 +85,38 @@ describe('neighbouring range (§3.3.4)', () => {
   });
   it('snow edge stays near the snowline', () => {
     for (let i = 0; i < 100; i++) { const e = snowEdge(i / 10, 0.62); expect(e).toBeGreaterThan(0.55); expect(e).toBeLessThan(0.66); }
+  });
+});
+
+describe('main-ridge silhouette (review T2)', () => {
+  const viewports: Array<[number, number]> = [[1280, 800], [1440, 900], [1920, 1080], [390, 844]];
+  for (const [w, h] of viewports) {
+    it(`${w}×${h}: at least 3 distinct peaks on screen, the true summit a real peak, the twin on screen`, () => {
+      const l = layoutFor(w, h);
+      const path = buildRidgePath(RIDGES[l.layout]);
+      const x0 = -l.ox / l.S, x1 = (w - l.ox) / l.S;
+      const back = backSide(l.layout, path.spec.plateauEnd, path.spec.p0.y, x1);
+      const peaks = localMaxima(back, x0, x1 - 0.005);
+      expect(peaks.length).toBeGreaterThanOrEqual(3);
+      const top = summitPeak(back);
+      expect(top.x).toBeGreaterThan(path.spec.plateauEnd.x);           // a peak behind the ledge, not the platform edge
+      expect(top.y - path.spec.plateauEnd.y).toBeGreaterThan(0.06);
+      expect(top.x).toBeLessThan(x1);
+    });
+  }
+});
+
+describe('arête on ultrawide (review T2)', () => {
+  it('teeth are irregular: varied spacing and heights, not a ruler-drawn sawtooth', () => {
+    const l = layoutFor(3440, 1440);
+    const path = buildRidgePath(RIDGES.landscape);
+    const back = backSide('landscape', path.spec.plateauEnd, path.spec.p0.y, (3440 - l.ox) / l.S);
+    const pk = localMaxima(back, path.spec.plateauEnd.x, 99).map((i) => back[i]);
+    expect(pk.length).toBeGreaterThanOrEqual(5);
+    const gaps = pk.slice(1).map((p, i) => p.x - pk[i].x);
+    const drops = pk.slice(1).map((p, i) => pk[i].y - p.y);
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeGreaterThan(0.02);
+    expect(Math.max(...drops) - Math.min(...drops)).toBeGreaterThan(0.02);
   });
 });
 

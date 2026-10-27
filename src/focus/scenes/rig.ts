@@ -232,7 +232,7 @@ export function solvePush(p: PushParams, offset?: number): { pose: Pose; boulder
 }
 
 /** Standing on the plateau with a hand resting on top of the stone (summit). */
-export function solveStand(path: SlopePath, H: number, pelvisX: number, bc: V, opts: { sway: number; breath: number; leanDeg?: number; alpha?: number; handOnStone?: boolean }): Pose {
+export function solveStand(path: SlopePath, H: number, pelvisX: number, bc: V, opts: { sway: number; breath: number; leanDeg?: number; alpha?: number; handOnStone?: boolean; handDeg?: number }): Pose {
   const gy = path.groundY(pelvisX);
   const pelvis = { x: pelvisX + opts.sway * H, y: gy + 0.47 * H };
   const lean = (opts.leanDeg ?? 4) * DEG;
@@ -247,7 +247,7 @@ export function solveStand(path: SlopePath, H: number, pelvisX: number, bc: V, o
   const R = BODY.boulderR * H;
   const nearT = opts.handOnStone === false
     ? { x: shoulder.x + 0.05 * H, y: shoulder.y - 0.3 * H }
-    : handTarget(bc, R, H, 120);
+    : handTarget(bc, R, H, opts.handDeg ?? 120);
   const nearHand = reach(shoulder, nearT, BODY.upperArm * H, BODY.foreArm * H);
   const nearElbow = twoBoneIK(shoulder, nearHand, BODY.upperArm * H, BODY.foreArm * H, (c1, c2) => (c1.y <= c2.y ? c1 : c2));
   const hang = { x: shoulder.x - Math.sin(8 * DEG) * ARM() * H * 0.98, y: shoulder.y - Math.cos(8 * DEG) * ARM() * H * 0.98 };

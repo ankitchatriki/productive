@@ -3,7 +3,7 @@
 import type { SceneEngine, SceneInitOptions, ScenePhase } from './types';
 import { NIGHT, PREDAWN, css, darken, desaturate, gradePalette, hex, lighten, mixPalette, mixRGB, palette, type Palette, type RGB } from './palette';
 import { FIGURE_H, layoutFor, startS, summitS, sunPosition, type Layout, type SlopePath, type V } from './path';
-import { RANGE_LAYERS, RIDGES, backSide, benchProgressMap, buildRidgePath, foregroundRocks, rangeSkyline, rockRadius, snowEdge, type RidgePath } from './ridge';
+import { RANGE_LAYERS, RIDGES, backSide, summitLayout, summitPeak, benchProgressMap, buildRidgePath, foregroundRocks, rangeSkyline, rockRadius, snowEdge, type RidgePath } from './ridge';
 import {
   BODY, DEG, blendPose, boulderCentre, easeInOut, easeOut, hipH, leanDeg, pelvisOffset, solvePush, solveSit, solveStand,
   surge as surgeCurve, type Limb, type Pose,
@@ -36,6 +36,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let path: RidgePath = buildRidgePath(RIDGES.landscape);
   let sMap: (p: number) => number = (p) => p;
   let mountainBody: Path2D | null = null;
+  let peak: V = { x: 1.4, y: 0.8 };
   let benchesLit = 0;
   const isRidge = (pth: SlopePath): pth is RidgePath => 'benches' in pth;
   // Milestone beat at each false summit (ROUND3 §3.3.2) and the look-ahead lean filter.
@@ -89,7 +90,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   const s0 = () => startS(Hw, Rw, path.length);
   const s1 = () => summitS(Rw, path.length);
   /** Boulder rest point on the plateau: far enough from the lip that the figure's back foot is on top (review S4/S5). */
-  const plateauMid = () => Math.min(path.plateauEndS - Rw / path.length, 1 + (0.02 + 0.2 * Hw + Rw) / path.length);
+  /** Summit ledge layout (review T3): the figure's back foot ≥ 0.04 inside the lip, the stone R + 0.25H beyond its pelvis. */
+  const standPelvisX = () => summitLayout(path, layout, Hw, Rw).pelvisX;
+  const plateauMid = () => summitLayout(path, layout, Hw, Rw).sStone;
   const nowS = () => performance.now() / 1000;
   /** Arc-length fraction of the ground point at world x (binary search; x increases along the path). */
   const sAtX = (x: number) => {
@@ -106,6 +109,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     Hw = FIGURE_H[layout];
     Rw = BODY.boulderR * Hw;
     sMap = benchProgressMap(path, startS(Hw, Rw, path.length), summitS(Rw, path.length));
+    peak = summitPeak(backSide(layout, path.spec.plateauEnd, path.spec.p0.y, (w - ox) / S + 0.05));
     leanAhead = 0;
     meanSlope = path.headings.reduce((a, b) => a + b, 0) / path.headings.length;
   }
@@ -134,7 +138,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   function skyState(t: number): SkyState {
     const horizonPx = h - oy - HORIZON_Y * S;
-    const summitPx = toS(path.at(1));
+    const summitPx = toS(peak);
     const moonPath = (q: number): V => {
       const A = { x: 0.08 * w, y: horizonPx }, C = { x: 0.32 * w, y: 0.12 * h }, B = { x: 0.62 * w, y: 0.18 * h };
       const u = 1 - q; return { x: u * u * A.x + 2 * u * q * C.x + q * q * B.x, y: u * u * A.y + 2 * u * q * C.y + q * q * B.y };
@@ -190,12 +194,15 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     }
   }
 
+  /** Lumpy outline radius at stone-frame angle a: never larger than R (so the drawn stone can be dropped onto its contact). */
+  const outlineK = (a: number) => 1 - 0.07 * noise2(Math.cos(a) * 1.5 + 4, Math.sin(a) * 1.5 + 4);
+
   function buildBoulderShape() {
     const R = Rw * S;
     const p = new Path2D();
     for (let i = 0; i <= 48; i++) {
       const a = (i / 48) * Math.PI * 2;
-      const r = R * (1 + 0.035 * (noise2(Math.cos(a) * 1.5 + 4, Math.sin(a) * 1.5 + 4) * 2 - 1) * 1.6);
+      const r = R * outlineK(a);
       const x = Math.cos(a) * r, y = Math.sin(a) * r;
       if (i === 0) p.moveTo(x, y); else p.lineTo(x, y);
     }
@@ -217,11 +224,14 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     // Value-noise mottling, two octaves (±14% luminance).
     for (const [cellK, amp] of [[5, 0.10], [12, 0.06]] as const) {
       const cell = R / cellK;
+      // Review T5: soften the noise cells so the stone isn't a checkerboard.
+      g.filter = `blur(${(cell * res * 0.7).toFixed(1)}px)`;
       for (let y = -R; y < R; y += cell) for (let x = -R; x < R; x += cell) {
         const n = noise2(x / cell + cellK * 3.1, y / cell + cellK * 1.7) * 2 - 1;
         g.fillStyle = n > 0 ? `rgba(255,240,220,${n * amp})` : `rgba(10,6,4,${-n * amp * 1.3})`;
         g.fillRect(x, y, cell + 0.6, cell + 0.6);
       }
+      g.filter = 'none';
     }
     // Pits
     const pr = mulberry32(77);
@@ -409,7 +419,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   const scrY = (wy: number) => h - oy - wy * S;
 
   function rangeFrame() {
-    return { horizonY: HORIZON_Y, summit: path.spec.plateauEnd, baseY: path.spec.p0.y };
+    return { horizonY: HORIZON_Y, summit: peak, baseY: path.spec.p0.y };
   }
 
   function drawRange(l: CanvasRenderingContext2D, ss: SkyState) {
@@ -477,6 +487,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const leftX = worldX(0) - 0.05;
     const rightX = worldX(w) + 0.05;
     const back = backSide(layout, sp.plateauEnd, sp.p0.y, rightX);
+    peak = summitPeak(back);
     const body = new Path2D();
     body.moveTo(-2, h + 2);
     // Left foothill rubble, not a ruler line.
@@ -572,17 +583,24 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       }
     }
     // Back face: one step darker, meeting the climb face along a soft ridge from the summit down to the right.
-    const sumS = toS(sp.plateauEnd);
+    const sumS = toS(peak);
     const footR = toS({ x: (back[back.length - 1]?.x ?? sp.plateauEnd.x + 0.4), y: sp.p0.y - 0.05 });
+    // Shadowed east flank of the summit only (peak → col → down to the base); the twin and the arête stay lit.
+    const iPeak = back.findIndex((p) => p === peak || (p.x === peak.x && p.y === peak.y));
+    const colPt = back.slice(iPeak + 1).reduce((m, p, i) => (i < 4 && p.y < m.y ? p : m), back[Math.min(back.length - 1, iPeak + 1)]);
+    void footR;
     const bf = new Path2D();
-    bf.moveTo(sumS.x - 2, sumS.y - 4);
-    for (const p of back) { const v = toS(p); bf.lineTo(v.x, v.y - 4); }
-    bf.lineTo(w + 4, h + 4); bf.lineTo(footR.x - 0.25 * S, h + 4);
-    bf.quadraticCurveTo(sumS.x + 0.05 * S, sumS.y + 0.35 * S, sumS.x - 2, sumS.y - 4);
+    bf.moveTo(sumS.x, sumS.y - 3);
+    for (const p of back) { if (p.x <= peak.x || p.x > colPt.x) continue; const v = toS(p); bf.lineTo(v.x, v.y - 3); }
+    const cS = toS(colPt);
+    bf.quadraticCurveTo(cS.x + 0.01 * S, cS.y + 0.12 * S, cS.x + 0.03 * S, cS.y + 0.24 * S);
+    bf.lineTo(sumS.x - 0.02 * S, cS.y + 0.24 * S);
+    bf.quadraticCurveTo(sumS.x - 0.005 * S, sumS.y + 0.12 * S, sumS.x, sumS.y - 3);
     bf.closePath();
-    const bg = l.createLinearGradient(sumS.x, sumS.y, sumS.x + 0.2 * S, sumS.y + 0.5 * S);
-    bg.addColorStop(0, css(mixRGB(pal.rockShade, L.ambient, 0.2), 0.8));
-    bg.addColorStop(1, css(darken(pal.rockShade, 0.25), 0.9));
+    const bg = l.createLinearGradient(sumS.x, sumS.y, sumS.x, cS.y + 0.24 * S);
+    bg.addColorStop(0, css(mixRGB(pal.rockShade, L.ambient, 0.2), 0.75));
+    bg.addColorStop(0.6, css(darken(pal.rockShade, 0.2), 0.45));
+    bg.addColorStop(1, css(darken(pal.rockShade, 0.25), 0));
     l.fillStyle = bg; l.fill(bf);
     l.restore();
   }
@@ -689,16 +707,33 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     l.save(); l.clip(body);
     const snowline = SNOWLINE[layout];
     const lit = mixRGB(hex('#efe6da'), ss.light.key, 0.35), shade = mixRGB(hex('#c9c3cf'), ss.light.ambient, 0.45);
-    const x0 = sp.plateauEnd.x + 0.045;
-    for (let px = Math.floor(toS({ x: x0, y: 0 }).x); px < w; px += 2) {
+    const x0 = peak.x + 0.03;
+    // Snow caps as polygons over contiguous runs (smooth edges), lit on the summit side of each peak.
+    let run: Array<{ x: number; top: number; bot: number }> = [];
+    let runLit = true;
+    const flushSnow = () => {
+      if (run.length > 1) {
+        l.fillStyle = css(runLit ? lit : shade, 0.9);
+        l.beginPath();
+        run.forEach((c, k) => (k ? l.lineTo(c.x, c.top) : l.moveTo(c.x, c.top)));
+        for (let k = run.length - 1; k >= 0; k--) l.lineTo(run[k].x, run[k].bot);
+        l.closePath(); l.fill();
+      }
+      run = [];
+    };
+    const peaksX = back.filter((p, i) => i > 0 && i < back.length - 1 && p.y > back[i - 1].y && p.y >= back[i + 1].y).map((p) => p.x);
+    for (let px = Math.floor(toS({ x: x0, y: 0 }).x); px <= w + 2; px += 2) {
       const wx = worldX(px);
       const ty = backTopAt(back, wx);
-      if (ty < 0) continue;
-      const edge = snowEdge(wx + 7.7, snowline);
-      if (ty <= edge) continue;
-      l.fillStyle = css(wx < back[4]?.x ? shade : lit, 0.9);
-      l.fillRect(px, scrY(ty) - 1, 2.5, (ty - edge) * S + 1);
+      const edge = ty < 0 ? 1e9 : Math.max(snowEdge(wx + 7.7, snowline), ty - 0.035 - 0.012 * noise1(wx * 40));
+      if (ty <= edge) { flushSnow(); continue; }
+      const near = peaksX.reduce((m, x) => (Math.abs(x - wx) < Math.abs(m - wx) ? x : m), peaksX[0] ?? wx);
+      const litSide = wx <= near;
+      if (run.length && litSide !== runLit) { const last = run[run.length - 1]; flushSnow(); run.push(last); }
+      runLit = litSide;
+      run.push({ x: px, top: scrY(ty), bot: scrY(edge) });
     }
+    flushSnow();
     l.restore();
     // Lit crest along the climb: brighter toward golden hour (the "nearly there" cue).
     l.strokeStyle = css(ss.light.key, (0.25 + 0.4 * ss.light.rim) * (1 - desatK * 0.5));
@@ -713,7 +748,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const n = path.normalAt(b.sMid);
       drawCairn(l, toS({ x: g.x - n.x * 0.004, y: g.y - n.y * 0.004 }), 0.55, benchesLit > k ? 1 : 0, ss.light);
     });
-    drawCairn(l, toS({ x: sp.plateauEnd.x - 0.01, y: sp.plateauEnd.y }), 1, 0, ss.light);
+    drawCairn(l, toS({ x: peak.x, y: peak.y - 0.004 }), 0.8, 0, ss.light);
   }
 
   function maybeRebuild(t: number, ss: SkyState) {
@@ -1057,6 +1092,16 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const R = Rw * S;
     const c = toS(centre);
     c.y -= lift;
+    // Review T1: the lumpy outline is inset from R, so drop the stone along the contact normal until its
+    // outline touches the ground at the contact angle (no gap over the AO).
+    if (lift === 0) {
+      const sC = sAtX(centre.x);
+      const n = path.normalAt(Math.max(-0.2, Math.min(1.2, sC)));
+      const down = Math.atan2(n.y, -n.x); // screen angle pointing from the centre to the ground (y flipped)
+      const aLocal = down - rot;
+      const gap = R * (1 - outlineK(aLocal));
+      c.x += Math.cos(down) * gap; c.y += Math.sin(down) * gap;
+    }
     g.save();
     g.translate(c.x, c.y);
     g.rotate(rot);
@@ -1085,13 +1130,18 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     g.fillStyle = bg; g.fillRect(-R * 1.2, -R * 1.2, R * 2.4, R * 2.4);
     // Rim on the sun side: the outline minus itself shifted away from the sun.
     if (sunOn && quality >= 0.75) {
+      // Review T4: build the rim ring in the stone's own (rotated) frame, so the hole matches the silhouette.
       const rw = light.rimW;
-      g.translate(-L.x * rw, -L.y * rw);
+      g.save();
+      g.rotate(rot);
+      const lr = { x: L.x * Math.cos(-rot) - L.y * Math.sin(-rot), y: L.x * Math.sin(-rot) + L.y * Math.cos(-rot) };
+      g.translate(-lr.x * rw, -lr.y * rw);
       g.fillStyle = css(light.key, light.rim * 0.8 * ss!.sunVis);
       const ring = new Path2D();
       ring.rect(-R * 1.5, -R * 1.5, R * 3, R * 3);
       ring.addPath(boulderOutline);
       g.fill(ring, 'evenodd');
+      g.restore();
     }
     g.restore();
   }
@@ -1349,7 +1399,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       sway = st < 1.2 ? 0.01 * Math.sin((st / 1.2) * Math.PI) : 0;
     }
     const breath = 1 + (reduced ? 0 : 0.012 * Math.sin((2 * Math.PI * t) / 3.2)) + 0.03 * deep;
-    const pose = solveStand(path, Hw, bc.x - Rw - 0.14 * Hw, bc, { sway, breath, alpha });
+    const pose = solveStand(path, Hw, standPelvisX(), bc, { sway, breath, alpha, handDeg: 150 });
     if (chin > 0) {
       // Chin lifts toward the sun: the head tips back a little (appeal: he looks out, not down).
       const a = -12 * DEG * chin, dx = pose.head.x - pose.shoulder.x, dy = pose.head.y - pose.shoulder.y;
