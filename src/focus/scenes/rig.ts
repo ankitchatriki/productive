@@ -119,6 +119,29 @@ export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {
   return { head: { x: neckEnd.x + Math.sin(a) * RIG.head * 0.5, y: neckEnd.y + Math.cos(a) * RIG.head * 0.5 }, axis: a };
 }
 
+/**
+ * V4: a palm resting on the stone at angle `a` (rad, about the centre) that the arm can actually reach from the
+ * shoulder: if the wrist would be out of reach, the palm slides around the stone toward the shoulder (bisection)
+ * until it is — the hand never floats off its wrist.
+ */
+export function reachablePalm(centre: V, shoulder: V, a: number): { a: number; palm: V; wrist: V } {
+  const R = RIG.boulderR;
+  const at = (x: number) => {
+    const palm = { x: centre.x + Math.cos(x) * (R + RIG.palm), y: centre.y + Math.sin(x) * (R + RIG.palm) };
+    const wrist = { x: palm.x + Math.cos(x) * RIG.wristToPalm, y: palm.y + Math.sin(x) * RIG.wristToPalm };
+    return { a: x, palm, wrist, d: Math.hypot(wrist.x - shoulder.x, wrist.y - shoulder.y) };
+  };
+  const max = 0.985 * ARM_CHAIN;
+  const first = at(a);
+  if (first.d <= max) return first;
+  let as = Math.atan2(shoulder.y - centre.y, shoulder.x - centre.x);
+  while (as - a > Math.PI) as -= 2 * Math.PI;
+  while (a - as > Math.PI) as += 2 * Math.PI;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (at(a + (as - a) * m).d > max) lo = m; else hi = m; }
+  return at(a + (as - a) * hi);
+}
+
 /** Pelvis height ceiling: lower the pelvis so each given ankle is within 0.985·leg of the hip (never move a foot). */
 export function hipCeiling(base: V, up: V, h: number, ankles: V[], frac = LEG_MAX, closest = false): number {
   let hh = h;
@@ -211,10 +234,7 @@ export function solveStand(path: SlopePath, _H: number, pelvisX: number, bc: V, 
   const axis = (8 - 20 * chin) * DEG;
   const head = { x: neckEnd.x + Math.sin(axis) * RIG.head * 0.5, y: neckEnd.y + Math.cos(axis) * RIG.head * 0.5 };
   const legs = feet.map((f) => legIK(pelvis, f.ankle, { x: 1, y: 0 })) as [Limb, Limb];
-  const R = RIG.boulderR;
-  const a = (opts.handDeg ?? 150) * DEG;
-  const palm = { x: bc.x + Math.cos(a) * (R + RIG.palm), y: bc.y + Math.sin(a) * (R + RIG.palm) };
-  const wrist = { x: palm.x + Math.cos(a) * RIG.wristToPalm, y: palm.y + Math.sin(a) * RIG.wristToPalm };
+  const { palm, wrist } = reachablePalm(bc, shoulder, (opts.handDeg ?? 150) * DEG);
   const near = armIK(shoulder, wrist);
   const hang = { x: shoulder.x + Math.sin(-6 * DEG) * ARM_CHAIN * 0.97, y: shoulder.y - Math.cos(6 * DEG) * ARM_CHAIN * 0.97 };
   const far = { root: shoulder, joint: twoBoneIK(shoulder, hang, RIG.upperArm, RIG.foreArm, (c1, c2) => (c1.x >= c2.x ? c1 : c2)), end: hang };
@@ -287,14 +307,15 @@ export function interior(l: Limb): number {
  * low arc to become the new front foot; the pelvis rises and the lean eases from ~20° to 3°; the near palm slides
  * around the stone to rest on its upper flank, the far arm drops to hang. k: 0 → 1.
  */
-export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, breath = 1): Pose {
+export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, breath = 1, idle: { sway: number; chin: number } = { sway: 0, chin: 0 }): Pose {
   const R = RIG.boulderR;
   const fi = hold.feet![0].ball.x > hold.feet![1].ball.x ? 0 : 1; // hold's front foot
   const front = hold.feet![fi].ball, rear = hold.feet![1 - fi].ball;
   const pelvisX = centre.x - R - 0.25;
   const newFront = Math.max(front.x + 0.1, pelvisX + 0.12);
   const feetX: [number, number] = fi === 0 ? [front.x, newFront] : [newFront, front.x];
-  const stand = solveStand(path, 1, pelvisX, centre, { sway: 0, breath, handDeg: 150, feetX });
+  // V11: the summit idles ride on the stand — a slow weight shift (pelvis sway) and a look out (chin lift)
+  const stand = solveStand(path, 1, pelvisX, centre, { sway: idle.sway, breath, handDeg: 150, feetX, chin: idle.chin });
   if (k >= 1) return stand;
   const e = easeInOut(Math.min(1, Math.max(0, k)));
   const b = blendPose(hold, stand, e);
@@ -324,9 +345,8 @@ export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, b
   let a1 = 150 * DEG;
   while (a1 - a0 > Math.PI) a1 -= 2 * Math.PI;
   while (a0 - a1 > Math.PI) a1 += 2 * Math.PI;
-  const an = a0 + (a1 - a0) * e;
-  const palm = { x: centre.x + Math.cos(an) * (R + RIG.palm), y: centre.y + Math.sin(an) * (R + RIG.palm) };
-  const near = armIK(b.shoulder, { x: palm.x + Math.cos(an) * RIG.wristToPalm, y: palm.y + Math.sin(an) * RIG.wristToPalm });
+  const { palm, wrist } = reachablePalm(centre, b.shoulder, a0 + (a1 - a0) * e);
+  const near = armIK(b.shoulder, wrist);
   // far hand: stays flat on the stone while the weight comes off it, then releases and drops to hang (review U12)
   const hf = hold.hands![1];
   const fa = Math.atan2(hf.y - centre.y, hf.x - centre.x);

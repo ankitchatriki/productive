@@ -324,7 +324,7 @@ export class Gait {
     // feed-forward: the follower tracks the target's own velocity, so a sinking target is matched without lag
     const tv = (sol.hhTarget - this.lastHT) / dt; this.lastHT = sol.hhTarget;
     this.htV += (tv - this.htV) * Math.min(1, dt * 10);
-    st.hhV += (-wh * wh * (st.hh - sol.hhTarget) - 2 * wh * (st.hhV - this.htV)) * dt;
+    st.hhV += (-wh * wh * (st.hh - sol.hhTarget) - 2 * 1.3 * wh * (st.hhV - this.htV)) * dt;
     st.hh += st.hhV * dt;
     // (no hard clamp here: the pose applies the soft knee limit, which always sits inside the legs' reach)
     // the ratchet: outside a strain beat the stone's floor only moves forward

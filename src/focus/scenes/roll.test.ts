@@ -24,7 +24,7 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
       const rows: Array<{ sB: number; rot: number; tag: string }> = [];
       const rec = (s: Record<string, unknown>) => {
         const st = s.strainT as number;
-        rows.push({ sB: s.sB as number, rot: stub.rotates[stub.rotates.length - 1], tag: s.settling ? 'settle' : st >= 1.4 && st < 2.6 ? 'slip' : (s.gait as string) });
+        rows.push({ sB: s.sB as number, rot: stub.rotates[stub.rotates.length - 1], tag: s.cut ? 'cut' : s.settling ? 'settle' : st >= 1.4 && st < 2.6 ? 'slip' : (s.gait as string) });
       };
       for (let k = 0; k < 85; k++) {
         focused += 1;
@@ -40,6 +40,7 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
       let slipBack = 0, strainNet = 0, inStrain = false, sawSlip = false, maxStep = 0;
       for (let i = 0; i + 1 < rows.length; i++) {
         const a = rows[i], b = rows[i + 1];
+        if (b.tag === 'cut') continue; // the summit beat's cross-fade cut (spec: cut frames excluded)
         const dA = trail.centreArc(b.sB, R) - trail.centreArc(a.sB, R);
         const dR = b.rot - a.rot;
         // exactly the distance travelled, clockwise (positive canvas rotation) when moving forward

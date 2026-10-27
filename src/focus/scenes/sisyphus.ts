@@ -22,13 +22,15 @@ type SeqKind = 'summit' | 'mini' | 'next';
 interface Seq { kind: SeqKind; t0: number; dur: number }
 
 const SUMMIT_DUR = 6.0, MINI_DUR = 6.0, NEXT_DUR = 3.2, CROSSFADE_DUR = 0.4, STAND_DUR = 1.2;
+/** The summit heave: the walk-in distance (H, two steps) and its cadence. */
+const HEAVE_DIST = 0.95, HEAVE_SPEED = 1.1;
 const MAX_GRIT = 12;
 const R = RIG.boulderR; // H units
 /** Screen direction of travel along the trail (+1: the climb runs left → right in every layout). */
 const ROLL_DIR = 1;
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number; camY?: number; figureMs?: number; detailMs?: number; tier?: number; pelvisH?: number; clothDeg?: number; clock?: number; u?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; detailAvg?: number; settling?: boolean }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number; camY?: number; figureMs?: number; detailMs?: number; tier?: number; pelvisH?: number; clothDeg?: number; clock?: number; u?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; detailAvg?: number; settling?: boolean; cut?: boolean; handGapPx?: number; pelvisPx?: number[] }
 
 interface Grit { live: boolean; x: number; y: number; vx: number; vy: number; age: number }
 
@@ -483,7 +485,31 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     return [at(0.055, low), at(-0.07, low), at(0.08, -0.01), at(0.085, -0.005)];
   }
 
+  /**
+   * V11: the summit idles (§4.7). A slow weight shift (the pelvis sways ±0.012 H over a 7.3 s period, C∞) and,
+   * every 8 s, a look out — the chin lifts a further 6° and settles. The base chin is lifted 12° (§3.4).
+   */
+  function standIdle(): { sway: number; chin: number } {
+    if (reduced) return { sway: 0, chin: 0.6 };
+    const sway = 0.012 * Math.sin((2 * Math.PI * ambientT) / 7.3) * Math.sin((2 * Math.PI * ambientT) / 23 + 1) ** 2;
+    const q = (ambientT % 8) / 8, look = q < 0.5 ? Math.sin(Math.PI * q * 2) ** 2 : 0;
+    return { sway, chin: 0.6 + 0.3 * look };
+  }
+
   // ---------- sequences ----------
+  /**
+   * V3: the summit beat starts with a 400 ms cross-fade cut to the heave — the figure two steps before his spot on the
+   * ledge, the camera on him — so he is on screen throughout and the beat lasts ≈ 6 s, not a 2 H walk of 15 s.
+   */
+  function startSummitWalk(t: number, kind: SeqKind) {
+    crossfade(t);
+    const D1 = standState().D;
+    gait.snap(D1 - HEAVE_DIST, trail);
+    camInit = false; chains = null; cut = true;
+    mode = 'summit';
+    summitWalk = { t0: t, Dend: gait.D, standT0: null, hold: null, centre: null, sB: 0, rot: 0 };
+    startSeq(kind, t);
+  }
   function startSeq(kind: SeqKind, t: number) {
     const dur = kind === 'summit' ? SUMMIT_DUR : kind === 'mini' ? MINI_DUR : NEXT_DUR;
     seq = { kind, t0: t, dur };
@@ -576,7 +602,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
   let renderCam = { pos: { x: 0, y: 0 }, anchor: { x: 0, y: 0 }, zoom: 1 };
   let ffS = NaN, ffV = 0, ffA = 0, corr = 0, corrV = 0, corrA = 0;
-  let frMode = 'trudge', frStrainT = -1, tierFree = true, settling = false;
+  let frMode = 'trudge', frStrainT = -1, tierFree = true, settling = false, cut = false;
 
   function sceneFrame(t: number, dt: number) {
     if (!ctx || !canvas) return;
@@ -593,7 +619,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     // An open-ended block's hourly summit (review U8): heave onto the ledge and stand, then the cut to the col.
     if (climb.atSummit && mode === 'climb' && (phase === 'focus' || phase === 'open') && phaseSet) {
       if (reduced || stats.frames === 0) mode = 'stand';
-      else { mode = 'summit'; summitWalk = { t0: t, Dend: gait.D, standT0: null, hold: null, centre: null, sB: 0, rot: 0 }; startSeq('mini', t); }
+      else startSummitWalk(t, 'mini');
     }
 
     // Figure state.
@@ -616,18 +642,16 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const st = t - sw.t0;
       if (sw.standT0 === null) {
         const D1 = standState().D;
-        // walk up at the trudge's own pace (the clean-motion limits are measured at it); the target never runs more
-        // than 3.2 strides ahead (no snap, no stop-and-go)
-        const ramp = sw.Dend + (D1 - sw.Dend) * Math.min(1, Math.max(0, (st - 0.5) / 4.5));
-        const target = Math.min(ramp, gait.D + 3.2 * sigmaAt(trail.angleAt(gait.D)));
-        gait.step(dt, target, trail, { climbing: false, lenH: lenH(), speed: 1.0, idles: false });
+        // the heave: two steps onto the ledge at a brisk cadence (×HEAVE_SPEED), straight at the hold spot
+        const target = D1;
+        gait.step(dt, target, trail, { climbing: false, lenH: lenH(), speed: HEAVE_SPEED, idles: false });
         const fr = gait.pose(trail);
         pose = fr.pose; centre = fr.centre; rot = fr.rot; sB = fr.sB;
         tierFree = fr.mode !== 'trudge' || gait.u < 0.3;
         if (gait.events.stepEnd && rng() < 0.6) spawnGrit(trail.at(sB), 1);
-        // arrived: at rest in the hold for 0.8 s (the pelvis has settled), so the step-through starts from stillness
-        const arrived = gait.mode === 'hold' && gait.holdT >= 0.8 && Math.abs(D1 - gait.D) < 0.5 * sigmaAt(trail.angleAt(gait.D));
-        if ((st > 0.8 && arrived) || st > 14) { sw.standT0 = t; sw.hold = fr.pose; sw.centre = fr.centre; sw.sB = fr.sB; sw.rot = fr.rot; }
+        // arrived: at rest in the hold for 0.4 s (the pelvis has settled), so the step-through starts from stillness
+        const arrived = gait.mode === 'hold' && gait.holdT >= 0.4 && Math.abs(D1 - gait.D) < 0.5 * sigmaAt(trail.angleAt(gait.D));
+        if (arrived || st > 9) { sw.standT0 = t; sw.hold = fr.pose; sw.centre = fr.centre; sw.sB = fr.sB; sw.rot = fr.rot; }
       } else {
         // §5.3 summit settle: released on the ledge, the stone rocks on a damped spring (±0.01 H, ζ 0.35, two
         // oscillations) and turns with its travel, in phase (rot = centreArc/R holds); the palm rides it
@@ -636,14 +660,14 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         sB = sw.sB + off; centre = off === 0 ? sw.centre! : trail.centreAt(sB, R); rot = sw.rot + (trail.centreArc(sB, R) - trail.centreArc(sw.sB, R)) / R;
         settling = ts < STAND_DUR;
         const k = ts / STAND_DUR;
-        pose = stepToStand(trail, sw.hold!, centre, Math.min(1, k), 1 + 0.015 * Math.sin(ambientT * 1.85));
+        pose = stepToStand(trail, sw.hold!, centre, Math.min(1, k), 1 + 0.015 * Math.sin(ambientT * 1.85), standIdle());
         if (k >= 1) { standCache = { hold: sw.hold!, centre: sw.centre!, sB: sw.sB, rot: sw.rot, D: gait.D }; summitWalk = null; mode = 'stand'; }
       }
     } else {
       const sc = standState();
       centre = sc.centre; sB = sc.sB; rot = sc.rot;
       const breath = 1 + 0.015 * Math.sin(ambientT * 1.85);
-      pose = mode === 'sit' ? solveSit(trail, 1, centre, breath) : stepToStand(trail, sc.hold, centre, 1, breath);
+      pose = mode === 'sit' ? solveSit(trail, 1, centre, breath) : stepToStand(trail, sc.hold, centre, 1, breath, standIdle());
     }
 
     // Camera target: the pelvis ground point without the bob.
@@ -702,7 +726,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stats.figureMs = performance.now() - tF; stats.detailMs = lastDetailMs; stats.tier = figureTier();
     stats.figureAvg = stats.frames ? (stats.figureAvg ?? stats.figureMs) * 0.95 + stats.figureMs * 0.05 : stats.figureMs;
     stats.detailAvg = stats.frames ? (stats.detailAvg ?? lastDetailMs) * 0.95 + lastDetailMs * 0.05 : lastDetailMs;
-    stats.settling = settling;
+    stats.settling = settling; stats.cut = cut; cut = false;
+    if (pose.hands) { const he = S(pose.arms[0].end), hp = S(pose.hands[0]); stats.handGapPx = Math.abs(Math.hypot(he.x - hp.x, he.y - hp.y) - RIG.wristToPalm * lay.Hpx * cam.zoom); stats.pelvisPx = [S(pose.pelvis).x, S(pose.pelvis).y]; }
     stepGrit(dt);
     drawGrit(g);
 
@@ -895,7 +920,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         // a +N extension from the summit ended: he is still standing on it
       } else if (next === 'complete' && (prev === 'focus' || prev === 'open' || prev === 'paused')) {
         if (reduced) { crossfade(t); mode = 'stand'; }
-        else { mode = 'summit'; summitWalk = { t0: t, Dend: gait.D, standT0: null, hold: null, centre: null, sB: 0, rot: 0 }; startSeq('summit', t); }
+        else startSummitWalk(t, 'summit');
       } else if (next === 'break') {
         crossfade(t);
         seq = null; summitWalk = null;

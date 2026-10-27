@@ -112,3 +112,38 @@ describe('reduced motion (§4.9)', () => {
     g.window.setTimeout = saved;
   });
 });
+
+describe('the summit beat on the engine (V3, V4, V11)', () => {
+  for (const [w, h] of [[1440, 900], [390, 844]] as const) {
+    it(`${w}×${h}: the figure stays fully on screen from the chime to the stand, which arrives in ≤ 7 s; the near hand stays on its wrist`, async () => {
+      const e = await makeEngine(w, h);
+      e.setClimb!(climb1(lenM * 0.999)); e.setProgress(0.999); e.setPhase('focus', { instant: true });
+      run(3);
+      e.setClimb!(climb1(lenM, true)); e.setProgress(0); e.setPhase('complete');
+      const seen: Stats[] = [];
+      run(12, (s) => seen.push({ ...s }), e.stats as unknown as Stats);
+      const t0 = seen[0].clock as number;
+      const iStand = seen.findIndex((s) => s.gait === 'stand');
+      expect(iStand).toBeGreaterThan(0);
+      console.log(`${w}×${h}: stand ${((seen[iStand].clock as number) - t0).toFixed(2)} s after the chime`);
+      expect((seen[iStand].clock as number) - t0).toBeLessThanOrEqual(7);
+      for (const s of seen) {
+        const [x0, y0, x1, y1] = s.figBounds as number[];
+        expect(x0).toBeGreaterThanOrEqual(0); expect(x1).toBeLessThanOrEqual(w);
+        expect(y0).toBeGreaterThanOrEqual(0); expect(y1).toBeLessThanOrEqual(h);
+        if (s.gait === 'stand' || s.gait === 'summit') expect(s.handGapPx as number).toBeLessThanOrEqual(2);
+      }
+      e.destroy();
+    });
+  }
+
+  it('the stand is alive: breath, a weight shift and a look out move the figure (never frozen for 24 s)', async () => {
+    const e = await makeEngine(1440, 900);
+    e.setClimb!(climb1(lenM, true)); e.setProgress(0); e.setPhase('complete', { instant: true });
+    const px: number[][] = [];
+    run(24, (s) => px.push(s.pelvisPx as number[]), e.stats as unknown as Stats);
+    const xs = px.map((p) => p[0]);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(2);
+    e.destroy();
+  });
+});

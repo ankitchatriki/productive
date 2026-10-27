@@ -238,17 +238,17 @@ describe('clean motion (§7.7)', () => {
     const tr = makeTrail({ stage: 4, startH: 210, lenH: 30, fromSummit: true });
     const D1 = holdDForStone(tr, tr.geom.ledgeStart + 0.1);
     const g = new Gait(5);
-    g.snap(tr.geom.ledgeStart - 2.2, tr);
+    g.snap(D1 - 0.95, tr); // the engine's heave: a cut to two steps before the hold spot (V3)
     const S: Sample[] = [];
     let t = 0, standT = -1;
     let hold: ReturnType<Gait['pose']> | null = null;
     for (let i = 0; i < FPS * 14; i++) {
       t += 1 / FPS;
       if (standT < 0) {
-        g.step(1 / FPS, Math.min(D1, g.D + 3.2 * sigmaAt(tr.angleAt(g.D))), tr, { climbing: false, lenH: 30, speed: 1.0 });
+        g.step(1 / FPS, D1, tr, { climbing: false, lenH: 30, speed: 1.1 });
         const f = g.pose(tr);
         S.push({ t, pose: f.pose, centre: f.centre, sB: f.sB, rot: f.rot, planted: f.planted, support: f.support, mode: g.mode, u: g.u, strainT: 0, beard: f.beard });
-        if (g.mode === 'hold' && g.holdT >= 0.8 && Math.abs(D1 - g.D) < 0.5 * sigmaAt(tr.angleAt(g.D))) { standT = t; hold = f; }
+        if (g.mode === 'hold' && g.holdT >= 0.4 && Math.abs(D1 - g.D) < 0.5 * sigmaAt(tr.angleAt(g.D))) { standT = t; hold = f; }
       } else {
         const k = Math.min(1, (t - standT) / 1.2);
         const p = stepToStand(tr, hold!.pose, hold!.centre, k);
@@ -256,7 +256,8 @@ describe('clean motion (§7.7)', () => {
       }
     }
     expect(standT).toBeGreaterThan(0);
-    const walk = S.filter((s) => s.mode !== 'stand');
+    // (the first 0.4 s sit under the engine's cross-fade cut into the heave)
+    const walk = S.filter((s) => s.mode !== 'stand' && s.t > 0.4);
     metrics(walk, 'summit heave', hardLim);
     invariants(walk, tr);
     discontinuities(S, 'summit heave → stand');
