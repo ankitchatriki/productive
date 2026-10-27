@@ -26,6 +26,10 @@ export interface Pose {
   facing: 1 | -1;
   breath: number;       // torso width scale
   alpha: number;        // figure opacity
+  /** Heel lift per foot (rad) during the grip push. */
+  heel?: [number, number];
+  /** Push effort 0..1 (calf squash, hand spread). */
+  load?: number;
 }
 
 /**

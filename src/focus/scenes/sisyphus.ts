@@ -10,6 +10,7 @@ import {
 } from './rig';
 import { fbm1, fbm2, hash1, hash2, mulberry32, noise2, ridged, smoothstep } from './noise';
 import { NIGHT_LIGHT, lightState, mixLight, type LightKey } from './light';
+import { clockwise, finite, footOutline, handOutline, headOutline, limbOutline, smoothPath, torsoOutline } from './figure';
 
 type Mode = 'climb' | 'stand' | 'sit';
 type SeqKind = 'summit' | 'mini' | 'rollback' | 'standup' | 'fadein' | 'crossfade';
@@ -22,7 +23,7 @@ const HORIZON_Y = 0.30;
 const SUMMIT_DUR = 6.0, MINI_DUR = 1.4, ROLLBACK_DUR = 2.8, STANDUP_DUR = 1.0, FADEIN_DUR = 0.6, CROSSFADE_DUR = 1.0;
 
 /** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number }
+export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; rebuilds?: number; gapMs?: number }
 
 export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let canvas: HTMLCanvasElement | null = null;
@@ -334,6 +335,14 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     yield;
     buildClouds(lighten(mixRGB(pal.horizon, pal.zenith, 0.3), 0.15));
     buildBoulderTexture(pal.boulderBase);
+    // Bake the grade (vignette + wash) into sky and land: no full-screen blend per frame (perf at dpr 2).
+    for (const [c, op] of [[skyT, 'source-over'], [landT, 'source-atop']] as const) {
+      const cx = c.getContext('2d')!;
+      cx.setTransform(1, 0, 0, 1, 0, 0);
+      cx.globalCompositeOperation = op;
+      cx.drawImage(gradeT, 0, 0);
+      cx.globalCompositeOperation = 'source-over';
+    }
     // Swap front and back buffers.
     [sky, skyB] = [skyT, sky]; [land, landB] = [landT, land]; [gradeLayer, gradeB] = [gradeT, gradeLayer]; [fgLayer, fgB] = [fgT, fgLayer];
   }
@@ -655,7 +664,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       return;
     }
     if (key !== palKey && t - lastCacheAt >= minGap) {
-      rebuild = rebuildCaches(ss); rebuildKey = key; lastCacheAt = t;
+      rebuild = rebuildCaches(ss); rebuildKey = key; lastCacheAt = t; stats.rebuilds = (stats.rebuilds ?? 0) + 1;
       if (rebuild.next().done) { rebuild = null; palKey = key; }
     }
   }
@@ -717,116 +726,115 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
 
   // ---------- figure ----------
-  /** Tapered capsule as one closed contour (consistent winding, so unions never punch holes). */
-  function capsule(g: CanvasRenderingContext2D, a: V, b: V, r0: number, r1: number) {
-    const th = Math.atan2(b.y - a.y, b.x - a.x);
-    g.moveTo(a.x + Math.cos(th + Math.PI / 2) * r0, a.y + Math.sin(th + Math.PI / 2) * r0);
-    g.arc(a.x, a.y, r0, th + Math.PI / 2, th + (3 * Math.PI) / 2);
-    g.arc(b.x, b.y, r1, th - Math.PI / 2, th + Math.PI / 2);
-    g.closePath();
-  }
-
-  function disc(g: CanvasRenderingContext2D, c: V, r: number) {
-    g.moveTo(c.x + r, c.y);
-    g.arc(c.x, c.y, r, 0, Math.PI * 2);
-  }
-
-  function limbPath(g: CanvasRenderingContext2D, limb: Limb, leg: boolean, facing: 1 | -1, groundAngle: number) {
-    const H = Hpx();
-    const a = toS(limb.root), j = toS(limb.joint), e = toS(limb.end);
-    if (leg) {
-      capsule(g, a, j, (BODY.legW0 * H) / 2, (BODY.legW0 * H) / 2.25);
-      capsule(g, j, e, (BODY.legW0 * H) / 2.3, (BODY.legW1 * H) / 2);
-      // Foot along the ground toward the facing side.
-      const fl = BODY.footL * H, fh = BODY.footH * H;
-      const ang = -groundAngle * DEG;
-      const cx = Math.cos(ang) * facing, cy = Math.sin(ang) * facing;
-      const heel = { x: e.x - cx * fl * 0.2, y: e.y - cy * fl * 0.2 };
-      const toe = { x: e.x + cx * fl * 0.8, y: e.y + cy * fl * 0.8 };
-      capsule(g, { x: heel.x, y: heel.y - fh * 0.1 }, { x: toe.x, y: toe.y + fh * 0.1 }, fh * 0.7, fh * 0.45);
-    } else {
-      capsule(g, a, j, (BODY.armW0 * H) / 2, (BODY.armW0 * H) / 2.2);
-      capsule(g, j, e, (BODY.armW0 * H) / 2.3, (BODY.armW1 * H) / 2);
-      disc(g, e, BODY.handR * H);
-    }
-  }
-
-  function torsoPath(g: CanvasRenderingContext2D, pose: Pose) {
-    const H = Hpx();
-    const p = toS(pose.pelvis), s = toS(pose.shoulder), hd = toS(pose.head);
-    const dx = s.x - p.x, dy = s.y - p.y, d = Math.hypot(dx, dy) || 1e-6;
-    const nx = -dy / d, ny = dx / d; // screen normal
-    const hw = (BODY.hipW * H * pose.breath) / 2, sw = (BODY.shoulderW * H * pose.breath) / 2;
-    // "front" side = facing direction (+x for uphill). Choose the normal side with x sign matching facing.
-    const fs = Math.sign(nx || 1) === pose.facing ? 1 : -1;
-    const fx = nx * fs, fy = ny * fs;
-    const bulge = 0.02 * H;
-    const hipF = { x: p.x + fx * hw, y: p.y + fy * hw }, hipB = { x: p.x - fx * hw, y: p.y - fy * hw };
-    const shF = { x: s.x + fx * sw, y: s.y + fy * sw }, shB = { x: s.x - fx * sw, y: s.y - fy * sw };
-    // Clockwise in screen space (matches arc winding) whichever way the figure faces.
-    const pts: Array<[number, number, number?, number?]> = [
-      [hipB.x, hipB.y], [hipF.x, hipF.y],
-      [shF.x, shF.y, (hipF.x + shF.x) / 2 + fx * bulge, (hipF.y + shF.y) / 2 + fy * bulge],
-      [shB.x, shB.y, s.x + ((s.x - p.x) / d) * sw * 0.9, s.y + ((s.y - p.y) / d) * sw * 0.9],
-    ];
-    const area = (hipF.x - hipB.x) * (shF.y - hipB.y) - (hipF.y - hipB.y) * (shF.x - hipB.x);
-    if (area < 0) {
-      g.moveTo(hipB.x, hipB.y);
-      g.lineTo(hipF.x, hipF.y);
-      g.quadraticCurveTo(pts[2][2]!, pts[2][3]!, shF.x, shF.y);
-      g.quadraticCurveTo(pts[3][2]!, pts[3][3]!, shB.x, shB.y);
-    } else {
-      g.moveTo(hipB.x, hipB.y);
-      g.lineTo(shB.x, shB.y);
-      g.quadraticCurveTo(pts[3][2]!, pts[3][3]!, shF.x, shF.y);
-      g.quadraticCurveTo(pts[2][2]!, pts[2][3]!, hipF.x, hipF.y);
-    }
-    g.closePath();
-    disc(g, p, hw * 1.05);
-    // Neck + head
-    capsule(g, s, hd, 0.04 * H, 0.034 * H);
-    disc(g, hd, BODY.headR * H);
-  }
-
   function groundAngleAt(x: number): number {
     const a = path.groundY(x - 0.01), b = path.groundY(x + 0.01);
     return Math.atan2(b - a, 0.02) / DEG;
   }
 
-  function drawFigure(g: CanvasRenderingContext2D, pose: Pose, drawBoulderBetween: () => void) {
+  interface FigureParts { far: V[][]; body: V[][]; head: V[]; hair: V[]; near: V[][]; marks: V[][] }
+
+  /** Screen-space outlines for a pose (figure v2, ROUND3 §3.4). */
+  function figureParts(pose: Pose, stone: V | null): FigureParts {
+    const H = Hpx();
+    const P = (v: V) => toS(v);
+    const f = pose.facing;
+    const load = pose.load ?? 0;
+    const legFront = (leg: Limb) => { const a = groundAngleAt(leg.end.x) * DEG; return { x: Math.cos(a) * f, y: -Math.sin(a) * f }; };
+    const leg = (i: 0 | 1) => {
+      const lg = pose.legs[i];
+      const out = limbOutline(P(lg.root), P(lg.joint), P(lg.end), H, 'leg', legFront(lg), 1 + 0.08 * load);
+      const ga = -groundAngleAt(lg.end.x) * DEG;
+      const foot = footOutline(P(lg.end), H, ga, f, pose.heel ? pose.heel[i] : 0);
+      return [out, foot];
+    };
+    const arm = (i: 0 | 1) => {
+      const am = pose.arms[i];
+      const root = P(am.root), joint = P(am.joint), end = P(am.end);
+      const out = limbOutline(root, joint, end, H, 'arm', { x: 0, y: -1 }, 1);
+      let axis = Math.atan2(end.y - joint.y, end.x - joint.x);
+      if (stone) { const c = P(stone); const rd = Math.atan2(end.y - c.y, end.x - c.x); if (Math.hypot(end.x - c.x, end.y - c.y) < Rw * S * 1.2) axis = rd + Math.PI / 2; }
+      return [out, handOutline(end, H, axis, load)];
+    };
+    const pel = P(pose.pelvis), sh = P(pose.shoulder), hd = P(pose.head);
+    const front = (() => { const l2 = Math.hypot(f, 0.3); return { x: f / l2, y: 0.3 / l2 }; })();
+    const torso = torsoOutline(pel, sh, H, front, pose.breath, 0.02 + 0.01 * load);
+    // Neck juts toward the stone.
+    const nd = { x: hd.x - sh.x, y: hd.y - sh.y }, nl = Math.hypot(nd.x, nd.y) || 1;
+    const nn = { x: -nd.y / nl, y: nd.x / nl };
+    const neck = [
+      { x: sh.x + nn.x * 0.040 * H, y: sh.y + nn.y * 0.040 * H }, { x: hd.x + nn.x * 0.034 * H, y: hd.y + nn.y * 0.034 * H },
+      { x: hd.x - nn.x * 0.034 * H, y: hd.y - nn.y * 0.034 * H }, { x: sh.x - nn.x * 0.040 * H, y: sh.y - nn.y * 0.040 * H },
+    ];
+    const tilt = Math.atan2(nd.x, -nd.y);
+    const head = headOutline(hd, H, tilt, f);
+    const hairC = { x: hd.x - Math.cos(tilt) * 0.012 * H * f - Math.sin(tilt) * 0.01 * H, y: hd.y - Math.sin(tilt) * 0.012 * H * f * -1 - Math.cos(tilt) * 0.012 * H };
+    const hair: V[] = [];
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; const x = Math.cos(a) * 0.064 * H, y = Math.sin(a) * 0.05 * H; hair.push({ x: hairC.x + x * Math.cos(tilt) - y * Math.sin(tilt), y: hairC.y + x * Math.sin(tilt) + y * Math.cos(tilt) - 0.02 * H }); }
+    const [nl0, nf0] = leg(0), [nl1, nf1] = leg(1);
+    const [na0, nh0] = arm(0), [na1, nh1] = arm(1);
+    // Muscle highlight strokes (sun side): deltoid, upper back, calf.
+    const marks = [na0.slice(1, 3), torso.slice(3, 5), nl0.slice(-5, -3)];
+    return { far: [nl1, nf1, na1, nh1], body: [torso, clockwise(neck)], head, hair: clockwiseHair(hair), near: [nl0, nf0, na0, nh0], marks };
+  }
+  const clockwiseHair = (pts: V[]) => clockwise(pts);
+
+  function fillParts(g: CanvasRenderingContext2D, parts: V[][]) {
+    g.beginPath();
+    for (const p of parts) if (finite(p)) smoothPath(g, p);
+    g.fill();
+  }
+
+  function drawFigure(g: CanvasRenderingContext2D, pose: Pose, drawBoulderBetween: () => void, stone: V | null = null) {
     if (pose.alpha <= 0.001) { drawBoulderBetween(); return; }
+    const parts = figureParts(pose, stone);
+    const light = lastSky?.light ?? lightState(0.43);
     const figure = pal.figure;
-    const far = mixRGB(figure, pal.rockShade, 0.35);
+    const far = mixRGB(mixRGB(figure, light.ambient, 0.25), pal.rockShade, 0.15);
     g.save();
     g.globalAlpha = pose.alpha;
-    // far limbs
     g.fillStyle = css(far);
-    g.beginPath();
-    limbPath(g, pose.legs[1], true, pose.facing, groundAngleAt(pose.legs[1].end.x));
-    limbPath(g, pose.arms[1], false, pose.facing, 0);
-    g.fill();
-    // torso + head
+    fillParts(g, parts.far);
     g.fillStyle = css(figure);
-    g.beginPath(); torsoPath(g, pose); g.fill();
+    fillParts(g, [...parts.body, parts.head]);
+    g.fillStyle = css(darken(figure, 0.35));
+    fillParts(g, [parts.hair]);
     g.restore();
     drawBoulderBetween();
     g.save();
     g.globalAlpha = pose.alpha;
     g.fillStyle = css(figure);
-    g.beginPath();
-    limbPath(g, pose.legs[0], true, pose.facing, groundAngleAt(pose.legs[0].end.x));
-    limbPath(g, pose.arms[0], false, pose.facing, 0);
-    g.fill();
+    fillParts(g, parts.near);
     g.restore();
-    if (quality >= 0.75 && !reduced) drawRim(g, pose);
+    if (quality >= 0.75) {
+      drawEdgeLight(g, pose, parts, 'bounce');
+      if (!reduced || lastSky?.sun) drawEdgeLight(g, pose, parts, 'rim');
+      if (quality >= 1 && lastSky?.sun) {
+        g.save();
+        g.globalAlpha = pose.alpha * 0.10 * light.rim * 2;
+        g.strokeStyle = css(light.key); g.lineWidth = 1.2; g.lineCap = 'round';
+        for (const m of parts.marks) { if (m.length < 2 || !finite(m)) continue; g.beginPath(); g.moveTo(m[0].x, m[0].y); for (const q of m.slice(1)) g.lineTo(q.x, q.y); g.stroke(); }
+        g.restore();
+      }
+    }
   }
 
-  /** Rim light: the sun-facing edge of the near silhouette (S minus S shifted away from the sun). */
-  function drawRim(g: CanvasRenderingContext2D, pose: Pose) {
+  /** Rim (sun side, key colour) or bounce (underside, warm ground light): the silhouette minus itself shifted. */
+  function drawEdgeLight(g: CanvasRenderingContext2D, pose: Pose, parts: FigureParts, kind: 'rim' | 'bounce') {
     const ss = lastSky;
-    if (!ss || !ss.sun || ss.sunVis < 0.05) return;
+    if (!ss) return;
+    const light = ss.light;
     const H = Hpx();
     const c = toS(pose.pelvis);
+    let ux: number, uy: number, colour: RGB, alpha: number;
+    if (kind === 'rim') {
+      if (!ss.sun || ss.sunVis < 0.05) return;
+      const L = sunDir(c);
+      const rw = light.rimW;
+      ux = L.x * rw; uy = L.y * rw; colour = light.key; alpha = Math.min(1, light.rim * 0.8) * ss.sunVis;
+    } else {
+      const bw = Math.max(1, 0.02 * H);
+      ux = 0; uy = bw; colour = lighten(pal.rockLit, 0.1); alpha = 0.14;
+    }
     const box = H * 2.4;
     const size = Math.ceil(box * 2 * scale);
     if (!rimLayer || rimLayer.width !== size) rimLayer = mk(size, size);
@@ -834,24 +842,15 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     r.setTransform(1, 0, 0, 1, 0, 0);
     r.clearRect(0, 0, size, size);
     r.setTransform(scale, 0, 0, scale, (box - c.x) * scale, (box - c.y) * scale);
-    const dx = ss.sun.x - c.x, dy = ss.sun.y - c.y, d = Math.hypot(dx, dy) || 1;
-    const rw = ss.light.rimW;
-    const ux = (dx / d) * rw, uy = (dy / d) * rw;
-    const sil = () => {
-      r.beginPath();
-      torsoPath(r, pose);
-      limbPath(r, pose.legs[0], true, pose.facing, groundAngleAt(pose.legs[0].end.x));
-      limbPath(r, pose.arms[0], false, pose.facing, 0);
-      r.fill();
-    };
-    r.fillStyle = css(ss.light.key);
-    sil();
+    const all = [...parts.body, parts.head, ...parts.near];
+    r.fillStyle = css(colour);
+    fillParts(r, all);
     r.globalCompositeOperation = 'destination-out';
     r.translate(-ux, -uy);
-    sil();
+    fillParts(r, all);
     r.globalCompositeOperation = 'source-over';
     g.save();
-    g.globalAlpha = Math.min(1, ss.light.rim * 0.8) * ss.sunVis * pose.alpha;
+    g.globalAlpha = alpha * pose.alpha;
     g.drawImage(rimLayer, c.x - box, c.y - box, box * 2, box * 2);
     g.restore();
   }
@@ -1023,6 +1022,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
         prevSlip[i] = sl;
       });
     }
+    // Heel lifts in the grip push (φ .55 → 1 of that foot), the push-off that sells the drive.
+    const heelOf = (off: number) => { const fph = (((ph + off) % 1) + 1) % 1; return fph >= 0.55 ? 22 * DEG * Math.pow((fph - 0.55) / 0.45, 2) : 0; };
+    r.pose.heel = still ? [0, 0] : [heelOf(0), heelOf(0.5)];
+    r.pose.load = still ? 0.5 : Math.min(1, sg / 0.018 + k);
     return { pose: r.pose, boulderC: r.boulder, rot: ((sB + nudge) * path.length) / Rw, tremor };
   }
 
@@ -1196,14 +1199,23 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
     if (fig2) drawFigure(g, fig2.pose, () => {});
     const bcx = boulderC!, brot = rot!;
-    if (fig) drawFigure(g, fig.pose, () => drawBoulder(g, bcx, brot, lift));
+    if (fig) drawFigure(g, fig.pose, () => drawBoulder(g, bcx, brot, lift), bcx);
     else drawBoulder(g, bcx, brot, lift);
     drawParticles(g);
 
     // Foreground rocks (L10).
-    if (fgLayer) { g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fgLayer, 0, 0); g.setTransform(scale, 0, 0, scale, 0, 0); }
+    if (fgLayer) {
+      // Blit only the rock rectangles, not the whole (mostly empty) layer.
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      for (const r of foregroundRocks(layout, w, h, S)) {
+        const x0 = Math.max(0, Math.floor((r.cx - r.r - 4) * scale)), y0 = Math.max(0, Math.floor((r.cy - r.r - 4) * scale));
+        const x1 = Math.min(fgLayer.width, Math.ceil((r.cx + r.r + 4) * scale)), y1 = Math.min(fgLayer.height, Math.ceil((r.cy + r.r + 4) * scale));
+        if (x1 > x0 && y1 > y0) g.drawImage(fgLayer, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+      }
+      g.setTransform(scale, 0, 0, scale, 0, 0);
+    }
     // Grade (L11): vignette + warm/cool wash.
-    if (gradeLayer) { g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(gradeLayer, 0, 0); g.setTransform(scale, 0, 0, scale, 0, 0); }
+    // (baked into the sky and land caches at rebuild time)
 
     // Reduced-motion completion cross-fade from the last climbing frame.
     if (seq && seq.kind === 'crossfade' && snapshot) {
