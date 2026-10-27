@@ -49,7 +49,8 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
         if (b.tag !== 'slip' && a.tag !== 'slip' && b.tag !== 'settle' && a.tag !== 'settle') expect(dA).toBeGreaterThanOrEqual(-1e-9);
         if (b.tag === 'slip' && dR < 0) { sawSlip = true; slipBack += dR; }
         const strainNow = b.tag === 'slip' || b.tag === 'strain';
-        if (strainNow) { strainNet += dR; inStrain = true; } else if (inStrain) { expect(Math.abs(strainNet)).toBeLessThan(1e-4); strainNet = 0; inStrain = false; }
+        // (net over the beat itself: from its first frame to its last, the stone is back where it was)
+        if (strainNow) { if (inStrain) strainNet += dR; inStrain = true; } else if (inStrain) { expect(Math.abs(strainNet)).toBeLessThan(1e-4); strainNet = 0; inStrain = false; }
         maxStep = Math.max(maxStep, Math.abs(dR));
       }
       expect(sawSlip).toBe(true);

@@ -108,17 +108,19 @@ export const REAR_HEEL = 30;
 /** Far hand offset around the stone and far-shoulder offset (H), so both arms read in profile (review U10). */
 export const HAND_NEAR = 0, HAND_FAR = -0.05, FAR_SHOULDER = 0.03; // the far hand sits 0.05 H higher round the stone
 /** Max stance-leg extension: 0.996 keeps the rear knee at ≈ 168° (0.985 would cap it at 159°). */
-export const LEG_MAX = 0.996;
+export const LEG_MAX = 0.998;
 
 /** Head centre from the shoulder: neck thrust 70° from vertical, head axis 100° (chin tucked). */
 export function headFrom(shoulder: V, pitchDeg = 0): { head: V; axis: number } {
-  const n = 58 * DEG, a = (105 + pitchDeg) * DEG; // ROUND4 §3.4: neck 58°, head axis 105° (bowed between the arms)
+  // V1: the neck runs forward under the near arm (90°) and the head is less bowed (axis 78°), so the face sits just
+  // below the arm in profile — eye, nose and beard clear of it, the curls read over it (the head is drawn last)
+  const n = 90 * DEG, a = (78 + pitchDeg) * DEG;
   const neckEnd = { x: shoulder.x + Math.sin(n) * RIG.neck, y: shoulder.y + Math.cos(n) * RIG.neck };
   return { head: { x: neckEnd.x + Math.sin(a) * RIG.head * 0.5, y: neckEnd.y + Math.cos(a) * RIG.head * 0.5 }, axis: a };
 }
 
 /** Pelvis height ceiling: lower the pelvis so each given ankle is within 0.985·leg of the hip (never move a foot). */
-export function hipCeiling(base: V, up: V, h: number, ankles: V[], frac = LEG_MAX): number {
+export function hipCeiling(base: V, up: V, h: number, ankles: V[], frac = LEG_MAX, closest = false): number {
   let hh = h;
   const max = frac * LEG_CHAIN;
   for (let it = 0; it < 3; it++) {
@@ -131,6 +133,7 @@ export function hipCeiling(base: V, up: V, h: number, ankles: V[], frac = LEG_MA
         const B = 2 * (bx * up.x + by * up.y), C = bx * bx + by * by - max * max;
         const disc = B * B - 4 * C;
         if (disc >= 0) hh = Math.min(hh, (-B + Math.sqrt(disc)) / 2);
+        else if (closest) hh = Math.min(hh, -B / 2); // out of reach at any height: the closest approach (continuous)
       }
     }
   }
@@ -310,7 +313,8 @@ export function stepToStand(path: SlopePath, hold: Pose, centre: V, k: number, b
   const planted = hold.feet![fi];
   const feet = (fi === 0 ? [planted, moving] : [moving, planted]) as [FootPose, FootPose];
   const base = { x: b.pelvis.x, y: path.groundY(b.pelvis.x) };
-  const hh = hipCeiling(base, { x: 0, y: 1 }, b.pelvis.y - base.y, feet.map((f) => f.ankle), 0.985);
+  // (the reach limit eases from the hold's own to the standing 0.985, so k = 0 is exactly the hold)
+  const hh = hipCeiling(base, { x: 0, y: 1 }, b.pelvis.y - base.y, feet.map((f) => f.ankle), LEG_MAX + (0.985 - LEG_MAX) * e);
   const pelvis = { x: b.pelvis.x, y: base.y + hh };
   const dy = pelvis.y - b.pelvis.y;
   b.pelvis = pelvis; b.shoulder = { x: b.shoulder.x, y: b.shoulder.y + dy }; b.head = { x: b.head.x, y: b.head.y + dy };

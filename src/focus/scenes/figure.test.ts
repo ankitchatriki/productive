@@ -58,14 +58,15 @@ describe('the push-hold key pose (ROUND4 §3.4)', () => {
     expect(arm).toBeGreaterThanOrEqual(10); expect(arm).toBeLessThanOrEqual(18);
     for (const a of pose.arms) { expect(interior(a)).toBeGreaterThanOrEqual(168); expect(interior(a)).toBeLessThanOrEqual(172); }
   });
-  it('head between the arms: ≤ 0.035 H off the near arm line, 0.07–0.15 H along it; crown ≥ 0.05 H from the stone', () => {
+  it('head bowed just below the near arm (V1): 0.01–0.09 H under the shoulder → wrist line, 0.05–0.16 H along it; crown ≥ 0.05 H from the stone', () => {
     const ux = (wr.x - sh.x), uy = (wr.y - sh.y), l = Math.hypot(ux, uy);
     const along = ((pose.head.x - sh.x) * ux + (pose.head.y - sh.y) * uy) / l;
-    const across = Math.abs((pose.head.x - sh.x) * uy - (pose.head.y - sh.y) * ux) / l;
-    expect(across).toBeLessThanOrEqual(0.035);
-    expect(along).toBeGreaterThanOrEqual(0.07); expect(along).toBeLessThanOrEqual(0.15);
+    const below = ((pose.head.x - sh.x) * uy - (pose.head.y - sh.y) * ux) / l; // + = under the arm
+    console.log(`head under the arm line ${below.toFixed(3)} H, ${along.toFixed(3)} H along`);
+    expect(below).toBeGreaterThanOrEqual(0.01); expect(below).toBeLessThanOrEqual(0.09);
+    expect(along).toBeGreaterThanOrEqual(0.05); expect(along).toBeLessThanOrEqual(0.16);
     const g = geomOf(pose, centre, path);
-    for (const p of g.groups.core[2]) expect(dist(p, centre) - RIG.boulderR).toBeGreaterThanOrEqual(0.05);
+    for (const p of g.groups.head[0]) expect(dist(p, centre) - RIG.boulderR).toBeGreaterThanOrEqual(0.05);
   });
   it('palms on the stone within 2 px; no finger lobe enters the stone by more than 1 px', () => {
     for (const p of pose.hands!) expect(Math.abs(dist(p, centre) - RIG.boulderR - RIG.palm) * HPX).toBeLessThanOrEqual(2);

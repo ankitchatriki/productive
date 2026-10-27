@@ -101,7 +101,7 @@ export const KEY = {
   lean: periodicSpline([0, 0.38, 0.48, 0.62, 0.80, 1], [-0.5, 1.5, 2.5, 1, -0.5, -0.5]),
   pitch: periodicSpline([0, 0.30, 0.44, 0.60, 0.80, 1], [0, 0, -3, 0, 2, 0]),
   /** Rear foot heel (deg): press peel 22 → 30, anticipation drop to 24, fire to 44 by toe-off. */
-  rearHeel: spline([0, 0.24, 0.42], [22, 28, 40], 0, 0),
+  rearHeel: (u: number) => 22 + 18 * ease5((u - 0.04) / 0.38), // C2 into toe-off (no jerk when the foot lifts)
   /** Front (stance) foot heel: flat, then rising as the body passes over to 22 at the cycle's end. */
   stanceHeel: (u: number) => 22 * ease5((u - 0.5) / 0.5),
   swingThigh: spline([0.46, 0.53, 0.60, 0.70, 0.75], [-40, -15, 14, 40, 44]),
@@ -114,8 +114,16 @@ export const sigmaAt = (thetaDeg: number) => (FRONT_FOOT + REAR_FOOT) * cosRatio
 /** Nominal cycle period: one stride at the pace. */
 export const periodAt = (thetaDeg: number) => sigmaAt(thetaDeg) / PACE;
 const SIM_DT = 1 / 120;
-/** Keyed pelvis height while moving (cf. the static key pose's h0). */
-const hTrudge = (thetaDeg: number) => 0.425 + 0.004 * Math.max(0, 22 - thetaDeg) + 0.006 * Math.max(0, thetaDeg - 22);
+const PRESS_END = 0.24, PRESS_KNEE = 166, TOEOFF_KNEE = 150, TO_BLEND = 0.08;
+/** 0 → 1 at an even rate with eased ends (C2; the peak rate is 1.33×, against 1.875× for a quintic ease). */
+const trapRamp = (x: number) => {
+  // even-rate ramp whose speed eases in and out on smoothsteps (C2 position: no jerk spike at the joins)
+  const t = Math.min(1, Math.max(0, x)), a = 0.25, v = 1 / (1 - a), seg = (T: number) => v * a * (T ** 3 - T ** 4 / 2);
+  return t < a ? seg(t / a) : t > 1 - a ? 1 - seg((1 - t) / a) : v * (a / 2 + (t - a));
+};
+/** Hip-to-ankle reach (fraction of the leg chain) for an interior knee angle. */
+const kneeReach = (deg: number) => Math.sqrt(RIG.thigh ** 2 + RIG.shin ** 2 - 2 * RIG.thigh * RIG.shin * Math.cos(deg * DEG)) / LEG_CHAIN;
+const KNEE_SOFT = kneeReach(172); // just inside LEG_MAX (≈ 170°): the hard reach never binds
 /** The push-hold key pose sits at the end of the press: the feet are planted relative to D + KEY_OFF·σ (§3.4). */
 const KEY_OFF = 0.12;
 const EXT = 0.995;
@@ -176,6 +184,8 @@ export class Gait {
   get u(): number { return this.cur.u; }
   get strainT(): number { return this.cur.strainT; }
   get sBfloor(): number { return this.cur.sBfloor; }
+  /** Index of the stance (front) foot this cycle. */
+  get front(): number { return this.cur.front; }
   /** Seconds since the gait came to rest in the hold (the pelvis settles over ≈ 0.6 s). */
   get holdT(): number { return this.cur.mode === 'hold' ? this.cur.holdT : 0; }
   slipping(): boolean { return this.cur.mode === 'strain' && this.cur.strainT >= 1.4 && this.cur.strainT < 2.65; }
@@ -298,12 +308,12 @@ export class Gait {
     // follow-through (§7.5): the head nods after the pelvis bob (exact 120 ms lag through the history buffer) and the
     // beard swings after it through an angular spring (ω = 8, ζ = 1: ≈ 180 ms behind). Both read the bob about a
     // slow running mean, so they trail the body's rise and fall rather than the keyed curves.
-    if (Number.isFinite(st.hh)) st.hhMean = Number.isFinite(st.hhMean) ? st.hhMean + (st.hh - st.hhMean) * Math.min(1, dt / 2.5) : st.hh;
+    if (Number.isFinite(st.hh)) st.hhMean = Number.isFinite(st.hhMean) ? st.hhMean + (st.hh - st.hhMean) * Math.min(1, dt / 6) : st.hh;
     const bob = Number.isFinite(st.hh) && Number.isFinite(st.hhMean) ? st.hh - st.hhMean : 0;
     const raw = this.channels(st);
     this.hist.push({ t: st.t, lean: raw.lean, pitch: raw.pitch + 110 * bob, pelvisY: bob });
     while (this.hist.length > 2 && st.t - this.hist[1].t > 0.4) this.hist.shift();
-    const wb = 8, beardTarget = -80 * bob + (wind(st.t) - 0.06) * 1.5;
+    const wb = 9.5, beardTarget = -80 * bob + (wind(st.t) - 0.06) * 1.5;
     st.beardV += (-wb * wb * (st.beard - beardTarget) - 2 * wb * st.beardV) * dt;
     st.beard = Math.max(-4, Math.min(4, st.beard + st.beardV * dt));
     // pelvis height: follow the reach-limited keyed target through a critically damped spring (ω = 9), so the
@@ -313,10 +323,10 @@ export class Gait {
     const wh = 6;
     // feed-forward: the follower tracks the target's own velocity, so a sinking target is matched without lag
     const tv = (sol.hhTarget - this.lastHT) / dt; this.lastHT = sol.hhTarget;
-    this.htV += (tv - this.htV) * Math.min(1, dt * 25);
+    this.htV += (tv - this.htV) * Math.min(1, dt * 10);
     st.hhV += (-wh * wh * (st.hh - sol.hhTarget) - 2 * wh * (st.hhV - this.htV)) * dt;
     st.hh += st.hhV * dt;
-    if (st.hh > sol.ceil) { st.hhV = (sol.ceil - (st.hh - st.hhV * dt)) / dt; st.hh = sol.ceil; } // never above a planted foot's reach; ride it
+    // (no hard clamp here: the pose applies the soft knee limit, which always sits inside the legs' reach)
     // the ratchet: outside a strain beat the stone's floor only moves forward
     // (in the hold the stone rests: the body breathes against it and the arms take it)
     if (st.mode === 'trudge') {
@@ -334,8 +344,8 @@ export class Gait {
       // ω = 18 low-pass with 30% of the raw rate fed forward: the noise is filtered, the lag (and the palm’s slide off the
       // stone) is halved
       this.elbRawV[i] += ((raw - this.elbRaw[i]) / dt - this.elbRawV[i]) * Math.min(1, dt * 20); this.elbRaw[i] = raw;
-      const we = 18;
-      st.elbV[i] += (-we * we * (st.elb[i] - raw) - 2 * we * (st.elbV[i] - 0.3 * this.elbRawV[i])) * dt;
+      const we = 14;
+      st.elbV[i] += (-we * we * (st.elb[i] - raw) - 2 * we * (st.elbV[i] - 0.15 * this.elbRawV[i])) * dt;
       st.elb[i] += st.elbV[i] * dt;
     }
   }
@@ -357,7 +367,7 @@ export class Gait {
     // the anticipation multiplier fades in and out (C2): a stepped window would put a pop in the lagged lean
     const antK = 1 + (st.ant - 1) * ease5((k - 0.24) / 0.08) * (1 - ease5((k - 0.44) / 0.08));
     const lean = st.mode === 'trudge' ? KEY.lean(k) * antK : -0.5;
-    const pitch = st.mode === 'trudge' ? 0.4 * KEY.pitch(k) : 0;
+    const pitch = 0; // (the head's nod is the lagged pelvis bob alone: §4.5 follow-through)
     const hipDy = st.mode === 'trudge' ? KEY.hipDy(k) * antK : 0;
     return { lean, pitch, hipDy };
   }
@@ -500,37 +510,62 @@ export class Gait {
     } else {
       swingFoot = plantTarget;
     }
-    // Pelvis height along the slope normal, under a soft leg-reach ceiling (never moves a planted foot).
-    // in motion the pelvis rides a little lower than the static key pose (0.425 vs 0.43 H at 22°, still inside
-    // 0.42–0.44, and rising more gently on steep ground), which keeps the planted rear leg off its reach limit
-    const want = hTrudge(theta) + (trudge ? KEY.hipDy(k) * (1 + (st.ant - 1) * ease5((k - 0.24) / 0.08) * (1 - ease5((k - 0.44) / 0.08))) : 0) + 0.002 * b + sz.dy + sz.tremor;
-    // the rear leg eases off full extension through anticipation into push-off (170° → ~150°), so the knee is already
-    // bending when the foot leaves the ground (a straight knee would snap: knee angle ∝ √(reach − distance))
-    const rearFrac = trudge && k < PHASE.contact ? LEG_MAX - 0.02 * ease5((k - 0.18) / (PHASE.toeOff - 0.18)) : LEG_MAX;
+    // Pelvis height along the slope normal (never moves a planted foot). V2: the pelvis rides the pushing leg's
+    // reach at a keyed knee angle, so the drive leg is long and near-straight — the spear of the key pose:
+    // - press (u < 0.32): the rear knee at 167°; anticipation eases it to 148° by toe-off (it is bending when the
+    //   foot lifts, so it never snaps);
+    // - from the end of the press the stance leg takes over (blended over 0.16 of the cycle) and is walked open at
+    //   an even rate, 107° → 168° by the step boundary, where it becomes the next press's rear leg (the same leg, the same knee).
+    // Small offsets ride on top: breath, the strain beat's sink and tremor.
+    const extra = 0.002 * b + sz.dy + sz.tremor;
     // an airborne foot never holds the body down: only planted ankles limit the pelvis
     const ceilFront = hipCeiling(base, nrm, 2, [stanceFoot.ankle], LEG_MAX);
-    const ceilRear = hipCeiling(base, nrm, 2, [swingFoot.ankle], rearFrac);
-    const ceil = Math.min(ceilFront, swingPlanted ? ceilRear : 9); // hard: planted feet only
-    // the target lets go of the lifting foot gradually, so the pelvis never surges at toe-off
-    let ceilT = Math.min(ceilFront, ceilRear);
-    if (!swingPlanted) {
-      // the left-behind foot keeps limiting the target, let go toward the front leg's, and near
-      // contact handed to the landing foot's, so the target is continuous through the whole swing
-      // C1 at the lift: the value and slope the rear leg allowed at toe-off, the slope fading (τ = 0.05 in u)
-      const leftAnkle = footAt(rear.ball, rear.ground, KEY.rearHeel(PHASE.toeOff) * DEG).ankle;
-      const tr = st.stop || st.toStrain ? KEY.travelStop : KEY.travel, e = 0.002;
-      const cAt = (u: number) => { const s1 = st.D + this.sigEff({ ...st, u }) * tr(u) - sz.back; return hipCeiling(trail.at(s1), trail.normalAt(s1), 2, [leftAnkle], rearFrac); };
-      const c0 = cAt(PHASE.toeOff), v0 = (c0 - cAt(PHASE.toeOff - e)) / e, tau = 0.05;
-      const ceilLeft = c0 + v0 * tau * (1 - Math.exp(-(k - PHASE.toeOff) / tau));
-      const letGo = ease5((k - PHASE.toeOff) / 0.26);
-      const land = ease5((k - PHASE.contact + 0.12) / 0.12);
-      const ceilPlant = hipCeiling(base, nrm, 2, [plantTarget.ankle], LEG_MAX);
-      const other = (ceilLeft + (ceilFront - ceilLeft) * letGo) * (1 - land) + ceilPlant * land;
-      ceilT = Math.min(ceilFront, other);
+    const ceilSwing = swingPlanted ? hipCeiling(base, nrm, 2, [swingFoot.ankle], LEG_MAX) : 9;
+    const ceil = Math.min(ceilFront, ceilSwing); // hard: planted feet only
+    const kneeR = !trudge || k <= PRESS_END ? PRESS_KNEE : PRESS_KNEE - (PRESS_KNEE - TOEOFF_KNEE) * trapRamp((k - PRESS_END) / (PHASE.toeOff - PRESS_END));
+    const rearFoot = !trudge || k < PHASE.toeOff || swingPlanted && k < 0.5 ? swingFoot : footAt(rear.ball, rear.ground, KEY.rearHeel(PHASE.toeOff) * DEG);
+    const cR = Math.min(hipCeiling(base, nrm, 2, [rearFoot.ankle], kneeReach(kneeR), true), ceilFront - 0.003);
+    let hhTarget = cR;
+    if (trudge && k >= PHASE.toeOff - TO_BLEND) {
+      // from toe-off the stance leg drives: its knee starts at exactly the angle it had at toe-off (so the height
+      // is continuous) and is walked open to 168° by the step boundary
+      const sToe = st.D + this.sigEff(st) * (st.stop || st.toStrain ? KEY.travelStop : KEY.travel)(PHASE.toeOff) - sz.back;
+      const b0 = trail.at(sToe), n0 = trail.normalAt(sToe);
+      const rearToe = footAt(rear.ball, rear.ground, KEY.rearHeel(PHASE.toeOff) * DEG).ankle;
+      const h0 = Math.min(hipCeiling(b0, n0, 2, [rearToe], kneeReach(TOEOFF_KNEE), true), hipCeiling(b0, n0, 2, [stanceFoot.ankle], LEG_MAX) - 0.003);
+      const hip0 = { x: b0.x + n0.x * h0, y: b0.y + n0.y * h0 };
+      const d0 = Math.hypot(hip0.x - stanceFoot.ankle.x, hip0.y - stanceFoot.ankle.y);
+      const k0 = Math.acos(Math.max(-1, Math.min(1, (RIG.thigh ** 2 + RIG.shin ** 2 - d0 * d0) / (2 * RIG.thigh * RIG.shin)))) / DEG;
+      const kneeS = k0 + (PRESS_KNEE - k0) * trapRamp((k - PHASE.toeOff) / (1 - PHASE.toeOff));
+      const cS = hipCeiling(base, nrm, 2, [stanceFoot.ankle], kneeReach(kneeS), true); // (the knee limits below cap it smoothly)
+      // both drives are defined on both sides of toe-off: the hand-over is a C2 blend across it (no velocity step)
+      hhTarget = cR + (cS - cR) * ease5((k - PHASE.toeOff + TO_BLEND) / (2 * TO_BLEND));
     }
-    const kSoft = 0.07;
-    const hhTarget = 0.5 * (want + ceilT - Math.sqrt((want - ceilT) * (want - ceilT) + kSoft * kSoft)) - 0.004; // soft minimum (C∞)
-    const hh = Number.isFinite(st.hh) && !rawStone ? Math.min(st.hh, ceil) : Math.min(hhTarget, ceil);
+    hhTarget += extra;
+    // the lifting foot's knee limit (from its last planted spot) fades out over the first 0.15 of the swing: the
+    // limited and unlimited heights are blended (C2), so nothing jumps when the foot lifts
+    const stanceKneeCeil = hipCeiling(base, nrm, 2, [stanceFoot.ankle], KNEE_SOFT);
+    let swingKneeCeil = 9;
+    if (swingPlanted) swingKneeCeil = hipCeiling(base, nrm, 2, [swingFoot.ankle], KNEE_SOFT);
+    else if (trudge && k < PHASE.toeOff + 0.15) {
+      // the limit as it stood at toe-off (the foot's last planted spot, at the toe-off pelvis base), lifted away
+      const sT = st.D + this.sigEff(st) * (st.stop || st.toStrain ? KEY.travelStop : KEY.travel)(PHASE.toeOff) - sz.back;
+      const lim0 = hipCeiling(trail.at(sT), trail.normalAt(sT), 2, [footAt(rear.ball, rear.ground, KEY.rearHeel(PHASE.toeOff) * DEG).ankle], KNEE_SOFT, true);
+      swingKneeCeil = lim0 + 0.15 * ease5((k - PHASE.toeOff) / 0.15);
+    }
+    const fadeSwing = swingPlanted || !trudge ? 0 : ease5((k - PHASE.toeOff) / 0.12);
+    const smin = (a: number, c: number, kk: number) => 0.5 * (a + c - Math.sqrt((a - c) ** 2 + kk * kk));
+    const kneeLimit = (hgt: number, kk: number, off: number) => {
+      const withSwing = smin(hgt, Math.min(stanceKneeCeil, swingKneeCeil) - off, kk), without = smin(hgt, stanceKneeCeil - off, kk);
+      return withSwing + (without - withSwing) * fadeSwing;
+    };
+    // the target itself respects the planted knees' soft limit (≈ 170°), so the spring never runs into it
+    hhTarget = kneeLimit(hhTarget, 0.003, 0);
+    // the planted legs open to ≈ 169° at most: a soft limit just inside the hard reach, so the spring's small
+    // overshoots never snap a knee straight (near-straight, a millimetre of height is ten degrees of knee)
+    const hRaw = Number.isFinite(st.hh) && !rawStone ? st.hh : hhTarget;
+    const hSoft = kneeLimit(hRaw, 0.002, 0);
+    const hh = Math.min(hSoft, ceil);
     const pelvis = { x: base.x + nrm.x * hh, y: base.y + nrm.y * hh };
     // Swing leg: keyed FK, blended to IK toward the plant target over u 0.66–0.75 (on the foot target).
     if (!swingPlanted) {
@@ -538,7 +573,9 @@ export class Gait {
       const dx = swingFoot.ankle.x - pelvis.x, dy = swingFoot.ankle.y - pelvis.y, d = Math.hypot(dx, dy) || 1;
       const L0 = 0.93 * LEG_CHAIN, Lm = 0.985 * LEG_CHAIN;
       if (d > L0) {
-        const d2 = Lm - (Lm - L0) * Math.exp(-(d - L0) / (Lm - L0));
+        // eased in over the first quarter of the swing: at toe-off the ankle is exactly where it was planted
+        const swK = ease5(((k - PHASE.toeOff) / (PHASE.contact - PHASE.toeOff)) / 0.25);
+        const d2 = d + (Lm - (Lm - L0) * Math.exp(-(d - L0) / (Lm - L0)) - d) * swK;
         const a2 = { x: pelvis.x + (dx / d) * d2, y: pelvis.y + (dy / d) * d2 };
         const sh = { x: a2.x - swingFoot.ankle.x, y: a2.y - swingFoot.ankle.y };
         swingFoot = { ball: { x: swingFoot.ball.x + sh.x, y: swingFoot.ball.y + sh.y }, ankle: a2, heel: { x: swingFoot.heel.x + sh.x, y: swingFoot.heel.y + sh.y }, toe: { x: swingFoot.toe.x + sh.x, y: swingFoot.toe.y + sh.y }, angle: swingFoot.angle };

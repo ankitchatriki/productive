@@ -445,6 +445,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   // ---------- chains (loincloth flaps) ----------
   let chainAnchors: V[] | null = null;
+  let clothMean = NaN, clothSwing = 0, clothSwingV = 0;
   function updateChains(pose: Pose, dt: number, rest: boolean) {
     const anchors = clothAnchors(pose);
     if (!chains) {
@@ -454,12 +455,16 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       rest = true;
     }
     const grav = 9;
-    const wx = wind(ambientT) * 6;
+    const ph = pose.pelvis.y - trail.groundY(pose.pelvis.x);
+    clothMean = Number.isFinite(clothMean) ? clothMean + (ph - clothMean) * Math.min(1, dt / 4) : ph;
+    if (!rest) { const wc = 5; clothSwingV += (-wc * wc * (clothSwing - (ph - clothMean) * 14) - 2 * wc * clothSwingV) * dt; clothSwing += clothSwingV * dt; }
+    const wx = wind(ambientT) * 6 + clothSwing;
     if (rest) { chains.forEach((c, i) => solveRest(c, anchors[i], { x: 0, y: -1 }, grav, wx)); chainAnchors = anchors; return; }
-    // the cloth is carried 65% with the body (wrapped linen clings): it feels a third of the pelvis's surge, so it trails
-    // and settles instead of flagging (§7.5, cloth ≤ 6° about its rest)
+    // the cloth is carried 85% with the body (wrapped linen clings), so the surge never flags it; its follow-through
+    // is an explicit swing driven by the pelvis bob through a critically damped spring (ω = 5: the tip trails the
+    // body by ≈ 250–350 ms, §7.5)
     if (chainAnchors) chains.forEach((c, i) => {
-      const dx = (anchors[i].x - chainAnchors![i].x) * 0.65, dy = (anchors[i].y - chainAnchors![i].y) * 0.65;
+      const dx = (anchors[i].x - chainAnchors![i].x) * 0.85, dy = (anchors[i].y - chainAnchors![i].y) * 0.85;
       for (let k = 1; k < c.p.length; k++) { c.p[k].x += dx; c.p[k].y += dy; c.prev[k].x += dx; c.prev[k].y += dy; }
     });
     chainAnchors = anchors;

@@ -297,8 +297,9 @@ export function tierFor(Hz: number, quality: number, prev: Tier = currentTier): 
 }
 
 // ---------- geometry ----------
-export type GroupKey = 'farLeg' | 'farArm' | 'core' | 'nearLeg' | 'cloth' | 'nearArm';
-export const ORDER: GroupKey[] = ['farLeg', 'farArm', 'core', 'nearLeg', 'cloth', 'nearArm'];
+export type GroupKey = 'farLeg' | 'farArm' | 'core' | 'nearLeg' | 'cloth' | 'nearArm' | 'head';
+/** Draw order, back to front. The head is last (V1): the face, beard and curls are never under the near arm. */
+export const ORDER: GroupKey[] = ['farLeg', 'farArm', 'core', 'nearLeg', 'cloth', 'nearArm', 'head'];
 
 export interface FigureGeom {
   groups: Record<GroupKey, V[][]>;
@@ -326,10 +327,10 @@ function footFrames(f: FootPose, facing: number): { foot: Frame; toe: Frame } {
 export function figureGeom(fr: FigureFrame, tier: Tier = 3): FigureGeom {
   const { pose, centre, R } = fr;
   const fc = pose.facing;
-  const groups: FigureGeom['groups'] = { farLeg: [], farArm: [], core: [], nearLeg: [], cloth: [], nearArm: [] };
+  const groups: FigureGeom['groups'] = { farLeg: [], farArm: [], core: [], nearLeg: [], cloth: [], nearArm: [], head: [] };
   const mk = () => ({ C: [] as V[][], F: [] as V[][], V: [] as V[][] });
-  const lines: FigureGeom['lines'] = { farLeg: mk(), farArm: mk(), core: mk(), nearLeg: mk(), cloth: mk(), nearArm: mk() };
-  const dots: FigureGeom['dots'] = { farLeg: [], farArm: [], core: [], nearLeg: [], cloth: [], nearArm: [] };
+  const lines: FigureGeom['lines'] = { farLeg: mk(), farArm: mk(), core: mk(), nearLeg: mk(), cloth: mk(), nearArm: mk(), head: mk() };
+  const dots: FigureGeom['dots'] = { farLeg: [], farArm: [], core: [], nearLeg: [], cloth: [], nearArm: [], head: [] };
   const veins = fr.veins ?? fr.pose.veins ?? 0;
   let strokes = 0;
   /** Emit the catalogue's lines for one part into a group. `maxTier` limits far-side detail to L1. */
@@ -380,14 +381,14 @@ export function figureGeom(fr: FigureFrame, tier: Tier = 3): FigureGeom {
     const dx = x + 0.22, dy = y - 0.47;
     return [-0.22 + dx * cb - dy * sbn, 0.47 + dx * sbn + dy * cb];
   };
-  groups.core.push(HEAD_OUTLINE.map(([x, y]) => { const [bx, by] = beardLocal(x, y); return huW(hf, bx, by); }));
+  groups.head.push(HEAD_OUTLINE.map(([x, y]) => { const [bx, by] = beardLocal(x, y); return huW(hf, bx, by); }));
   const hfB: Frame = hf;
   for (const ln of DETAIL) {
     if (ln.part !== 'head' || ln.tier > tier || (ln.strain && veins <= 0)) continue;
     const P = ln.pts.map(([x, y]) => { const [bx, by] = beardLocal(x, y); return huW(hfB, bx, by); });
-    if (ln.dot) { dots.core.push([P[0], ln.dot * h]); continue; }
+    if (ln.dot) { dots.head.push([P[0], ln.dot * h]); continue; }
     const Q = ln.strain ? partial(P, veins) : P;
-    if (Q.length >= 2) { lines.core[ln.w].push(Q); strokes++; }
+    if (Q.length >= 2) { lines.head[ln.w].push(Q); strokes++; }
   }
 
   // Arms (far is index 1): upper arm + deltoid lobe, forearm, hand with fingers and thumb.
