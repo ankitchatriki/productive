@@ -12,7 +12,15 @@ export interface Trail extends SlopePath {
 
 export function makeTrail(spec: StageSpec): Trail {
   const g = buildStage(spec);
-  const at = (s: number): V => stageAt(g, s);
+  // C1 between the 1/16 H samples (Catmull–Rom), so the walk's feet, pelvis and camera never meet a kink (ROUND5 §3)
+  const xs = g.xs, ys = g.ys, last = xs.length - 1;
+  const at = (s: number): V => {
+    const f = (s - g.s0) * SAMPLES_PER_H;
+    if (f <= 1 || f >= last - 1) return stageAt(g, s);
+    const i = Math.floor(f), k = f - i, k2 = k * k, k3 = k2 * k;
+    const a = -0.5 * k3 + k2 - 0.5 * k, b = 1.5 * k3 - 2.5 * k2 + 1, c = -1.5 * k3 + 2 * k2 + 0.5 * k, d = 0.5 * k3 - 0.5 * k2;
+    return { x: a * xs[i - 1] + b * xs[i] + c * xs[i + 1] + d * xs[i + 2], y: a * ys[i - 1] + b * ys[i] + c * ys[i + 1] + d * ys[i + 2] };
+  };
   const tangentAt = (s: number): V => {
     const e = 1 / SAMPLES_PER_H;
     const a = at(s - e), b = at(s + e);
@@ -44,13 +52,13 @@ export function makeTrail(spec: StageSpec): Trail {
     }
     return c;
   };
-  const arcCache = new Map<number, Float32Array>();
+  const arcCache = new Map<number, Float64Array>();
   const centreArc = (s: number, R: number): number => {
     const key = Math.round(R * 1e5);
-    let tab = arcCache.get(key);
+    let tab = arcCache.get(key); // (float64: per-frame steps of 0.002 H must not quantise)
     if (!tab) {
       const n = Math.ceil((g.s1 - g.s0) * 4) + 1;
-      tab = new Float32Array(n);
+      tab = new Float64Array(n);
       let prev = centreAt(g.s0, R, true);
       for (let i = 1; i < n; i++) { const c = centreAt(g.s0 + i / 4, R, true); tab[i] = tab[i - 1] + Math.hypot(c.x - prev.x, c.y - prev.y); prev = c; }
       arcCache.set(key, tab);

@@ -149,3 +149,7 @@ vite.config.ts.timestamp-*
 .turbo
 
 dist/
+
+# Round 5: screenshots and review frames stay out of the repo
+docs/screenshots/round5/
+docs/review/round5/

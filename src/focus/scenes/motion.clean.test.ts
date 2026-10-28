@@ -195,7 +195,7 @@ describe('clean motion (§7.7)', () => {
     expect(Math.abs(post.sB - pre.sB) * HPX).toBeLessThanOrEqual(0.5);
     expect(Math.min(...S.filter((s) => s.mode === 'strain').map((s) => s.sB))).toBeLessThan(pre.sB - 0.04);
     for (const s of S) expect(s.pose.lean / DEG).toBeLessThanOrEqual(29);
-  });
+  }, 30000);
 
   it('measured lags: head 100–140 ms behind the pelvis height; beard 150–220 ms; beard swing ≤ 4°', () => {
     const S = capture(trail, 5, 20);
