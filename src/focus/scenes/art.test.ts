@@ -3,7 +3,7 @@ import { softCap } from './artDraw';
 import { ART_STOPS, INK, LW, NIGHT, artStop, contrast, hexToRgb, pausedStop } from './artPalette';
 import sisyphusSrc from './sisyphus.ts?raw';
 import artDrawSrc from './artDraw.ts?raw';
-import figureSrc from './figureArt.ts?raw';
+import figureSrc from './figure.ts?raw';
 import trailSrc from './trail.ts?raw';
 import cameraSrc from './camera.ts?raw';
 
@@ -13,10 +13,8 @@ describe('A0: flat black-figure rules (ROUND3_ART §1.3)', () => {
       expect(src.length).toBeGreaterThan(500);
       expect(src).not.toMatch(/createLinearGradient|createRadialGradient|shadowBlur|filter\s*=|soft-light|'overlay'/);
     }
-    // the one allowed composite: the figure layer's destination-in mask
-    const comps = [...figureSrc.matchAll(/globalCompositeOperation\s*=\s*'([a-z-]+)'/g)].map((m) => m[1]);
-    expect(comps.filter((c) => c !== 'source-over')).toEqual(['destination-in']);
-    expect(sisyphusSrc + artDrawSrc).not.toMatch(/globalCompositeOperation\s*=\s*'(?!source-over)/);
+    // no composites at all: the figure draws straight onto the scene, its incisions clipped to what lies beneath
+    expect(sisyphusSrc + artDrawSrc + figureSrc).not.toMatch(/globalCompositeOperation\s*=\s*'(?!source-over)/);
   });
 
   it('palette: the stops hit their values, dawn → ember → dusk darkens the sky, contrast holds', () => {

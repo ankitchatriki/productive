@@ -1,70 +1,78 @@
-// "Sisyphus" focus scene, black-figure edition (ROUND3_ART): a tracking close-up of a figure pushing a stone up an
-// endless incline. Flat fills and thin ochre lines; the summit appears only when a block completes.
+// "Sisyphus" focus scene, black-figure edition (ROUND3_ART; round 5 motion, ROUND5_SISYPHUS): a tracking close-up of
+// a figure pushing a stone up an endless incline. One clock, the distance D, drives the walk, the stone and the camera;
+// the summit appears only when a block completes. Flat fills and thin ochre lines.
 import type { ClimbInput, SceneEngine, SceneInitOptions, ScenePhase } from './types';
 import { INK, LW, NIGHT, PREDAWN_BAND, artStop, mixOk, mixStop, pausedStop, type ArtStop } from './artPalette';
 import { softCap, buildBoulderSprite, buildCloudMass, buildStrip, drawContactArc, drawMoon, drawSky, drawStars, drawSun, makeStars, mkCanvas, type Star } from './artDraw';
 import { camLayout, clampCamX, follow, toScreen, type Cam, type CamLayout } from './camera';
 import { detailsIn, makeTrail, type Trail } from './trail';
-import { M_PER_H, PACE_M } from '../../domain/mountain';
-import { PACE, sigmaAt } from './gait';
-import { hash1, mulberry32, noise1, ridged, smoothstep } from './noise';
+import { M_PER_H, PACE_M, PREFIX_LEN } from '../../domain/mountain';
+import { hash1, mulberry32, ridged, smoothstep } from './noise';
 import type { V } from './path';
-import { DEG as DEG_, RIG, holdDForStone, interior as interiorDeg_, solveSit, stepToStand, type Pose } from './rig';
-import { PREFIX_LEN } from '../../domain/mountain';
-import { Gait } from './gait';
-import { drawFigureArt, figureTier, lastDetailMs, type FigureFrame } from './figureArt';
-import { makeChain, solveRest, stepChain, type Chain } from './chain';
-import { wind } from './gait';
+import { WALK, frac, sm, walkPose, type Secondary, type Skel, type WalkPose } from './walk';
+import { Spring, assemble, blendParams, easeStd, paramsOf, sitParams, standParams, type PoseParams } from './poses';
+import { drawFigure, figureTier } from './figure';
+import { DEG, armToStone } from './walk';
 import { birdSchedule, birdsAt, type BirdGroup } from './ambient';
 
 type Mode = 'climb' | 'summit' | 'stand' | 'sit';
 type SeqKind = 'summit' | 'mini' | 'next';
 interface Seq { kind: SeqKind; t0: number; dur: number }
 
-const SUMMIT_DUR = 6.0, MINI_DUR = 6.0, NEXT_DUR = 3.2, CROSSFADE_DUR = 0.4, STAND_DUR = 1.2;
-/** The summit heave: the walk-in distance (H, two steps) and its cadence. */
-const HEAVE_DIST = 0.95, HEAVE_SPEED = 1.1;
-const MAX_GRIT = 12;
-const R = RIG.boulderR; // H units
-/** Screen direction of travel along the trail (+1: the climb runs left → right in every layout). */
-const ROLL_DIR = 1;
+const SUMMIT_DUR = 6.0, MINI_DUR = 6.0, NEXT_DUR = 3.2, CROSSFADE_DUR = 0.4;
+/** §5: the speed envelope's entrance (600 ms) and exit (400 ms); a new climb holds 0.3 s before it starts. */
+const E_IN = 0.6, E_OUT = 0.4, NEXT_HOLD = 0.3;
+/** §6.1: the summit push (peak cadence × SUMMIT_E), its quintic stop over the last DECEL_DIST, then the stand. */
+const SUMMIT_E = 3.0, DECEL_DIST = 0.35, STAND_TAIL = 0.4;
+const R = WALK.R; // H units
 
-/** Debug/measurement hook read by the e2e scripts. */
-export interface SceneStats { frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number; camX?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number; zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; strainT?: number; camY?: number; figureMs?: number; detailMs?: number; tier?: number; pelvisH?: number; clothDeg?: number; clock?: number; u?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; detailAvg?: number; settling?: boolean; cut?: boolean; handGapPx?: number; pelvisPx?: number[]; pelvisW?: number[]; headAxisDeg?: number; elbowDeg?: number }
-
-interface Grit { live: boolean; x: number; y: number; vx: number; vy: number; age: number }
+/** Debug/measurement hook read by the tests and the e2e scripts. */
+export interface SceneStats {
+  frames: number; avgMs: number; maxMs: number; fps: number; quality: number; particles: number; firstMs?: number;
+  camX?: number; camY?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number;
+  zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; figureMs?: number;
+  tier?: number; clock?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; cut?: boolean;
+  /** Round 5: the distance clock, its envelope and phase, the rendered skeleton (world, H) and the camera. */
+  D?: number; e?: number; phi?: number; skel?: Skel; centre?: V; Hpx?: number; anchor?: number[]; walking?: boolean; fpsCap?: number;
+}
 
 export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
-  let w = 0, h = 0, scale = 1, hostDpr = 1, quality = 1;
+  let w = 0, h = 0, scale = 1, hostDpr = 1, quality = 1, fpsCap = 60;
   let reduced = false, running = false, raf = 0, mounted = false;
   let phase: ScenePhase = 'focus';
   let phaseSet = false;
   let progress = 0;
   let mode: Mode = 'climb';
   let seq: Seq | null = null;
-  const rng = mulberry32(20261027);
 
   // ---------- climb state ----------
   let climb: ClimbInput = { stage: 1, stageStartM: 0, stageLenM: 1500 * PACE_M, posM: 0, fromSummit: false, summits: 0 };
   let climbSet = false;
   let trail: Trail = makeTrail({ stage: 1, startH: 0, lenH: climb.stageLenM / M_PER_H, fromSummit: false });
   let trailKey = '';
-  /** Climber's target position along the current stage (H). */
+  /** Climber's target position along the current stage (H), from the domain (metres come from focused time). */
   const sTarget = () => (climbSet ? (climb.posM - climb.stageStartM) / M_PER_H : progress * (climb.stageLenM / M_PER_H));
   const lenH = () => climb.stageLenM / M_PER_H;
-  /** §7.6: between setClimb updates the target advances at the pace (≤ 1.5 s), so it grows linearly, never in stairs. */
+  /** Between setClimb updates the target advances at the pace (≤ 1.5 s), so it grows linearly, never in stairs. */
   let rawTgt = NaN, rawTgtT = 0;
   function dTarget(t: number): number {
     const raw = sTarget();
     if (raw !== rawTgt) { rawTgt = raw; rawTgtT = t; }
-    return targetLive(t) ? raw + Math.min(1.5, Math.max(0, t - rawTgtT)) * PACE : raw;
+    return targetLive(t) ? Math.min(lenH(), raw + Math.min(1.5, Math.max(0, t - rawTgtT)) * WALK.v) : raw;
   }
   /** The target is advancing: focusing on a climb, fed within the last 1.5 s, short of the climb's end. */
   function targetLive(t: number): boolean {
-    return climbSet && mode === 'climb' && (phase === 'focus' || phase === 'open') && t - rawTgtT < 1.5 && rawTgt < lenH() - 1e-6;
+    return mode === 'climb' && (phase === 'focus' || phase === 'open') && (!climbSet || t - rawTgtT < 1.5) && rawTgt < lenH() - 1e-6;
   }
+
+  // ---------- the distance clock (§5) ----------
+  /** Visual distance along the trail (H): every joint, the stone and the camera are functions of it. */
+  let D = 0;
+  /** Speed envelope ramp: e = smootherstep(eU); eU rises over 600 ms, falls over 400 ms. */
+  let eU = 0, holdUntil = -1, lastDdot = 0;
+  const envelope = () => sm(eU);
 
   /** Rebuild the trail when the climb changes; true when a new climb (stage) began. */
   function ensureTrail(): boolean {
@@ -75,28 +83,27 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     trailKey = key;
     chunkCache.clear();
     standCache = null;
-    if (prevStage !== climb.stage) { gait.snap(sTarget(), trail); return true; }
+    if (prevStage !== climb.stage) { D = sTarget(); return true; }
     return false;
   }
 
   // ---------- summit / stand state ----------
-  /** Pelvis position (H) whose hold pose puts the stone at rest at the start of the summit ledge. */
-  function standD(): number { return holdDForStone(trail, trail.geom.ledgeStart + 0.1); }
-  interface StandCache { hold: Pose; centre: V; sB: number; rot: number; D: number }
-  let standCache: StandCache | null = null;
-  /** The resting summit tableau (hold pose at standD, stone on the ledge), computed once per climb. */
-  function standState(): StandCache {
+  interface StandBase { Dstop: number; from: PoseParams; centre: V; sB: number; rot: number; psiWalk: number }
+  let standCache: StandBase | null = null;
+  /**
+   * The summit spot: the stone at the top of the crest fillet (≤ 5°), the walk stopped in double support (φ = 0.06):
+   * the nearest such D to the stone's spot (the spec's "first after" could add up to a stride to the push).
+   */
+  function standBase(): StandBase {
     if (standCache) return standCache;
-    const D = standD();
-    const g2 = new Gait(5);
-    g2.snap(D, trail);
-    const fr = g2.pose(trail);
-    standCache = { hold: fr.pose, centre: fr.centre, sB: fr.sB, rot: fr.rot, D };
+    const Dstand = trail.geom.ledgeStart - 0.1 - WALK.dS;
+    const Dstop = WALK.L * (Math.round(Dstand / WALK.L - 0.06) + 0.06);
+    const wp = walkPose(trail, Dstop, 0);
+    standCache = { Dstop, from: paramsOf(wp), centre: wp.centre, sB: wp.sB, rot: wp.rot, psiWalk: wp.psi[0] };
     return standCache;
   }
-  /** The summit beat's walk: from the climb's end up onto the ledge, then the stand. */
-  let summitWalk: { t0: number; Dend: number; standT0: number | null; hold: Pose | null; centre: V | null; sB: number; rot: number } | null = null;
-  /** The next-climb beat: the stone rolls forward from the previous summit's ledge into the col. */
+  interface Summit { kind: 'summit' | 'mini'; t0: number; e0: number; dec: { t0: number; D0: number; r: number; Td: number } | null; blendDur: number }
+  let summit: Summit | null = null;
   let xfadeT0 = -1;
 
   // ---------- camera ----------
@@ -107,10 +114,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   const px = (hUnits: number) => hUnits * lay.Hpx * cam.zoom;
 
   // ---------- figure ----------
-  const gait = new Gait(20261027);
-  let chains: Chain[] | null = null;
-  let chainAcc = 0;
-  let fig: FigureFrame | null = null;
+  /** Tertiary channels outside the walk (springs), and the last analytic values for the hand-off. */
+  const springs = { beard: new Spring(), ringlet: new Spring(), flapF: new Spring(), flapB: new Spring() };
+  let secPrev: Secondary | null = null, secVel: Secondary = { beard: 0, ringlet: 0, flapF: 0, flapB: 0 }, springsLive = false;
 
   // ---------- palette / sky ----------
   let stop: ArtStop = artStop(0);
@@ -140,11 +146,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   /** After a cut, the next frame rebuilds every stale cache at once (no mixed-palette frame). */
   let rebuildAll = false;
 
-  const grit: Grit[] = Array.from({ length: MAX_GRIT }, () => ({ live: false, x: 0, y: 0, vx: 0, vy: 0, age: 0 }));
   const frameTimes: number[] = [];
   const stats: SceneStats = { frames: 0, avgMs: 0, maxMs: 0, fps: 0, quality: 1, particles: 0 };
   let fpsCount = 0, fpsWindow = 0;
-  let lastFrame = 0, lastDraw = 0, ambientT = 0;
+  let lastFrame = 0, ambientT = 0;
   const nowS = () => performance.now() / 1000;
 
   // ---------- sizing ----------
@@ -410,8 +415,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const size = boulderSprite.width / (scale * 2);
     g.save();
     g.translate(c.x, c.y);
-    // Rolling forward = clockwise on the y-down canvas: rotate by +arc/R (ROUND4 §5.1; round 3 had the sign wrong).
-    const rotCanvas = ROLL_DIR * rot;
+    // §4.1: ρ = +centreArc(D + ΔS)/R, applied in screen space (y down) after toScreen, where a positive angle is
+    // clockwise: the forward roll for a stone travelling up and to the right. Never inside a y-flipped transform.
+    const rotCanvas = rot;
     g.rotate(rotCanvas);
     stats.rot = rotCanvas; stats.sB = sB;
     g.drawImage(boulderSprite, -size / 2, -size / 2, size, size);
@@ -420,100 +426,10 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     drawContactArc(g, c, Rpx, slope, LW(lay.Hpx * cam.zoom).fleck);
   }
 
-  // ---------- grit ----------
-  function spawnGrit(at: V, n: number) {
-    for (let i = 0; i < n; i++) {
-      const p = grit.find((q) => !q.live);
-      if (!p) return;
-      p.live = true; p.x = at.x; p.y = at.y; p.vx = -(0.1 + rng() * 0.25); p.vy = 0.15 + rng() * 0.2; p.age = 0;
-    }
-  }
-  function stepGrit(dt: number) {
-    let live = 0;
-    for (const p of grit) {
-      if (!p.live) continue;
-      p.age += dt; p.vy -= 2.5 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
-      const gy = trail.groundY(p.x);
-      if (p.y < gy) { if (p.vy < -0.3) { p.y = gy; p.vy = -p.vy * 0.3; p.vx *= 0.6; } else { p.y = gy; p.vy = 0; p.vx *= 0.9; } }
-      if (p.age > 2.2) p.live = false; else live++;
-    }
-    stats.particles = live;
-  }
-  function drawGrit(g: CanvasRenderingContext2D) {
-    g.fillStyle = INK.ochre;
-    const r = Math.max(1, px(0.008));
-    for (const p of grit) { if (!p.live) continue; const v = S(p); g.fillRect(v.x - r, v.y - r, r * 2, r * 2); }
-  }
-
-  // ---------- chains (loincloth flaps) ----------
-  let chainAnchors: V[] | null = null;
-  let clothMean = NaN, clothSwing = 0, clothSwingV = 0;
-  function updateChains(pose: Pose, dt: number, rest: boolean) {
-    const anchors = clothAnchors(pose);
-    if (!chains) {
-      // front and back flaps (3 links; phone 2) and the belt knot's two tails (2 links) — ROUND4 §6.4
-      const flapLinks = lay.landscape ? 3 : 2;
-      chains = anchors.map((a, i) => (i < 2 ? makeChain(a, flapLinks, 0.24 / 8, 30, 0.6) : makeChain(a, 2, 0.16 / 8, 35, 0.9)));
-      rest = true;
-    }
-    const grav = 9;
-    const ph = pose.pelvis.y - trail.groundY(pose.pelvis.x);
-    clothMean = Number.isFinite(clothMean) ? clothMean + (ph - clothMean) * Math.min(1, dt / 4) : ph;
-    if (!rest) { const wc = 5; clothSwingV += (-wc * wc * (clothSwing - (ph - clothMean) * 14) - 2 * wc * clothSwingV) * dt; clothSwing += clothSwingV * dt; }
-    const wx = wind(ambientT) * 6 + clothSwing;
-    if (rest) { chains.forEach((c, i) => solveRest(c, anchors[i], { x: 0, y: -1 }, grav, wx)); chainAnchors = anchors; return; }
-    // the cloth is carried 85% with the body (wrapped linen clings), so the surge never flags it; its follow-through
-    // is an explicit swing driven by the pelvis bob through a critically damped spring (ω = 5: the tip trails the
-    // body by ≈ 250–350 ms, §7.5)
-    if (chainAnchors) chains.forEach((c, i) => {
-      const dx = (anchors[i].x - chainAnchors![i].x) * 0.85, dy = (anchors[i].y - chainAnchors![i].y) * 0.85;
-      for (let k = 1; k < c.p.length; k++) { c.p[k].x += dx; c.p[k].y += dy; c.prev[k].x += dx; c.prev[k].y += dy; }
-    });
-    chainAnchors = anchors;
-    chainAcc = Math.min(chainAcc + dt, 3 / 60);
-    let n = 0;
-    while (chainAcc >= 1 / 60 && n < (quality >= 0.75 ? 3 : 1)) { chains.forEach((c, i) => stepChain(c, anchors[i], { x: 0, y: -1 }, 1 / 60, grav, wx, 0.82)); chainAcc -= 1 / 60; n++; }
-  }
-  function clothAnchors(pose: Pose): V[] {
-    const d = { x: pose.shoulder.x - pose.pelvis.x, y: pose.shoulder.y - pose.pelvis.y };
-    const l = Math.hypot(d.x, d.y) || 1;
-    const up = { x: d.x / l, y: d.y / l };
-    const front = { x: up.y * pose.facing, y: -up.x * pose.facing };
-    const low = 0.62 / 8;
-    const at = (f: number, dn: number) => ({ x: pose.pelvis.x + front.x * f - up.x * dn, y: pose.pelvis.y + front.y * f - up.y * dn });
-    // flaps hang from the wrap's hem at front and back; the knot tails from the belt knot at the front hip
-    return [at(0.055, low), at(-0.07, low), at(0.08, -0.01), at(0.085, -0.005)];
-  }
-
-  /**
-   * V11: the summit idles (§4.7). A slow weight shift (the pelvis sways ±0.012 H over a 7.3 s period, C∞) and,
-   * every 8 s, a look out — the chin lifts a further 6° and settles. The base chin is lifted 12° (§3.4).
-   */
-  function standIdle(): { sway: number; chin: number } {
-    if (reduced) return { sway: 0, chin: 0.6 };
-    const sway = 0.012 * Math.sin((2 * Math.PI * ambientT) / 7.3) * Math.sin((2 * Math.PI * ambientT) / 23 + 1) ** 2;
-    const q = (ambientT % 8) / 8, look = q < 0.5 ? Math.sin(Math.PI * q * 2) ** 2 : 0;
-    return { sway, chin: 0.6 + 0.3 * look };
-  }
-
   // ---------- sequences ----------
-  /**
-   * V3: the summit beat starts with a 400 ms cross-fade cut to the heave — the figure two steps before his spot on the
-   * ledge, the camera on him — so he is on screen throughout and the beat lasts ≈ 6 s, not a 2 H walk of 15 s.
-   */
-  function startSummitWalk(t: number, kind: SeqKind) {
-    crossfade(t);
-    const D1 = standState().D;
-    gait.snap(D1 - HEAVE_DIST, trail);
-    camInit = false; chains = null; cut = true;
-    mode = 'summit';
-    summitWalk = { t0: t, Dend: gait.D, standT0: null, hold: null, centre: null, sB: 0, rot: 0 };
-    startSeq(kind, t);
-  }
   function startSeq(kind: SeqKind, t: number) {
     const dur = kind === 'summit' ? SUMMIT_DUR : kind === 'mini' ? MINI_DUR : NEXT_DUR;
-    seq = { kind, t0: t, dur };
-    if (reduced) seq = null;
+    seq = reduced ? null : { kind, t0: t, dur };
     ensureLoop();
   }
 
@@ -525,162 +441,200 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     ensureLoop();
   }
 
+  /** §6.1: the block ends: the walk speeds up to a triumphant last push and stops in double support on the ledge. */
+  function startSummit(t: number, kind: 'summit' | 'mini') {
+    mode = 'summit';
+    summit = { kind, t0: t, e0: Math.max(envelope(), 0.6), dec: null, blendDur: 1.2 };
+    D = Math.min(D, standBase().Dstop);
+    startSeq(kind, t);
+  }
+
   /**
-   * The next climb (review U3, U11): a clean cut on a single frame to the col, the climber already braced behind
-   * the stone and the camera on its tracking frame. No camera move through empty sky, no fade, no double exposure;
-   * the gait picks up from the hold.
+   * §6.3: the next climb is a clean cut (a 0.4 s cross-fade) to the col, the figure in its standing push pose in double
+   * support (φ = 0.06) with e = 0; after a 0.3 s hold the walk eases in over 600 ms. The first step grows out of it.
    */
-  function beginNext() {
+  function beginNext(t: number) {
+    crossfade(t);
     mode = 'climb';
-    summitWalk = null;
-    seq = null;
-    xfadeT0 = -1; snapshot = null;
-    gait.snap(sTarget(), trail);
-    chains = null;
-    camInit = false;
+    summit = null; seq = null;
+    const tgt = sTarget();
+    D = WALK.L * (Math.floor(tgt / WALK.L - 0.06) + 0.06);
+    eU = 0; holdUntil = t + NEXT_HOLD;
+    camInit = false; springsLive = false; secPrev = null;
     rebuildAll = true;
   }
 
   // ---------- frame ----------
   let altNow = 0;
 
-  /** Summit framing: zoom 0.62 (portrait 0.72) with the ledge at (0.55 w, 0.58 h) (portrait (0.45 w, 0.62 h)). */
+  /**
+   * Summit framing: zoom 0.62 (portrait 0.72) on the stand spot, which sits at (0.30 w, 0.62 h) (portrait
+   * (0.20 w, 0.62 h)), so the pull-back keeps the walking figure in frame and opens the ledge and the cairn ahead.
+   */
   function summitFrame(): { pos: V; anchor: V; zoom: number } {
-    // portrait: frame the stone and the standing figure (the back side runs off to the right)
-    const ledge = trail.at(trail.geom.ledgeStart + (lay.landscape ? 0.8 : 0.1));
-    return { pos: ledge, anchor: lay.landscape ? { x: 0.34 * w, y: 0.58 * h } : { x: 0.58 * w, y: 0.58 * h }, zoom: lay.landscape ? 0.62 : 0.72 };
+    const spot = trail.at(standBase().Dstop);
+    return { pos: spot, anchor: lay.landscape ? { x: 0.30 * w, y: 0.62 * h } : { x: 0.20 * w, y: 0.62 * h }, zoom: lay.landscape ? 0.62 : 0.72 };
   }
 
-  function updateCamera(t: number, dt: number, target: V) {
+  /**
+   * §3.7: while climbing (and through the summit push) the camera is rigid on the ground point at D: no spring, no
+   * filter, so the ground scrolls at exactly the planted foot's speed. The end clamp (a soft minimum, width 0.3 H)
+   * keeps the crest off screen during a block. Set pieces follow and pull back to the summit framing.
+   */
+  function updateCamera(t: number, dt: number) {
     const sf = summitFrame();
     let zoomK = 0;
-    if (phase === 'complete' || phase === 'break' || mode === 'stand' || mode === 'sit' || mode === 'summit') {
-      zoomK = seq && (seq.kind === 'summit' || seq.kind === 'mini') ? smoothstep(0.5, 4.0, t - seq.t0) : 1;
-      if (reduced) zoomK = 1;
+    if (phase === 'complete' || phase === 'break' || mode !== 'climb') {
+      zoomK = seq && (seq.kind === 'summit' || seq.kind === 'mini') ? smoothstep(0.5, 4.0, t - seq.t0) : mode === 'climb' ? 0 : 1;
+      if (reduced && mode !== 'climb') zoomK = 1;
     }
-    const from = sf;
     const ez = zoomK * zoomK * (3 - 2 * zoomK);
-    // tracking target with the end clamp (the crest never on screen during a block)
     const crestX = trail.at(trail.geom.crestS - 0.3).x;
     const limitX = clampCamX(Infinity, crestX, w, lay.anchor.x, lay.Hpx);
-    if (reduced) { cam.pos = { ...target }; cam.vel = { x: 0, y: 0 }; camInit = true; ffS = NaN; }
-    else if (!camInit && mode !== 'climb') { cam.pos = { ...target }; cam.vel = { x: 0, y: 0 }; camInit = true; ffS = NaN; }
-    else if (mode === 'climb') {
-      if (!camInit) { ffS = NaN; camInit = true; }
-      // §7.6: a feed-forward constant-speed target (Dtarget − 0.15σ) plus a gentle correction toward the
-      // cycle-linear pelvis base: the world scrolls at ≈ v̄ and the per-step surge plays out
-      // inside the frame. The end clamp engages through a soft minimum (width 0.3 H): the camera eases to a stop.
-      const lin = gait.linS();
-      const live = targetLive(t) && !seq;
-      // σ read at a continuously moving point (at the stepping D it would jump at every step)
-      let sig = sigmaAt(trail.angleAt(Number.isFinite(ffS) ? ffS : lin));
-      if (!Number.isFinite(ffS) || Math.abs(dTarget(t) - ffS) > 3 * sig) {
-        sig = sigmaAt(trail.angleAt(lin));
-        ffS = dTarget(t); ffV = live ? PACE : 0; ffA = 0; corr = lin - (ffS - 0.15 * sig); corrV = 0; corrA = 0;
-      }
-      // the feed-forward speed itself changes through a critically damped filter (ω = 2.5): eases in and out
-      // V9: through a strain beat the world eases down to 25% of the pace (the figure stalls for 3 s), so he never
-      // slides far back in the frame; the saturating correction brings him home in a few seconds
-      const vT = live ? PACE * (frMode === 'strain' ? 0.25 : 1) : 0;
-      ffA += (-6.25 * (ffV - vT) - 5 * ffA) * dt; ffV += ffA * dt;
-      ffS += ffV * dt + 0.03 * PACE * Math.tanh((dTarget(t) - ffS) / 0.3) * dt; // (a slow, capped pull keeps it honest)
-      // the correction: proportional (ω = 1.2) but its speed saturates at ±12% of v̄ and changes through a critically
-      // damped velocity filter (ω = 2) — a strain beat's 3 s stall plays out in the frame, the world never stutters
-      const err = lin - (ffS - 0.15 * sig) - corr, vmax = 0.12 * PACE;
-      const vc = vmax * Math.tanh((1.2 * err) / vmax);
-      corrA += (-4 * (corrV - vc) - 4 * corrA) * dt; corrV += corrA * dt; corr += corrV * dt;
-      const p = trail.at(ffS - 0.15 * sig + corr);
-      const x = 0.5 * (p.x + limitX - Math.sqrt((p.x - limitX) * (p.x - limitX) + 0.09));
-      const np = { x, y: p.y };
-      cam.vel = { x: (np.x - cam.pos.x) / Math.max(1e-3, dt), y: (np.y - cam.pos.y) / Math.max(1e-3, dt) };
-      cam.pos = np;
-    } else { follow(cam, target, dt, 2.2); ffS = NaN; }
-    const trackPos = { x: Math.min(cam.pos.x, limitX), y: cam.pos.y };
-    if (trackPos.x !== cam.pos.x) { cam.pos.x = trackPos.x; cam.vel.x = Math.min(0, cam.vel.x); } // y keeps following: he walks into the frame, not out of its top
+    if (mode === 'climb' || mode === 'summit') {
+      const p = trail.at(D);
+      const x = mode === 'climb' ? 0.5 * (p.x + limitX - Math.sqrt((p.x - limitX) * (p.x - limitX) + 0.09)) : p.x;
+      cam.vel = { x: (x - cam.pos.x) / Math.max(1e-3, dt), y: (p.y - cam.pos.y) / Math.max(1e-3, dt) };
+      cam.pos = { x, y: p.y };
+      camInit = true;
+    } else {
+      const target = trail.at(standBase().Dstop);
+      if (!camInit || reduced) { cam.pos = { ...target }; cam.vel = { x: 0, y: 0 }; camInit = true; } else follow(cam, target, dt, 2.2);
+    }
+    const trackPos = mode === 'climb' ? { x: Math.min(cam.pos.x, limitX), y: cam.pos.y } : { ...cam.pos };
     if (ez > 0) {
-      const p = { x: trackPos.x + (from.pos.x - trackPos.x) * ez, y: trackPos.y + (from.pos.y - trackPos.y) * ez };
-      renderCam = { pos: p, anchor: { x: lay.anchor.x + (from.anchor.x - lay.anchor.x) * ez, y: lay.anchor.y + (from.anchor.y - lay.anchor.y) * ez }, zoom: 1 + (from.zoom - 1) * ez };
+      // the summit framing is centred on the stand spot: while he pushes toward it the camera stays on him (only the
+      // anchor and the zoom ease), so he can never walk out of frame; he arrives exactly at the framing's spot
+      const kp = mode === 'summit' ? 0 : ez;
+      const p = { x: trackPos.x + (sf.pos.x - trackPos.x) * kp, y: trackPos.y + (sf.pos.y - trackPos.y) * kp };
+      renderCam = { pos: p, anchor: { x: lay.anchor.x + (sf.anchor.x - lay.anchor.x) * ez, y: lay.anchor.y + (sf.anchor.y - lay.anchor.y) * ez }, zoom: 1 + (sf.zoom - 1) * ez };
     } else renderCam = { pos: { ...trackPos }, anchor: { ...lay.anchor }, zoom: 1 };
-    void t;
   }
   let renderCam = { pos: { x: 0, y: 0 }, anchor: { x: 0, y: 0 }, zoom: 1 };
-  let ffS = NaN, ffV = 0, ffA = 0, corr = 0, corrV = 0, corrA = 0;
-  let frMode = 'trudge', frStrainT = -1, tierFree = true, settling = false, cut = false;
+  let cut = false;
+
+  /** §5: the visual integrator. Ḋ = v·e·(1 + 0.03·tanh((D* − D)/0.3)) ≥ 0: D never decreases during a block. */
+  function stepClock(t: number, dt: number) {
+    const tgt = dTarget(t);
+    if (Math.abs(tgt - D) > 0.5) { if (stats.frames > 0 && !reduced) crossfade(t); D = tgt; }
+    const want = targetLive(t) && t >= holdUntil && !seq ? 1 : 0;
+    eU = want ? Math.min(1, eU + dt / E_IN) : Math.max(0, eU - dt / E_OUT);
+    const e = envelope();
+    lastDdot = WALK.v * e * (1 + 0.03 * Math.tanh((tgt - D) / 0.3));
+    D += lastDdot * dt;
+  }
+
+  /** The summit push (§6.1): the cadence eases up to ×SUMMIT_E, then a quintic stop lands exactly on Dstop. */
+  function stepSummit(t: number, dt: number) {
+    const sm0 = summit!, base = standBase();
+    if (!sm0.dec) {
+      const e = sm0.e0 + (SUMMIT_E - sm0.e0) * sm((t - sm0.t0) / 1.2);
+      lastDdot = WALK.v * e;
+      D += lastDdot * dt;
+      const r = base.Dstop - D;
+      if (r <= DECEL_DIST) {
+        const Td = (2 * Math.max(1e-3, r)) / Math.max(1e-3, lastDdot);
+        sm0.dec = { t0: t, D0: D, r: Math.max(0, r), Td };
+        sm0.blendDur = Td + STAND_TAIL;
+      }
+      return;
+    }
+    const s = Math.min(1, (t - sm0.dec.t0) / sm0.dec.Td);
+    // quintic: p(0) = 0, p'(0) = 2 (the push speed), p''(0) = 0, p(1) = 1, p'(1) = p''(1) = 0
+    const P = 2 * (s - 6 * s ** 3 + 8 * s ** 4 - 3 * s ** 5) + (10 * s ** 3 - 15 * s ** 4 + 6 * s ** 5);
+    const prev = D;
+    D = sm0.dec.D0 + sm0.dec.r * P;
+    lastDdot = (D - prev) / Math.max(1e-6, dt);
+  }
+
+  /** Tertiary channels: analytic while walking; springs (seeded from the analytic value and slope) otherwise. */
+  function secondary(analytic: Secondary | null, rest: Secondary, k: number, dt: number): Secondary {
+    if (analytic && k <= 0) {
+      if (secPrev && dt > 0) secVel = { beard: (analytic.beard - secPrev.beard) / dt, ringlet: (analytic.ringlet - secPrev.ringlet) / dt, flapF: (analytic.flapF - secPrev.flapF) / dt, flapB: (analytic.flapB - secPrev.flapB) / dt };
+      secPrev = analytic; springsLive = false;
+      return analytic;
+    }
+    if (!springsLive) {
+      const a = secPrev ?? rest;
+      (Object.keys(springs) as Array<keyof Secondary>).forEach((key) => springs[key].set(a[key], secPrev ? secVel[key] : 0));
+      springsLive = true;
+    }
+    const out = {} as Secondary;
+    (Object.keys(springs) as Array<keyof Secondary>).forEach((key) => {
+      const target = analytic ? analytic[key] * (1 - k) + rest[key] * k : rest[key];
+      out[key] = reduced ? target : springs[key].step(target, dt);
+    });
+    return out;
+  }
+
+  /** The pose for this frame, the stone and its rotation. */
+  function figureState(t: number, dt: number): { skel: Skel; centre: V; rot: number; sB: number; walk: WalkPose | null } {
+    const ground = (x: number) => trail.groundY(x);
+    if (mode === 'climb') {
+      // reduced motion: the static key pose at toe-off (φ = 0.62) at the current D (§6.5)
+      const Dw = reduced ? WALK.L * (Math.floor(D / WALK.L) + 0.62) : D;
+      const wp = walkPose(trail, Dw, ambientT);
+      wp.sec = secondary(wp.sec, wp.sec, 0, dt);
+      return { skel: wp, centre: wp.centre, rot: wp.rot, sB: wp.sB, walk: wp };
+    }
+    if (mode === 'summit' && summit) {
+      const base = standBase();
+      const wp = walkPose(trail, D, ambientT);
+      const k = summit.dec ? easeStd((t - summit.dec.t0) / summit.blendDur) : 0;
+      const stand = standParams(base.from, wp.centre, ambientT, undefined, ground);
+      const sec = secondary(wp.sec, stand.sec, k, dt);
+      let skel: Skel = wp;
+      if (k > 0) {
+        const p = blendParams(paramsOf(wp), stand, k);
+        // the near palm slides round the stone (polar blend), never through it
+        const psiS = Math.atan2(stand.hands[0].origin.y - wp.centre.y, stand.hands[0].origin.x - wp.centre.x);
+        let dpsi = psiS - wp.psi[0]; while (dpsi > Math.PI) dpsi -= 2 * Math.PI; while (dpsi < -Math.PI) dpsi += 2 * Math.PI;
+        // (and keeps the arm long: from the blended angle it creeps to where the elbow stays in its band)
+        const ub = assemble(p);
+        p.hands[0] = armToStone(ub.shoulder, wp.centre, wp.psi[0] + dpsi * k, 1, 0, 40 * DEG).hand;
+        p.armOff[0] = { x: 0, y: 0 };
+        skel = assemble(p);
+      }
+      skel.sec = sec;
+      if (summit.dec && t - summit.dec.t0 >= summit.blendDur) { mode = 'stand'; summit = null; D = base.Dstop; }
+      return { skel, centre: wp.centre, rot: wp.rot, sB: wp.sB, walk: wp };
+    }
+    const base = standBase();
+    const p = mode === 'sit' ? sitParams(base.centre, ambientT, ground) : standParams(base.from, base.centre, ambientT, undefined, ground);
+    p.sec = secondary(null, p.sec, 1, dt);
+    if (mode === 'stand') {
+      // the same long-arm rule as the stand blend's last frame (no pop at the hand-off)
+      const psi = Math.atan2(p.hands[0].origin.y - base.centre.y, p.hands[0].origin.x - base.centre.x);
+      p.hands[0] = armToStone(assemble(p).shoulder, base.centre, psi, 1, 0, 40 * DEG).hand;
+    }
+    return { skel: assemble(p), centre: base.centre, rot: base.rot, sB: base.sB, walk: null };
+  }
 
   function sceneFrame(t: number, dt: number) {
     if (!ctx || !canvas) return;
-    const t0 = performance.now();
-    if (seq && t - seq.t0 >= seq.dur) {
-      const done = seq.kind;
-      seq = null;
-      void done;
-    }
+    if (seq && t - seq.t0 >= seq.dur) seq = null;
     if (desatK !== desatTarget) { const step = dt / 0.4; desatK = desatTarget > desatK ? Math.min(desatTarget, desatK + step) : Math.max(desatTarget, desatK - step); }
-    ambientT += dt * (phase === 'paused' ? 0.25 : 1);
-    // A new climb while focusing (an open-ended block's hourly summit): the stone rolls on into the next col.
-    if (ensureTrail() && (phase === 'focus' || phase === 'open') && phaseSet && !climb.atSummit) beginNext();
-    // An open-ended block's hourly summit (review U8): heave onto the ledge and stand, then the cut to the col.
+    // A new climb while focusing (an open-ended block's hourly summit): cut to the next col.
+    if (ensureTrail() && (phase === 'focus' || phase === 'open') && phaseSet && !climb.atSummit) beginNext(t);
+    // An open-ended block's hourly summit (review U8): the push onto the ledge and the stand.
     if (climb.atSummit && mode === 'climb' && (phase === 'focus' || phase === 'open') && phaseSet) {
       if (reduced || stats.frames === 0) mode = 'stand';
-      else startSummitWalk(t, 'mini');
+      else startSummit(t, 'mini');
     }
 
-    // Figure state.
-    const still = reduced || phase === 'paused';
-    let pose: Pose, centre: V, rot: number, sB: number;
-    settling = false; tierFree = true;
-    if (mode === 'climb') {
-      if (!still) gait.step(dt, dTarget(t), trail, { climbing: !seq && (phase === 'focus' || phase === 'open'), lenH: lenH(), idles: quality >= 1 });
-      else gait.settle(sTarget(), trail, reduced);
-      if (gait.events.snap && !reduced && stats.frames > 0) crossfade(t);
-      const fr = gait.pose(trail);
-      pose = fr.pose; centre = fr.centre; rot = fr.rot; sB = fr.sB;
-      frMode = fr.mode; frStrainT = fr.strainT;
-      // the level of detail may only change at the press (never mid-step) or at rest
-      tierFree = fr.mode !== 'trudge' || gait.u < 0.3;
-      if (gait.events.grit) spawnGrit(trail.at(sB), 2 + Math.floor(rng() * 2));
-    } else if (mode === 'summit' && summitWalk) {
-      // §5.2: heave onto the ledge (quick steps, the stone rolls by distance), then step through and stand.
-      const sw = summitWalk;
-      const st = t - sw.t0;
-      if (sw.standT0 === null) {
-        const D1 = standState().D;
-        // the heave: two steps onto the ledge at a brisk cadence (×HEAVE_SPEED), straight at the hold spot
-        const target = D1;
-        gait.step(dt, target, trail, { climbing: false, lenH: lenH(), speed: HEAVE_SPEED, idles: false });
-        const fr = gait.pose(trail);
-        pose = fr.pose; centre = fr.centre; rot = fr.rot; sB = fr.sB;
-        tierFree = fr.mode !== 'trudge' || gait.u < 0.3;
-        if (gait.events.stepEnd && rng() < 0.6) spawnGrit(trail.at(sB), 1);
-        // arrived: at rest in the hold for 0.4 s (the pelvis has settled), so the step-through starts from stillness
-        const arrived = gait.mode === 'hold' && gait.holdT >= 0.4 && Math.abs(D1 - gait.D) < 0.5 * sigmaAt(trail.angleAt(gait.D));
-        if (arrived || st > 9) { sw.standT0 = t; sw.hold = fr.pose; sw.centre = fr.centre; sw.sB = fr.sB; sw.rot = fr.rot; }
-      } else {
-        // §5.3 summit settle: released on the ledge, the stone rocks on a damped spring (±0.01 H, ζ 0.35, two
-        // oscillations) and turns with its travel, in phase (rot = centreArc/R holds); the palm rides it
-        const ts = t - sw.standT0, wn = (2 * Math.PI) / 0.55, z = 0.35;
-        const off = ts < STAND_DUR ? 0.01 * Math.exp(-z * wn * ts) * Math.sin(wn * Math.sqrt(1 - z * z) * ts) : 0;
-        sB = sw.sB + off; centre = off === 0 ? sw.centre! : trail.centreAt(sB, R); rot = sw.rot + (trail.centreArc(sB, R) - trail.centreArc(sw.sB, R)) / R;
-        settling = ts < STAND_DUR;
-        const k = ts / STAND_DUR;
-        pose = stepToStand(trail, sw.hold!, centre, Math.min(1, k), 1 + 0.015 * Math.sin(ambientT * 1.85), standIdle());
-        if (k >= 1) { standCache = { hold: sw.hold!, centre: sw.centre!, sB: sw.sB, rot: sw.rot, D: gait.D }; summitWalk = null; mode = 'stand'; }
-      }
-    } else {
-      const sc = standState();
-      centre = sc.centre; sB = sc.sB; rot = sc.rot;
-      const breath = 1 + 0.015 * Math.sin(ambientT * 1.85);
-      pose = mode === 'sit' ? solveSit(trail, 1, centre, breath) : stepToStand(trail, sc.hold, centre, 1, breath, standIdle());
-    }
+    // The clock. Breath and wind freeze with the walk when paused (they run on the envelope).
+    if (mode === 'climb') { if (reduced) D = dTarget(t); else stepClock(t, dt); }
+    else if (mode === 'summit') stepSummit(t, dt);
+    ambientT += dt * (mode === 'climb' && !reduced ? envelope() : phase === 'paused' ? 0 : 1);
 
-    // Camera target: the pelvis ground point without the bob.
-    const targetS = mode === 'climb' || (mode === 'summit' && summitWalk?.standT0 === null) ? gait.baseS() : standState().D;
-    const tp = trail.at(targetS);
-    updateCamera(t, dt, tp);
+    const fs = figureState(t, dt);
+    const { skel, centre, rot, sB } = fs;
+    updateCamera(t, dt);
     cam.anchor = renderCam.anchor; const keepPos = cam.pos; cam.pos = renderCam.pos; cam.zoom = renderCam.zoom;
     stoneScreenX = S(centre).x;
 
     // Altitude parallax: 0 at the climb start, 1 at its end.
+    const tp = trail.at(mode === 'climb' || mode === 'summit' ? D : standBase().Dstop);
     const lh = Math.max(1e-3, trail.at(trail.geom.crestS).y - trail.at(0).y);
     altNow = Math.min(1, Math.max(0, (tp.y - trail.at(0).y) / lh));
 
@@ -688,16 +642,13 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stop = desatK > 0 ? pausedStop(ss.stop, Math.round(desatK * 4) / 4) : ss.stop;
     const g = ctx;
     g.setTransform(scale, 0, 0, scale, 0, 0);
-    // paused: the horizon band greys with the rest of the palette (review U9)
     const band = desatK > 0 ? pausedStop({ ...ss.stop, band: ss.band }, Math.round(desatK * 4) / 4).band : ss.band;
     drawSky(g, w, h, stop, layerTop(0, altNow) - 0.22 * (layerTop(0, altNow)), layerTop(0, altNow) + h, band);
     if (ss.moon) drawMoon(g, ss.moon, 0.035 * h);
     drawStars(g, stars, ss.starVis, ss.twinkle ? ambientT : null);
     if (ss.sun) drawSun(g, ss.sun, 0.055 * h, stop, ss.sunRing);
 
-    // Strips: rebuild at most one per frame when out of range or recoloured.
-    // Staged rebuilds; the first animated frame draws sky, slope, stone and figure only. A reduced-motion still is
-    // the only frame for 15 s, so it builds everything it needs at once (review U5).
+    // Strips: staged rebuilds; a reduced-motion still builds everything it needs at once (review U5).
     cacheBudget = reduced || rebuildAll ? 99 : stats.frames === 0 ? 0 : stats.frames < 12 ? 2 : 1;
     rebuildAll = false;
     drawnRanges = 0; drawnClouds = 0;
@@ -716,37 +667,29 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     drawStrip(g, 2, altNow);
     drawBirds(g, t);
     drawSlope(g, { left: 2 });
-    // Cairns only on summits: this climb's (once reached) and, behind the start, the last one's.
     if (mode !== 'climb' || phase === 'complete' || phase === 'break') drawCairn(g, trail.geom.ledgeEnd - 0.25, true);
     if (climb.fromSummit) drawCairn(g, -PREFIX_LEN + 1.5 - 0.25, true);
 
-    // Boulder + figure.
+    // Stone, then the figure.
     drawBoulder(g, centre, rot, sB);
-    updateChains(pose, dt, still);
-    fig = { pose, centre, R, Hpx: lay.Hpx * cam.zoom, toS: S, chains, trail, facing: pose.facing, quality, veins: pose.veins ?? 0, tierFree };
-    // (measurement hook: with __flushTiming set, rasterise before and after so figureMs is the figure's real cost)
+    const Hz = lay.Hpx * cam.zoom;
     const flush = (globalThis as { __flushTiming?: boolean }).__flushTiming === true;
     if (flush) g.getImageData(0, 0, 1, 1);
     const tF = performance.now();
-    drawFigureArt(g, fig, scale);
+    drawFigure(g, skel, { toS: S, Hpx: lay.Hpx, zoom: cam.zoom, scale, quality, stone: { centre, R } });
     if (flush) g.getImageData(0, 0, 1, 1);
-    stats.figureMs = performance.now() - tF; stats.detailMs = lastDetailMs; stats.tier = figureTier();
+    stats.figureMs = performance.now() - tF; stats.tier = figureTier(Hz, quality);
     stats.figureAvg = stats.frames ? (stats.figureAvg ?? stats.figureMs) * 0.95 + stats.figureMs * 0.05 : stats.figureMs;
-    stats.detailAvg = stats.frames ? (stats.detailAvg ?? lastDetailMs) * 0.95 + lastDetailMs * 0.05 : lastDetailMs;
-    stats.settling = settling; stats.cut = cut; cut = false;
-    if (pose.hands) { const he = S(pose.arms[0].end), hp = S(pose.hands[0]); stats.handGapPx = Math.abs(Math.hypot(he.x - hp.x, he.y - hp.y) - RIG.wristToPalm * lay.Hpx * cam.zoom); stats.pelvisPx = [S(pose.pelvis).x, S(pose.pelvis).y]; stats.pelvisW = [pose.pelvis.x, pose.pelvis.y]; stats.headAxisDeg = (pose.headAxis ?? 0) / DEG_; stats.elbowDeg = interiorDeg_(pose.arms[0]); }
-    stepGrit(dt);
-    drawGrit(g);
+    stats.cut = cut; cut = false;
 
     if (xfadeT0 >= 0 && snapshot) {
       const k = 1 - Math.min(1, (t - xfadeT0) / CROSSFADE_DUR);
       if (k <= 0) { xfadeT0 = -1; snapshot = null; }
       else { g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = k; g.drawImage(snapshot, 0, 0); g.globalAlpha = 1; }
     }
-    // Framing checks (read by the transition tests): the figure is drawn and on screen, the black slope fills a
-    // sensible share of the frame (no empty flat-colour frames).
-    const ps = S(pose.pelvis);
-    stats.figureAlpha = pose.alpha;
+    // Framing checks (read by the tests): the figure is drawn and on screen, the slope fills a sensible share.
+    const ps = S(skel.pelvis);
+    stats.figureAlpha = 1;
     stats.figureOnScreen = ps.x > 0 && ps.x < w && ps.y > 0 && ps.y < h;
     let below = 0;
     for (let i = 0; i < 16; i++) {
@@ -758,19 +701,18 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stats.slopeFrac = below / 16;
     stats.zoom = cam.zoom; stats.rangesDrawn = drawnRanges; stats.cloudsDrawn = drawnClouds; stats.stripBuilds = stripBuilds;
     {
-      // the figure's screen bounds (every joint, hand and foot point) and a crop box with the stone (capture tools)
-      const pts = [pose.pelvis, pose.shoulder, pose.head, ...pose.legs.flatMap((l) => [l.joint, l.end]), ...pose.arms.flatMap((a) => [a.joint, a.end]), ...pose.feet!.flatMap((f) => [f.heel, f.toe])].map(S);
+      const pts = [skel.pelvis, skel.shoulder, skel.head, ...skel.legs.flatMap((l) => [l.knee, l.ankle]), ...skel.arms.flatMap((a) => [a.elbow, a.wrist]), ...skel.feet.flatMap((f) => [f.heel, f.toe])].map(S);
       const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
       stats.figBounds = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
       const c0 = S({ x: centre.x - R, y: centre.y + R }), c1 = S({ x: centre.x + R, y: centre.y - R });
       stats.figBox = [Math.min(stats.figBounds[0], c0.x) - 30, Math.min(stats.figBounds[1], c0.y) - 30, Math.max(stats.figBounds[2], c1.x) + 30, Math.max(stats.figBounds[3], c1.y) + 20];
     }
+    stats.Hpx = lay.Hpx; stats.anchor = [cam.anchor.x, cam.anchor.y];
     cam.pos = keepPos;
-    stats.camX = renderCam.pos.x; stats.sLocal = gait.baseS(); stats.camY = renderCam.pos.y; stats.clock = t; stats.u = gait.u;
-    stats.pelvisH = pose.pelvis.y - trail.groundY(pose.pelvis.x);
-    if (chains) { const c = chains[0].p, tip = c[c.length - 1]; stats.clothDeg = (Math.atan2(tip.x - c[0].x, c[0].y - tip.y) * 180) / Math.PI; }
-    stats.gait = mode === 'climb' ? frMode : mode; stats.strainT = mode === 'climb' ? frStrainT : -1;
-    void t0;
+    stats.camX = renderCam.pos.x; stats.camY = renderCam.pos.y; stats.clock = t;
+    stats.D = D; stats.sLocal = D; stats.e = mode === 'climb' ? envelope() : lastDdot / WALK.v; stats.phi = frac(D / WALK.L);
+    stats.skel = skel; stats.centre = centre; stats.walking = mode === 'climb' || mode === 'summit'; stats.fpsCap = fpsCap;
+    stats.gait = mode;
   }
 
   function drawClouds(g: CanvasRenderingContext2D, dt: number, back: boolean) {
@@ -816,9 +758,11 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
 
   // ---------- loop ----------
+  /** §0: 60 fps while climbing (focused tab, full quality), set pieces and cross-fades; otherwise 30; hidden 15. */
   function targetFps(): number {
-    if (seq || xfadeT0 >= 0 || mode === 'summit') return 60;
     if (typeof document !== 'undefined' && !document.hasFocus()) return 15;
+    if (seq || xfadeT0 >= 0 || mode === 'summit') return 60;
+    if (mode === 'climb' && (phase === 'focus' || phase === 'open') && quality >= 1) return fpsCap;
     return 30;
   }
 
@@ -828,7 +772,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     const t = ts / 1000;
     const minGap = 1 / targetFps();
     if (lastFrame && t - lastFrame < minGap - 0.002) { raf = requestAnimationFrame(loop); return; }
-    const dt = Math.min(0.1, lastFrame ? t - lastFrame : 1 / 30);
+    const dt = Math.min(0.1, lastFrame ? t - lastFrame : 1 / 60);
     lastFrame = t;
     const a = performance.now();
     sceneFrame(t, dt);
@@ -846,11 +790,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stats.maxMs = Math.max(...frameTimes);
     fpsCount++;
     if (t - fpsWindow >= 1) { stats.fps = fpsCount / (t - fpsWindow || 1); fpsCount = 0; fpsWindow = t; }
-    if (frameTimes.length >= 90 && stats.avgMs > 22 && quality > 0.5) {
-      quality = quality > 0.75 ? 0.75 : 0.5;
-      stats.quality = quality;
+    // §8 F3: over 10 ms on average for 90 frames, drop to 30 fps, then to the lighter tier (time-based: same speed)
+    if (frameTimes.length >= 90 && stats.avgMs > 10) {
+      if (fpsCap > 30) fpsCap = 30;
+      else if (quality > 0.75) { quality = 0.75; stats.quality = quality; applySize(); }
+      else if (stats.avgMs > 22 && quality > 0.5) { quality = 0.5; stats.quality = quality; applySize(); }
       frameTimes.length = 0;
-      applySize();
     }
   }
 
@@ -860,14 +805,13 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     raf = requestAnimationFrame(loop);
   }
 
-  /** Still frame (reduced motion): hold pose, camera set directly. */
+  /** Still frame (reduced motion): the key pose, camera set directly. */
   function drawNow() {
     if (!mounted) return;
     const t = nowS();
     const a = performance.now();
     sceneFrame(t, 1 / 30);
-    record(performance.now() - a, t); // stills count as frames too (the reduced-motion cross-fade needs one)
-    lastDraw = t;
+    record(performance.now() - a, t);
   }
 
   function takeSnapshot() {
@@ -881,8 +825,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     if (typeof window === 'undefined') return;
     window.clearTimeout(reducedTimer);
     if (!reduced || !mounted || !running) return;
-    // §4.9: while climbing, the key pose is re-posed once a second at the target (no breath, cloth or beard motion)
-    reducedTimer = window.setTimeout(() => { drawNow(); scheduleReducedRedraw(); }, mode === 'climb' && (phase === 'focus' || phase === 'open') ? 1000 : 15000);
+    // §6.5: re-posed every 10 s at the current D, an instant cut (no breath, cloth or ramps)
+    reducedTimer = window.setTimeout(() => { drawNow(); scheduleReducedRedraw(); }, mode === 'climb' && (phase === 'focus' || phase === 'open') ? 10000 : 15000);
   }
 
   return {
@@ -895,7 +839,6 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       mounted = true;
       running = true;
       w = c.clientWidth || 800; h = c.clientHeight || 600;
-
       applySize();
       if (reduced) { drawNow(); scheduleReducedRedraw(); } else ensureLoop();
     },
@@ -918,27 +861,27 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       desatTarget = next === 'paused' ? 1 : 0;
       ensureTrail();
       if (first || opts?.instant) {
-        seq = null; summitWalk = null;
+        seq = null; summit = null;
         mode = next === 'complete' ? 'stand' : next === 'break' ? (progress >= 1 ? 'stand' : 'sit') : climb.atSummit ? 'stand' : 'climb';
         desatK = desatTarget;
-        chains = null;
-        if (mode === 'climb') gait.snap(sTarget(), trail);
+        springsLive = false; secPrev = null;
+        if (mode === 'climb') { D = sTarget(); eU = 0; holdUntil = -1; }
       } else if (next === 'complete' && mode === 'stand') {
         // a +N extension from the summit ended: he is still standing on it
       } else if (next === 'complete' && (prev === 'focus' || prev === 'open' || prev === 'paused')) {
-        if (reduced) { crossfade(t); mode = 'stand'; }
-        else startSummitWalk(t, 'summit');
+        if (reduced) { crossfade(t); mode = 'stand'; } else startSummit(t, 'summit');
       } else if (next === 'break') {
+        // (the seated pose faces downhill: a profile can't turn round, so the break is a 0.4 s cross-fade)
         crossfade(t);
-        seq = null; summitWalk = null;
+        seq = null; summit = null;
         mode = 'sit';
       } else if ((next === 'focus' || next === 'open') && (prev === 'complete' || prev === 'break') && climb.atSummit) {
         // +N from the summit: the summit scene holds until the extension ends (never a second crest, U2)
         if (mode === 'sit') { crossfade(t); mode = 'stand'; }
       } else if ((next === 'focus' || next === 'open') && (prev === 'complete' || prev === 'break')) {
-        beginNext();
-      } else if (mode !== 'climb' && !climb.atSummit && (next === 'focus' || next === 'open' || next === 'paused')) {
-        mode = 'climb'; summitWalk = null; gait.snap(sTarget(), trail);
+        beginNext(t);
+      } else if (mode !== 'climb' && mode !== 'summit' && !climb.atSummit && (next === 'focus' || next === 'open' || next === 'paused')) {
+        mode = 'climb'; summit = null; D = sTarget(); eU = 0;
       }
       if (reduced) drawNow(); else ensureLoop();
     },
@@ -952,9 +895,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       if (!r) { if (raf) cancelAnimationFrame(raf); raf = 0; return; }
       if (seq && nowS() - seq.t0 > seq.dur + 6) seq = null;
       // Back from a hidden tab far behind: re-plant at the target under a short cross-fade, never a visible snap (U13).
-      if (!reduced && mode === 'climb' && stats.frames > 0 && Math.abs(sTarget() - gait.D) > 4 * sigmaAt(trail.angleAt(gait.D))) {
-        crossfade(nowS()); gait.snap(sTarget(), trail); camInit = false; chains = null;
-      }
+      if (!reduced && mode === 'climb' && stats.frames > 0 && Math.abs(sTarget() - D) > 0.5) { crossfade(nowS()); D = sTarget(); camInit = false; }
       if (reduced) { drawNow(); scheduleReducedRedraw(); } else ensureLoop();
     },
     setReducedMotion(r: boolean) {
@@ -962,7 +903,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       if (r) {
         if (raf) cancelAnimationFrame(raf); raf = 0;
         seq = null; xfadeT0 = -1;
-        if (mode === 'summit') { summitWalk = null; mode = 'stand'; }
+        if (mode === 'summit') { summit = null; mode = 'stand'; }
         drawNow(); scheduleReducedRedraw();
       }
       else ensureLoop();
@@ -979,5 +920,4 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       canvas = null; ctx = null;
     },
   };
-  void noise1; void lastDraw;
 }

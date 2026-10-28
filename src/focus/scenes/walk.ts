@@ -142,33 +142,43 @@ export function standOff(thDeg: number): { delta: number; psi0: number } {
   const S = { x: S0.x + delta * t.x, y: S0.y + delta * t.y };
   return { delta, psi0: Math.atan2(S.y - C.y, S.x - C.x) };
 }
-const deltaAt = (trail: WalkTrail, D: number) => standOff(trail.angleAt(D)).delta;
 /** Palms either side of the facing point, ≈ 7° below (near) and above (far): 200° / 186° at 22°. */
 export const PSI_SPREAD = 7 * DEG;
 /** Both palms sit below the facing point, so the near arm descends under the face and the far arm rises behind it. */
 export const PSI_BIAS = 8.5 * DEG;
 /** The far palm sits 4° above the spread (≈ 199° at 22°), so the far arm rises gently behind the head. */
 export const FAR_LIFT = 4 * DEG;
-/** Mean shoulder relative to the ground point under D (no bob, no breath). */
-function meanShoulder(thDeg: number, delta: number): V {
-  const th = thDeg * DEG, lam = lam0(thDeg) * DEG;
-  return { x: delta * Math.cos(th) + 0.31 * Math.sin(lam), y: delta * Math.sin(th) + h0(thDeg) + 0.31 * Math.cos(lam) };
-}
+
+export interface Place { delta: number; psi0: number; psi: [number, number]; bias: [number, number] }
+let placeTrail: WalkTrail | null = null, placeD = NaN, placeV: Place | null = null;
 /**
- * The palms for a slope: near ψ0 + 15.5°, far ψ0 + 5.5° (≈ 209° / 199° at 22°): the near arm descends under the face,
- * the far arm rises gently behind the head. The near arm sits mid-band from the mean shoulder (REACH is tuned for it);
- * the far wrist is nearer, so the far shoulder sits that much back along its arm (`bias`, a constant per slope; it
- * stays inside the torso's silhouette, which hides it).
+ * The figure's place for D on the actual trail (the stone may already be on the crest while he is still on the
+ * incline): δ solved (Newton from the straight-slope value) so the mean shoulder sits REACH from the stone's surface,
+ * then the palms: near ψ0 + 15.5°, far ψ0 + 5.5° (≈ 209° / 199° at 22°). The near arm descends under the face, the far
+ * arm rises gently behind the head. The near arm sits mid-band from the mean shoulder (REACH is tuned for it); the far
+ * wrist is nearer, so the far shoulder sits that much back along its arm (`bias`; inside the torso, which hides it).
  */
-export function palmAngles(thDeg: number): { psi: [number, number]; bias: [number, number] } {
-  const { delta, psi0 } = standOff(thDeg);
-  const th = thDeg * DEG;
-  const S = meanShoulder(thDeg, delta);
-  const C = { x: WALK.dS * Math.cos(th) - WALK.R * Math.sin(th), y: WALK.dS * Math.sin(th) + WALK.R * Math.cos(th) };
+export function placeAt(trail: WalkTrail, D: number): Place {
+  if (trail === placeTrail && D === placeD && placeV) return placeV;
+  const th = trail.angleAt(D), lam = lam0(th) * DEG;
+  const off = { x: 0.31 * Math.sin(lam), y: h0(th) + 0.31 * Math.cos(lam) };
+  const C = trail.centreAt(D + WALK.dS, WALK.R);
+  const S = (d: number) => add(trail.at(D + d), off);
+  const T = WALK.R + REACH;
+  let delta = standOff(th).delta;
+  for (let i = 0; i < 4; i++) {
+    const e = 1e-4, f = dist(S(delta), C) - T, df = (dist(S(delta + e), C) - dist(S(delta - e), C)) / (2 * e);
+    if (Math.abs(df) < 1e-9) break;
+    delta -= f / df;
+  }
+  const Sm = S(delta);
+  const psi0 = Math.atan2(Sm.y - C.y, Sm.x - C.x);
   const psi: [number, number] = [psi0 + PSI_BIAS + PSI_SPREAD, psi0 + PSI_BIAS - PSI_SPREAD + FAR_LIFT];
-  const bias = psi.map((p) => dist(S, wristOf(handOnStone(C, p), 1)) - D_MID) as [number, number];
-  return { psi, bias };
+  const bias = psi.map((p) => dist(Sm, wristOf(handOnStone(C, p), 1)) - D_MID) as [number, number];
+  placeTrail = trail; placeD = D; placeV = { delta, psi0, psi, bias };
+  return placeV;
 }
+const deltaAt = (trail: WalkTrail, D: number) => placeAt(trail, D).delta;
 
 // ---------- hands and arms ----------
 /** World point of a hand-local point (x along the fingers, y outward from the sole), bending the sole round the stone. */
@@ -222,7 +232,7 @@ const PROT_MAX = 0.008, CREEP_MAX = 1.5 * DEG;
  * An arm to a palm on the stone (§2.6): the shoulder-to-wrist error is absorbed by scapular protraction (≤ 0.008 H),
  * then the elbow (kept smoothly inside 157–169°), then a palm creep round the stone (≤ 1.5°). All smooth.
  */
-export function armToStone(shoulder: V, centre: V, psi: number, facing: 1 | -1, bias = 0): { arm: ArmP; hand: HandP; prot: number; psi: number } {
+export function armToStone(shoulder: V, centre: V, psi: number, facing: 1 | -1, bias = 0, creepMax = CREEP_MAX): { arm: ArmP; hand: HandP; prot: number; psi: number } {
   const w0 = wristOf(handOnStone(centre, psi, facing), facing);
   const d00 = dist(shoulder, w0);
   const d0 = d00 - bias;
@@ -232,13 +242,16 @@ export function armToStone(shoulder: V, centre: V, psi: number, facing: 1 | -1, 
   const want = D_MID + D_HALF * Math.tanh((d0 - prot - D_MID) / D_HALF);
   let dPsi = 0;
   const f = (x: number) => dist(S1, wristOf(handOnStone(centre, psi + x, facing), facing)) - want;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < (creepMax > CREEP_MAX ? 8 : 3); i++) {
     const v = f(dPsi), e = 1e-4, dv = (f(dPsi + e) - f(dPsi - e)) / (2 * e);
     if (Math.abs(dv) < 1e-9) break;
-    dPsi = clamp(dPsi - v / dv, -CREEP_MAX, CREEP_MAX);
+    dPsi = clamp(dPsi - v / dv, -creepMax, creepMax);
   }
-  const hand = handOnStone(centre, psi + dPsi, facing);
-  return { arm: armIK(S1, wristOf(hand, facing)), hand, prot, psi: psi + dPsi };
+  let hand = handOnStone(centre, psi + dPsi, facing);
+  const wTgt = wristOf(hand, facing), arm = armIK(S1, wTgt);
+  // V4: the hand is always built from the wrist (if the arm ever fell short, the hand would come with it)
+  if (dist(arm.wrist, wTgt) > 1e-12) hand = { ...hand, origin: { x: hand.origin.x + arm.wrist.x - wTgt.x, y: hand.origin.y + arm.wrist.y - wTgt.y } };
+  return { arm, hand, prot, psi: psi + dPsi };
 }
 
 // ---------- the cycle ----------
@@ -316,7 +329,7 @@ export function walkPose(trail: WalkTrail, D: number, t: number): WalkPose {
   const sB = D + WALK.dS;
   const centre = trail.centreAt(sB, WALK.R);
   const rot = trail.centreArc(sB, WALK.R) / WALK.R;
-  const pa = palmAngles(th);
+  const pa = placeAt(trail, D);
   const near = armToStone(ub.shoulder, centre, pa.psi[0], 1, pa.bias[0]);
   const far = armToStone(ub.shoulder, centre, pa.psi[1], 1, pa.bias[1]);
   return {
@@ -330,9 +343,13 @@ export function walkPose(trail: WalkTrail, D: number, t: number): WalkPose {
 
 /** Tune REACH once (at 22°) so the near arm's mean elbow sits mid-band. */
 (function tune() {
+  const th = 22 * DEG, t = dir(th), n = { x: -Math.sin(th), y: Math.cos(th) };
+  const line: WalkTrail = { at: (s) => mul(t, s), angleAt: () => 22, centreAt: (s, R) => add(mul(t, s), mul(n, R)), centreArc: (s) => s };
   let lo = 0.25, hi = 0.5;
   for (let i = 0; i < 40; i++) {
     REACH = (lo + hi) / 2;
-    if (palmAngles(22).bias[0] > 0) hi = REACH; else lo = REACH;
+    placeD = NaN;
+    if (placeAt(line, 0).bias[0] > 0) hi = REACH; else lo = REACH;
   }
+  placeD = NaN; placeTrail = null;
 })();

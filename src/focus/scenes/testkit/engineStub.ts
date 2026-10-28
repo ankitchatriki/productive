@@ -56,3 +56,22 @@ export async function makeEngine(w = 1440, h = 900, reduced = false, record = fa
   e.resize(w, h, 1);
   return e;
 }
+
+/** A climb fed once a second at the pace (the domain's focused-time metres), recording every drawn frame. */
+export async function captureClimb(w: number, h: number, startS: number, secs: number, opts: { lenS?: number; record?: boolean; each?: (s: Record<string, unknown>) => void } = {}) {
+  const { M_PER_H, PACE_M } = await import('../../../domain/mountain');
+  const lenS = opts.lenS ?? 1500;
+  const lenM = lenS * PACE_M;
+  const climb = (posM: number) => ({ stage: 1, stageStartM: 0, stageLenM: lenM, posM, fromSummit: false, summits: 0, atSummit: false });
+  const e = await makeEngine(w, h, false, opts.record ?? false);
+  let focused = startS;
+  e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / lenS); e.setPhase('focus', { instant: true });
+  const rows: Array<Record<string, unknown>> = [];
+  const st = e.stats as unknown as Record<string, unknown>;
+  for (let k = 0; k < secs; k++) {
+    focused = Math.min(lenS, focused + 1);
+    e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / lenS);
+    run(1, (s) => { const r = { ...s, rotRec: state.rotates[state.rotates.length - 1] }; rows.push(r); opts.each?.(r); }, st);
+  }
+  return { e, rows, lenH: lenM / M_PER_H };
+}

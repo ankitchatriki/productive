@@ -6,8 +6,9 @@ export interface CamLayout { landscape: boolean; Hpx: number; anchor: V }
 export function camLayout(w: number, h: number): CamLayout {
   const landscape = w / h >= 0.9;
   // 0.35 w (the §2.2 table); ultrawide caps the lead room with 0.5 w − 0.27 h (the table's 3440×1440 row).
-  if (landscape) return { landscape, Hpx: 0.26 * h, anchor: { x: w / h > 2 ? 0.5 * w - 0.27 * h : 0.35 * w, y: 0.64 * h } };
-  return { landscape, Hpx: Math.min(0.19 * h, 0.40 * w), anchor: { x: 0.25 * w, y: 0.66 * h } }; // ROUND4 §3.1
+  // ROUND5 §0: landscape Hpx = 0.33 h (the push silhouette ≈ 29% of the height); portrait min(0.21 h, 0.42 w)
+  if (landscape) return { landscape, Hpx: 0.33 * h, anchor: { x: w / h > 2 ? 0.5 * w - 0.27 * h : 0.35 * w, y: 0.64 * h } };
+  return { landscape, Hpx: Math.min(0.21 * h, 0.42 * w), anchor: { x: 0.25 * w, y: 0.66 * h } };
 }
 
 export interface Cam { pos: V; vel: V; zoom: number; anchor: V }

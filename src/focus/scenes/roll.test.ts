@@ -1,71 +1,47 @@
-// S0: the stone rolls forward (ROUND4 §5): clockwise on screen by exactly the distance its centre travels, never
-// back outside a slip, and a slip spins it back then forward again. Engine on a stub canvas that records rotate().
+// §4.2: the stone rolls forward. 60 s of climbing at 60 Hz on the real engine (stub canvas that records every
+// ctx.rotate): the rotation strictly increases every frame, turns a marker clockwise on screen, and is proportional
+// to the ground scroll (the camera's distance D) within 1% over the minute and 3% per frame, with no surges.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { installStubs, makeEngine, removeStubs, run, stub } from './testkit/engineStub';
-import { makeTrail } from './trail';
-import { RIG } from './rig';
-import { M_PER_H, PACE_M } from '../../domain/mountain';
+import { captureClimb, installStubs, removeStubs } from './testkit/engineStub';
+import { WALK } from './walk';
 
 beforeAll(installStubs);
 afterAll(removeStubs);
 
-const lenM = 1500 * PACE_M;
-const R = RIG.boulderR;
-
 for (const [w, h] of [[1440, 900], [390, 844]] as const) {
   describe(`forward roll at ${w}×${h}`, () => {
-    it('rotation = +arc/R every frame, clockwise forward, ratcheted, slip back then forward, top marker moves forward', async () => {
-      const e = await makeEngine(w, h, false, true);
-      const trail = makeTrail({ stage: 1, startH: 0, lenH: lenM / M_PER_H, fromSummit: false });
-      const climb = (posM: number, atSummit = false) => ({ stage: 1, stageStartM: 0, stageLenM: lenM, posM, fromSummit: false, summits: atSummit ? 1 : 0, atSummit });
-      // start 85 s before the end of the climb, so the run includes a strain beat (never in the first 30 s) and the summit
-      let focused = 1500 - 85;
-      e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / 1500); e.setPhase('focus', { instant: true });
-      const rows: Array<{ sB: number; rot: number; tag: string }> = [];
-      const rec = (s: Record<string, unknown>) => {
-        const st = s.strainT as number;
-        rows.push({ sB: s.sB as number, rot: stub.rotates[stub.rotates.length - 1], tag: s.cut ? 'cut' : s.settling ? 'settle' : st >= 1.4 && st < 2.6 ? 'slip' : (s.gait as string) });
+    it('ρ strictly increasing and clockwise; ±1% of the ground scroll over 60 s; ±3% per frame; no surges', async () => {
+      const { e, rows } = await captureClimb(w, h, 300, 61, { record: true });
+      const live = rows.filter((r) => (r.clock as number) - (rows[0].clock as number) > 0.7); // after the 600 ms entrance
+      expect(live.length).toBeGreaterThan(3500); // 60 fps while climbing
+      const rho = live.map((r) => r.rotRec as number), D = live.map((r) => r.D as number);
+      // (the recorded canvas rotation is the same number the stats report)
+      live.forEach((r) => expect(r.rotRec).toBe(r.rot));
+      const marker = (k: number) => {
+        // the stone-local point (0.8 R, 0) after ctx.rotate(ρ) on the y-down canvas, relative to the centre
+        const r = 0.8 * WALK.R * (live[k].Hpx as number);
+        return Math.atan2(r * Math.sin(rho[k]), r * Math.cos(rho[k]));
       };
-      for (let k = 0; k < 85; k++) {
-        focused += 1;
-        e.setClimb!(climb(Math.min(1500, focused) * PACE_M)); e.setProgress(Math.min(1, focused / 1500));
-        run(1, rec, e.stats as unknown as Record<string, unknown>);
+      const dr: number[] = [];
+      let worstFrame = 0;
+      for (let k = 1; k < live.length; k++) {
+        const d = rho[k] - rho[k - 1];
+        expect(d).toBeGreaterThan(0);
+        let da = marker(k) - marker(k - 1); while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+        expect(da).toBeGreaterThan(0); // clockwise on screen (atan2 on y-down)
+        const ratio = (d * WALK.R) / (D[k] - D[k - 1]);
+        worstFrame = Math.max(worstFrame, Math.abs(ratio - 1));
+        dr.push(d);
       }
-      e.setClimb!(climb(lenM, true)); e.setProgress(0); e.setPhase('complete');
-      // through the summit heave (≈ 2 H at the trudge's pace), the step-through and the stone's settle on the ledge
-      run(20, rec, e.stats as unknown as Record<string, unknown>);
-      expect(rows.some((r) => r.tag === 'settle')).toBe(true);
-      expect(rows.length).toBeGreaterThan(2500); // the scene renders at 30 fps (60 during set pieces)
-
-      let slipBack = 0, strainNet = 0, inStrain = false, sawSlip = false, maxStep = 0;
-      for (let i = 0; i + 1 < rows.length; i++) {
-        const a = rows[i], b = rows[i + 1];
-        if (b.tag === 'cut') continue; // the summit beat's cross-fade cut (spec: cut frames excluded)
-        const dA = trail.centreArc(b.sB, R) - trail.centreArc(a.sB, R);
-        const dR = b.rot - a.rot;
-        // exactly the distance travelled, clockwise (positive canvas rotation) when moving forward
-        expect(Math.abs(dR - dA / R)).toBeLessThan(1e-6);
-        if (Math.abs(dA) > 1e-7) expect(Math.sign(dR)).toBe(Math.sign(dA));
-        // the ratchet: never back outside a slip
-        if (b.tag !== 'slip' && a.tag !== 'slip' && b.tag !== 'settle' && a.tag !== 'settle') expect(dA).toBeGreaterThanOrEqual(-1e-9);
-        if (b.tag === 'slip' && dR < 0) { sawSlip = true; slipBack += dR; }
-        const strainNow = b.tag === 'slip' || b.tag === 'strain';
-        // (net over the beat itself: from its first frame to its last, the stone is back where it was)
-        if (strainNow) { if (inStrain) strainNet += dR; inStrain = true; } else if (inStrain) { expect(Math.abs(strainNet)).toBeLessThan(1e-4); strainNet = 0; inStrain = false; }
-        maxStep = Math.max(maxStep, Math.abs(dR));
-      }
-      expect(sawSlip).toBe(true);
-      expect(slipBack).toBeLessThan(-0.05); // ≈ −0.095 rad back during the slip
-      // strobe guard: the engine renders the climb at 30 fps; the continuous trudge turns the stone < 0.02 rad a frame
-      console.log(`max |Δrot| per frame ${maxStep.toFixed(4)} rad`);
-      expect(maxStep).toBeLessThan(0.02);
-      // the sprite point at the stone's top at frame i, after ctx.rotate(+θ), sits at screen x = r·sin(θ(i+k) − θ(i))
-      // relative to the centre: while the stone moves forward the top of the disc moves forward (rightwards)
-      for (const i of [100, 400, 900]) {
-        const a = rows[i], b = rows[i + 10];
-        if (b.sB > a.sB + 1e-4 && a.tag !== 'slip' && b.tag !== 'slip' && b.tag !== 'settle') expect(Math.sin(b.rot - a.rot)).toBeGreaterThan(0);
-      }
+      const total = ((rho[rho.length - 1] - rho[0]) * WALK.R) / (D[D.length - 1] - D[0]);
+      const mean = dr.reduce((a, b) => a + b, 0) / dr.length;
+      let surge = 0;
+      for (let k = 1; k < dr.length; k++) surge = Math.max(surge, Math.abs(dr[k] - dr[k - 1]));
+      console.log(`${w}×${h}: roll/ground over 60 s ${total.toFixed(4)}, worst frame ${(worstFrame * 100).toFixed(2)}%, max |ΔΔρ| ${(surge / mean * 100).toFixed(3)}% of mean`);
+      expect(Math.abs(total - 1)).toBeLessThan(0.01);
+      expect(worstFrame).toBeLessThan(0.03);
+      expect(surge).toBeLessThan(0.02 * mean);
       e.destroy();
-    }, 30_000);
+    }, 60_000);
   });
 }

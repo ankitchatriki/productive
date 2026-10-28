@@ -4,16 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { camLayout, clampCamX } from './camera';
 import { makeTrail } from './trail';
 import { M_PER_H, PACE_H, PACE_M, END_LEAD, buildStage } from '../../domain/mountain';
-import { RIG } from './rig';
+import { WALK } from './walk';
 
 const VIEWPORTS: Array<[number, number]> = [[1280, 800], [1440, 900], [1920, 1080], [390, 844]];
 
 describe('camera layout', () => {
-  it('the figure is ≥ 22% of the viewport height on desktop and ≥ 16% on a phone', () => {
-    for (const [w, h] of VIEWPORTS.slice(0, 3)) expect(camLayout(w, h).Hpx / h).toBeGreaterThanOrEqual(0.22);
-    expect(camLayout(390, 844).Hpx / 844).toBeGreaterThanOrEqual(0.16);
+  it('the figure scale is 0.33 h on desktop and min(0.21 h, 0.42 w) on a phone (ROUND5 §0)', () => {
+    for (const [w, h] of VIEWPORTS.slice(0, 3)) expect(camLayout(w, h).Hpx / h).toBeCloseTo(0.33, 9);
+    expect(camLayout(390, 844).Hpx).toBeCloseTo(Math.min(0.21 * 844, 0.42 * 390), 9);
     const l = camLayout(1440, 900);
-    expect(l.Hpx).toBeCloseTo(234, 6); expect(l.anchor.x).toBeCloseTo(504, 6); expect(l.anchor.y).toBeCloseTo(576, 6);
+    expect(l.Hpx).toBeCloseTo(297, 6); expect(l.anchor.x).toBeCloseTo(504, 6); expect(l.anchor.y).toBeCloseTo(576, 6);
     expect(camLayout(3440, 1440).anchor.x).toBeCloseTo(0.5 * 3440 - 0.27 * 1440, 6);
   });
 });
@@ -38,8 +38,8 @@ describe('the end is never on screen during focus', () => {
           const rightEdge = camX + (w - lay.anchor.x) / lay.Hpx;
           expect(rightEdge).toBeLessThan(firstFlat);
           expect(trail.at(trail.geom.crestS).x - rightEdge).toBeGreaterThanOrEqual(0.3 * Math.cos(0.4) - 1e-6);
-          // the stone (≈ 1.1 H ahead of the pelvis) stays on screen, so the climber walks into frame at the end
-          const stoneRight = trail.at(p * lenH + 1.15).x + RIG.boulderR;
+          // the stone (ΔS ahead of the camera point) stays on screen, so the climber walks into frame at the end
+          const stoneRight = trail.at(p * lenH + WALK.dS).x + WALK.R;
           expect(stoneRight).toBeLessThanOrEqual(rightEdge + 1e-6);
         }
       });
