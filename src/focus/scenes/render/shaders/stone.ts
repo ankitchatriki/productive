@@ -67,9 +67,9 @@ void main() {
     float hx = surface(toMat(normalize(nV + tx * e))).x, hy = surface(toMat(normalize(nV + ty * e))).x;
     vec3 nB = normalize(nV - ((hx - s0.x) / e) * tx * 6.0 - ((hy - s0.x) / e) * ty * 6.0);
     vec3 lk = normalize(LKEY);
-    float wrap = clamp((dot(nB, lk) + 0.12) / 1.12, 0.0, 1.0);
-    L = alb * (0.92 * pow(wrap, 1.35) + 0.07 * (0.5 + 0.5 * nB.y) + 0.015);
-    L += 0.06 * pow(1.0 - nV.z, 4.0) * max(0.0, dot(normalize(nV.xy + 1e-5), normalize(lk.xy)));  // rim brightening
+    float wrap = clamp((dot(nB, lk) + 0.45) / 1.45, 0.0, 1.0);
+    L = alb * (1.25 * pow(wrap, 2.3) + 0.05 * (0.5 + 0.5 * nB.y) + 0.010);
+    L += 0.10 * pow(1.0 - nV.z, 3.0) * max(0.0, dot(normalize(nV.xy + 1e-5), normalize(lk.xy)));  // rim brightening
     L *= 1.0 - 0.20 * smoothstep(0.80, 0.98, -nV.y);                                            // ground occlusion
     L *= 0.95;
     if (uAlbedoOnly > 0.5) L = alb;

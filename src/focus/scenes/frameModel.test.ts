@@ -57,3 +57,19 @@ describe('the frame model', () => {
     e.destroy();
   });
 });
+
+describe('the stone (P2)', () => {
+  for (const [w, h, lo, hi] of [[1440, 900, 225, 235], [390, 844, 160, 170]] as const) {
+    it(`${w}×${h}: diameter ${lo}–${hi} px; on the phone the stone and figure sit inside 16 px gutters`, async () => {
+      const e = await makeEngine(w, h);
+      e.setClimb!(climb(600 * PACE_M)); e.setProgress(0.4); e.setPhase('focus', { instant: true });
+      let x0 = Infinity, x1 = -Infinity;
+      run(3, (s) => { const b = s.figBox as number[]; x0 = Math.min(x0, b[0] + 20); x1 = Math.max(x1, b[2] - 20); }, e.stats as unknown as Record<string, unknown>);
+      const m = modelOf(e);
+      const d = 2 * m.stone.R * m.cam.Hpx * m.cam.zoom;
+      expect(d).toBeGreaterThanOrEqual(lo); expect(d).toBeLessThanOrEqual(hi);
+      if (w === 390) { expect(x0).toBeGreaterThanOrEqual(16); expect(x1).toBeLessThanOrEqual(w - 16); }
+      e.destroy();
+    });
+  }
+});

@@ -373,6 +373,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
       tone: { exposure: grade.exposure * (1 - 0.08 * pausedK), warmth: grade.warmth + (-0.45 - grade.warmth) * pausedK },
       birds: birdList,
       xfade: xf, cut: cutNow, reduced, quality,
+      debugAlbedo: (globalThis as { __stoneAlbedo?: boolean }).__stoneAlbedo === true,
     };
     cutNow = false;
     lastModel = model;
