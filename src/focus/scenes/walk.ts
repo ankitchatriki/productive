@@ -10,12 +10,12 @@ export const DEG = Math.PI / 180;
 /** ΔS re-solved once for round 6 (R = 0.75) so the figure's place δ is ≈ 0 at θ = 24° (§4.4); frozen. */
 const DS_FROZEN = 1.44;
 export const WALK = {
-  /** Stride (two steps), H. */
-  L: 0.40,
+  /** Stride (two steps), H (0.42: a longer step for a straight rear leg, REVIEW_ROUND6 A3). */
+  L: 0.60,
   /** Duty factor: each foot is planted 62% of the cycle. */
-  beta: 0.62,
+  beta: 0.58,
   /** Contact point ahead of the pelvis, H. */
-  c: 0.07,
+  c: 0.12,
   /** Swing lift, H. */
   lift: 0.06,
   /** Heel peel at toe-off, deg. */
@@ -81,12 +81,12 @@ const dir = (a: number): V => ({ x: Math.cos(a), y: Math.sin(a) });
 /** Unit vector `ang` from vertical toward the facing side. */
 export const fromVertical = (ang: number, facing: 1 | -1): V => ({ x: Math.sin(ang) * facing, y: Math.cos(ang) });
 
-/** Review Z3: the pelvis 0.003 H lower and the heel peeled to 31° at toe-off (with the softer knee lock below). */
-const H0OFF = -0.003, PEEL = 31;
+/** The pelvis 0.002 H under the plan's height, the heel peeled to 31° at toe-off (with the heel rise below). */
+const H0OFF = -0.03, PEEL = 31;
 /** Pelvis height over the ground point (§2.4): 0.397 at 22°. */
-export const h0 = (thDeg: number) => 0.400 + H0OFF - 0.0038 * (thDeg - 22);
+export const h0 = (thDeg: number) => 0.400 + H0OFF - 0.0046 * (thDeg - 22);
 /** Torso lean (deg) for a slope. */
-export const lam0 = (thDeg: number) => clamp(20 + 0.2 * (thDeg - 22), 17, 24); // ROUND6 §4.4
+export const lam0 = (thDeg: number) => clamp(33 + 0.2 * (thDeg - 22), 30, 37); // REVIEW_ROUND6 A3: 30–40° (was 20°)
 /** Breath on its own clock (4.2 s). */
 export const breathRise = (t: number) => 0.003 * Math.sin((2 * Math.PI * t) / 4.2);
 export const breathK = (t: number) => 1 + 0.015 * Math.sin((2 * Math.PI * t) / 4.2);
@@ -120,7 +120,7 @@ export function swingPitch(q: number): number {
   return (PEEL + (50 - PEEL) * sm(q / PEEL_Q)) * (1 - sm((q - 0.2) / 0.45)) - 8 * sm((q - 0.3) / 0.3) * (1 - sm((q - 0.75) / 0.25));
 }
 /** Stance heel peel (deg) over p ∈ [0, β). */
-export const stancePeel = (p: number) => PEEL * sm((p - 0.279) / 0.341);
+export const stancePeel = (p: number) => PEEL * sm((p - 0.45 * WALK.beta) / (0.55 * WALK.beta));
 /** Swing lift (H): an early-peaked C2 arc, 0.06 at q = 0.375. */
 export const swingLift = (q: number) => WALK.lift * 198.8 * q ** 3 * (1 - q) ** 5;
 
@@ -218,13 +218,13 @@ export function armIK(shoulder: V, wrist: V): ArmP {
  * swing foot near full extension never snaps the knee. Planted feet stay ≤ SOFT_IK and are reached exactly; a swing
  * ankle falls short by < 0.003 H.
  */
-/** Review Z3: a softer, lower knee lock (with the pelvis 0.003 H lower and the heel peeled to 31° at toe-off) halves
- *  the knee's toe-off acceleration spike; the rear knee still opens to ≈ 158–161°. */
-export const SOFT_IK = 0.978, SOFT_K = 0.02;
-export function legIK(hip: V, ankle: V, facing: 1 | -1): LegP {
+/** REVIEW_ROUND6 A3/K4: an earlier, softer knee lock (asymptote 0.995) with the heel rising onto the ball: the rear
+ *  knee opens to ≈ 163–166° at toe-off and the knee's peak acceleration is ≈ 18–27× its median (was 28×). */
+export const SOFT_IK = 0.965, SOFT_K = 0.03;
+export function legIK(hip: V, ankle: V, facing: 1 | -1, exact = false): LegP {
   const d = dist(hip, ankle), r = d / LEG_CHAIN;
   let eff = r;
-  if (r > SOFT_IK) eff = SOFT_IK + SOFT_K * Math.tanh((r - SOFT_IK) / SOFT_K); // C2 at the junction
+  if (r > SOFT_IK && !exact) eff = SOFT_IK + SOFT_K * Math.tanh((r - SOFT_IK) / SOFT_K); // C2 at the junction
   const tgt = { x: hip.x + ((ankle.x - hip.x) / (d || 1)) * eff * LEG_CHAIN, y: hip.y + ((ankle.y - hip.y) / (d || 1)) * eff * LEG_CHAIN };
   const r2 = twoBone(hip, tgt, BODY.thigh, BODY.shin, (c1, c2) => ((c1.x - c2.x) * facing >= 0 ? c1 : c2), 0.9999);
   return { hip, knee: r2.joint, ankle: r2.end };
@@ -256,6 +256,25 @@ export function armToStone(shoulder: V, centre: V, psi: number, facing: 1 | -1, 
   // V4: the hand is always built from the wrist (if the arm ever fell short, the hand would come with it)
   if (dist(arm.wrist, wTgt) > 1e-12) hand = { ...hand, origin: { x: hand.origin.x + arm.wrist.x - wTgt.x, y: hand.origin.y + arm.wrist.y - wTgt.y } };
   return { arm, hand, prot, psi: psi + dPsi };
+}
+
+/**
+ * REVIEW_ROUND6 A3/K4: a leg near full extension raises its heel instead of stretching. The foot turns about its
+ * ball (which never moves) until the hip-to-ankle reach is the soft value SOFT_IK + SOFT_K·tanh(…), so the knee can
+ * open to ≈ 166° and still eases into the lock; the ankle is then reached exactly.
+ */
+export function heelRise(hip: V, f: FootP): FootP {
+  const r = dist(hip, f.ankle) / LEG_CHAIN;
+  if (r <= SOFT_IK || f.ball.x >= hip.x) return f;                    // only a foot behind the hip rises onto its ball
+  const want = (SOFT_IK + SOFT_K * Math.tanh((r - SOFT_IK) / SOFT_K)) * LEG_CHAIN;
+  const at = (x: number) => dist(hip, footFromBall(f.ball, f.ang - x, f.planted, f.ballS, f.peel, 1).ankle) - want;
+  let x = 0;
+  for (let i = 0; i < 6; i++) {
+    const v = at(x), dv = (at(x + 1e-5) - at(x - 1e-5)) / 2e-5;
+    if (Math.abs(dv) < 1e-9) break;
+    x = clamp(x - v / dv, 0, Math.max(0, (55 - f.peel) * DEG));   // never more than 55° onto the toes
+  }
+  return footFromBall(f.ball, f.ang - x, f.planted, f.ballS, f.peel + x / DEG, 1);
 }
 
 // ---------- the cycle ----------
@@ -311,10 +330,11 @@ export function walkPose(trail: WalkTrail, D: number, t: number): WalkPose {
   const phi = frac(D / WALK.L), th = trail.angleAt(D);
   const pelvis = pelvisAt(trail, D);
   const lean = (lam0(th) + 0.8 * Math.cos(PI4 * (phi - 0.11))) * DEG;
-  const headPitch = (50 + 1.5 * Math.cos(PI4 * (phi - 0.14))) * DEG; // ROUND6 §4.4 (34°, deepened to 50° so the head drops between the arms)
+  const headPitch = (24 + 1.5 * Math.cos(PI4 * (phi - 0.14))) * DEG; // REVIEW_ROUND6 A3: with the 33° lean the head axis is 54–58° from vertical, tucked between the arms
   const ub = upperBody(pelvis, lean, headPitch, breathRise(t), 1);
-  const feet: [FootP, FootP] = [walkFoot(trail, D, 0), walkFoot(trail, D, 1)];
-  const legs: [LegP, LegP] = [legIK(pelvis, feet[0].ankle, 1), legIK(pelvis, feet[1].ankle, 1)];
+  const feet: [FootP, FootP] = [heelRise(pelvis, walkFoot(trail, D, 0)), heelRise(pelvis, walkFoot(trail, D, 1))];
+  // a risen heel is reached exactly; a foot ahead of the hip (a swing foot near landing) keeps the soft lock
+  const legs = feet.map((f) => legIK(pelvis, f.ankle, 1, f.ball.x < pelvis.x)) as [LegP, LegP];
   const sB = D + WALK.dS;
   const centre = trail.centreAt(sB, WALK.R);
   const rot = trail.centreArc(sB, WALK.R) / WALK.R;

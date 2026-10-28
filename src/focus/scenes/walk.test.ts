@@ -104,16 +104,16 @@ for (const [name, trail, D0] of TRAILS) {
       }
     });
 
-    it('legs: stance reach ≤ 0.985 and exact; solved reach ≤ 0.9965; the rear knee opens ≥ 156° at toe-off', () => {
+    it('legs: planted feet reached exactly (the heel rises onto the ball, which never moves); reach ≤ 0.998; the rear knee opens ≥ 163° at toe-off', () => {
       for (const w of poses) for (const i of [0, 1] as const) {
-        const f = w.feet[i], r = dist(w.pelvis, f.ankle) / LEG_CHAIN;
-        expect(dist(w.pelvis, w.legs[i].ankle) / LEG_CHAIN).toBeLessThanOrEqual(0.9965);
-        if (f.planted) { expect(r).toBeLessThanOrEqual(0.985); expect(dist(w.legs[i].ankle, f.ankle)).toBeLessThan(1e-5); } // (≤ 0.002 px)
+        const f = w.feet[i];
+        expect(dist(w.pelvis, w.legs[i].ankle) / LEG_CHAIN).toBeLessThanOrEqual(0.998);
+        if (f.planted) expect(dist(w.legs[i].ankle, f.ankle)).toBeLessThan(1e-5); // (≤ 0.002 px)
         else expect(dist(w.legs[i].ankle, f.ankle)).toBeLessThan(0.002);
       }
       for (const i of [0, 1] as const) {
-        const win = poses.filter((w) => p(w.D, i) >= 0.62 && p(w.D, i) <= 0.63).map((w) => interior(w.legs[i].hip, w.legs[i].knee, w.legs[i].ankle));
-        expect(Math.max(...win)).toBeGreaterThanOrEqual(156); // review Z3: a softer knee lock (no flick) costs ≈ 3°
+        const win = poses.filter((w) => p(w.D, i) >= 0.60 && p(w.D, i) <= 0.63).map((w) => interior(w.legs[i].hip, w.legs[i].knee, w.legs[i].ankle));
+        expect(Math.max(...win)).toBeGreaterThanOrEqual(163); // REVIEW_ROUND6 A3: a straight rear leg (≈ 163–167°)
       }
     });
 
@@ -147,8 +147,8 @@ describe('the pose table (§2.5, 22°, ±4°)', () => {
   const tr = line(22);
   const rows: Array<[number, number, number, number]> = [
     // p, thigh, knee, foot peel
-    [0.00, 38, 98, 0], [0.08, 32, 101, 0], [0.31, 6, 133, 0], [0.45, -3, 136, 15], // (round 6: the pelvis 0.003 H lower)
-    [0.70, -7, 129, 50], [0.81, 11, 113, 4], [0.95, 39, 100, -4],
+    [0.00, 54, 82, 0], [0.08, 43, 86, 0], [0.31, 10, 121, 1], [0.45, -6, 134, 21], [0.58, -28, 166, 38], // round 6b: a lunge
+    [0.70, -12, 127, 48], [0.81, 24, 98, -4], [0.95, 57, 83, -4],
   ];
   it('contact, down, passing, up and the swing keys match', () => {
     for (const [ph, thigh, knee, peel] of rows) {
