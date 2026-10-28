@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { birdSchedule, birdsAt } from './ambient';
 
 describe('birds (ROUND6 §6.3)', () => {
-  it('groups of 1–3, every 70–180 s, crossing in 25–45 s; deterministic', () => {
+  it('groups of 1–3, every 35–80 s, crossing in 25–45 s; deterministic', () => {
     const s = birdSchedule(4242);
     expect(s[0].start).toBeLessThan(100);
-    for (let i = 1; i < s.length; i++) { const gap = s[i].start - s[i - 1].start; expect(gap).toBeGreaterThanOrEqual(70); expect(gap).toBeLessThanOrEqual(180); }
+    for (let i = 1; i < s.length; i++) { const gap = s[i].start - s[i - 1].start; expect(gap).toBeGreaterThanOrEqual(35); expect(gap).toBeLessThanOrEqual(80); }
     for (const g of s) { expect(g.n).toBeGreaterThanOrEqual(1); expect(g.n).toBeLessThanOrEqual(3); expect(g.dur).toBeGreaterThanOrEqual(25); expect(g.dur).toBeLessThanOrEqual(45); }
     expect(new Set(s.map((g) => g.n)).size).toBeGreaterThan(1);
     expect(birdSchedule(4242)).toEqual(s);

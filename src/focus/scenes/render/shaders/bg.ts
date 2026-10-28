@@ -32,15 +32,21 @@ float skyL(vec2 css) {
   float big = fbm(sp * vec2(2.6, 3.4) + 1.6 * w + vec2(ev * 0.5, 0.0), 4);
   float billow = ridged(sp * vec2(3.0, 5.5) + 1.2 * w + 2.0, 3);          // soft defined undersides
   float mott = fbm(u * 26.0 + uSeed, 3);
+  float mott2 = fbm(css / max(uRes.x / uDpr, 1.0) * vec2(120.0, 150.0) + uSeed * 1.3, 2);   // emulsion mottle at 1–3% of the frame
   // the crest line, blurred across ±0.4 H so the glow band never shows a step where the crest turns or drops
   float ry = 0.0;
   for (int k = -3; k <= 3; k++) ry += ridgeAt(css.x + float(k) * 0.133 * uH);
   ry /= 7.0 * uH;
   float base = mix(0.80, 0.98, smoothstep(0.05, 0.80, u.y));
-  float glow = uSky.z * 1.6 * exp(-max(0.0, ry - u.y) / 0.12);
+  float glow = uSky.z * 2.4 * exp(-max(0.0, ry - u.y) / 0.08);
   float open = uOpen.x * exp(-dot((css - uOpen.yz) / uH * vec2(0.8, 1.6), (css - uOpen.yz) / uH * vec2(0.8, 1.6)) * 4.0);
-  float cloud = 1.25 * (big - 0.5) + 0.14 * (billow - 0.5);
-  float L = base + cloud * (1.0 - 0.6 * open) + 0.03 * (mott - 0.5) + glow + 0.06 * open
+  // broken stratocumulus: cells 10–40 px across, brighter tops, darker gaps, denser where the big field is high
+  float cells = fbm(u * vec2(6.0, 9.5) + vec2(uSky.x * 2.5, 0.0) + 2.0 * w + vec2(ev, 3.0), 4);
+  float puffs = smoothstep(0.42, 0.72, cells) * (0.5 + big);
+  float cloud = 0.55 * (big - 0.5) + 0.30 * (billow - 0.5) + 0.30 * (puffs - 0.45);
+  // a lighter diagonal rift along the ridge direction
+  float rift = exp(-pow((u.y - 0.55 + 0.42 * (css.x / uH - 0.8) + 0.12 * (w.x)) / 0.16, 2.0));
+  float L = base + cloud * (1.0 - 0.6 * open) + 0.06 * (mott - 0.5) + 0.08 * (mott2 - 0.5) + 0.06 * rift + glow + 0.06 * open
           - uSky.w * 0.6 * smoothstep(0.35, 0.0, u.y);
   if (uMoon.x > 0.0) L += 0.06 * uMoon.x * exp(-dot(css - uMoon.yz, css - uMoon.yz) / (uMoon.w * uMoon.w));
   return L * 0.46;   // calibrated to the print curve: mid sky ≈ L 160–175, the band by the crest ≈ 190–205

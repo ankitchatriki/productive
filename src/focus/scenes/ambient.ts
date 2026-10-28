@@ -3,7 +3,7 @@ import { mulberry32 } from './noise';
 
 export interface BirdGroup { start: number; dur: number; n: number; y: number; seed: number }
 
-/** Bird groups for a session: 1–3 birds (weights 0.45 / 0.35 / 0.20), a group every 70–180 s, crossing in 25–45 s. */
+/** Bird groups for a session: 1–3 birds (weights 0.45 / 0.35 / 0.20), a group every 35–80 s (REVIEW_ROUND6 A5: seen more often), crossing in 25–45 s. */
 export function birdSchedule(seed: number, horizon = 3600): BirdGroup[] {
   const r = mulberry32(seed);
   const out: BirdGroup[] = [];
@@ -11,7 +11,7 @@ export function birdSchedule(seed: number, horizon = 3600): BirdGroup[] {
   while (t < horizon) {
     const u = r();
     out.push({ start: t, dur: 25 + r() * 20, n: u < 0.45 ? 1 : u < 0.80 ? 2 : 3, y: 0.12 + r() * 0.18, seed: Math.floor(r() * 1e9) });
-    t += 70 + r() * 110;
+    t += 35 + r() * 45;
   }
   return out;
 }

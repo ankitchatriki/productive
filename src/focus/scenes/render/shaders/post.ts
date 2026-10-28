@@ -28,8 +28,8 @@ void main() {
   vec2 ud = vec2(uv.x, 1.0 - uv.y);
   float aspect = uRes.x / uRes.y;
   vec2 q = (ud - vec2(0.56, 0.52)) * vec2(aspect, 1.0);
-  float vig = 1.0 - 0.34 * smoothstep(0.35, 1.05, length(q * vec2(0.95 / max(1.0, aspect * 0.62), 1.10)))
-                  - 0.07 * smoothstep(0.55, 0.0, ud.y) - 0.06 * smoothstep(0.45, 0.0, ud.x);
+  float vig = 1.0 - 0.24 * smoothstep(0.35, 1.05, length(q * vec2(0.95 / max(1.0, aspect * 0.62), 1.10)))
+                  - 0.05 * smoothstep(0.55, 0.0, ud.y) - 0.04 * smoothstep(0.45, 0.0, ud.x);
   P *= vig;
   // 3. paper: low-frequency unevenness ±3% and sparse foxing specks (static: the print, not the scene)
   vec2 css = gl_FragCoord.xy / uDpr;
