@@ -157,6 +157,12 @@ export function buildStrip(width: number, height: number, scale: number, colour:
 
 // ---------- boulder sprite (§7.2) ----------
 /** Black disc with a ragged edge, ochre rim flecks (denser on the lower half) and interior chips. Rotates with the stone. */
+/**
+ * The stone, v5 (ROUND5_SISYPHUS §4.3): flat black with ochre incisions and no rotational symmetry, so its turn reads
+ * at a glance. Two flat rim notches (35°, 155°) move round the silhouette; three long strata chords tilt as it turns;
+ * one forked crack; five comet chips on a ring whose heads lead clockwise (their tails trail counter-clockwise);
+ * 14 flecks. Angles are sprite-local on the y-down canvas, where increasing angle is clockwise.
+ */
 export function buildBoulderSprite(Rpx: number, scale: number, seed = 31, lw = 1.5): HTMLCanvasElement {
   const res = scale * 2;
   const size = Math.ceil(2 * Rpx * 1.06 * res);
@@ -165,72 +171,66 @@ export function buildBoulderSprite(Rpx: number, scale: number, seed = 31, lw = 1
   g.setTransform(res, 0, 0, res, size / 2, size / 2);
   const r = mulberry32(seed);
   const D = Math.PI / 180;
-  // Outline with two chipped facets (flat notches at 130° and 310°, 0.025 R deep, 0.18 R chord): the silhouette
-  // itself turns with the stone (ROUND4 §5.3).
-  const facets = [130 * D, 310 * D], half = Math.asin(0.09);
+  const notches = [35 * D, 155 * D], half = Math.asin(0.10); // 0.20 R wide
   const radiusAt = (a: number) => {
-    let rr = Rpx * (1 - 0.006 * (Math.sin(a * 7 + 1.3) + Math.sin(a * 13 + 0.4) + 1));
-    for (const f of facets) {
+    let rr = Rpx * (1 - 0.005 * (Math.sin(a * 5 + 1.3) + Math.sin(a * 11 + 0.4) + 1));
+    for (const f of notches) {
       let d = a - f; d = Math.atan2(Math.sin(d), Math.cos(d));
-      if (Math.abs(d) < half) rr = Math.min(rr, (Rpx * (1 - 0.025)) / Math.cos(d));
+      if (Math.abs(d) < half) rr = Math.min(rr, (Rpx * (1 - 0.06)) / Math.cos(d)); // a flat bite 0.06 R deep
     }
     return rr;
   };
   g.fillStyle = INK.black;
   g.beginPath();
-  for (let i = 0; i <= 180; i++) {
-    const a = (i / 180) * Math.PI * 2, rr = radiusAt(a);
+  for (let i = 0; i <= 240; i++) {
+    const a = (i / 240) * Math.PI * 2, rr = radiusAt(a);
     if (i) g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); else g.moveTo(rr, 0);
   }
   g.closePath(); g.fill();
-  g.strokeStyle = INK.ochre; g.lineCap = 'round'; g.lineJoin = 'round';
-  // Rim speckle, thinned 30%: dots and uneven strokes just inside the edge.
+  g.strokeStyle = INK.ochre; g.fillStyle = INK.ochre; g.lineCap = 'round'; g.lineJoin = 'round';
+  // three strata chords: near-parallel, slightly wavy, of different lengths, never through the centre
   g.lineWidth = lw;
   g.beginPath();
-  const n = 63 + Math.floor(r() * 14);
-  for (let i = 0; i < n; i++) {
-    let a = r() * Math.PI * 2;
-    if (Math.sin(a) < 0 && r() < 0.4) a = -a;
-    const inset = 1 + r() * 6;
-    const len = r() < 0.25 ? 0.6 : 1.5 + Math.pow(r(), 1.6) * 9;
-    const rr = radiusAt(a) - inset;
-    const t = { x: -Math.sin(a), y: Math.cos(a) };
-    const p = { x: Math.cos(a) * rr, y: Math.sin(a) * rr };
-    g.moveTo(p.x - t.x * len / 2, p.y - t.y * len / 2); g.lineTo(p.x + t.x * len / 2, p.y + t.y * len / 2);
-  }
-  g.stroke();
-  // Three incised strata: curved chords at signed offsets, non-parallel, never through the centre.
-  g.lineWidth = Math.max(1.2, lw * 1.05);
-  g.beginPath();
-  for (const [off, ang, span] of [[0.35, 20, 1.1], [0.55, 35, 0.9], [-0.45, 200, 1.3]] as const) {
-    const a = ang * D, nx = -Math.sin(a), ny = Math.cos(a);
-    for (let i = 0; i <= 12; i++) {
-      const k = i / 12 - 0.5;
-      const wav = 0.01 * Math.sin(k * 9 + off * 7) * Rpx;
-      const bow = 0.06 * (1 - 4 * k * k) * Rpx;
-      const x = Math.cos(a) * k * span * Rpx + nx * (off * Rpx + wav + bow), y = Math.sin(a) * k * span * Rpx + ny * (off * Rpx + wav + bow);
+  const dir0 = 18 * D;
+  for (const [off, len, tilt] of [[-0.35, 1.5, 0], [0.05, 1.2, 3], [0.45, 0.8, -4]] as const) {
+    const a = dir0 + tilt * D, nx = -Math.sin(a), ny = Math.cos(a);
+    for (let i = 0; i <= 16; i++) {
+      const k = i / 16 - 0.5;
+      const wav = 0.02 * Math.sin(k * 10 + off * 9) * Rpx;
+      const x = Math.cos(a) * k * len * Rpx + nx * (off * Rpx + wav), y = Math.sin(a) * k * len * Rpx + ny * (off * Rpx + wav);
       if (i) g.lineTo(x, y); else g.moveTo(x, y);
     }
   }
   g.stroke();
-  // Two forked cracks from the rim (70°, 250°), forking at 60% of their length.
-  g.beginPath();
-  for (const [ang, len] of [[70, 0.30], [250, 0.22]] as const) {
-    const a = ang * D, start = { x: Math.cos(a) * radiusAt(a) * 0.97, y: Math.sin(a) * radiusAt(a) * 0.97 };
-    const dir = { x: -Math.cos(a + 0.25), y: -Math.sin(a + 0.25) };
-    const mid = { x: start.x + dir.x * len * 0.6 * Rpx, y: start.y + dir.y * len * 0.6 * Rpx };
-    const end = { x: start.x + dir.x * len * Rpx + dir.y * 0.03 * Rpx, y: start.y + dir.y * len * Rpx - dir.x * 0.03 * Rpx };
-    g.moveTo(start.x, start.y); g.lineTo(mid.x, mid.y); g.lineTo(end.x, end.y);
-    const fa = Math.atan2(dir.y, dir.x) - 35 * D;
-    g.moveTo(mid.x, mid.y); g.lineTo(mid.x + Math.cos(fa) * 0.08 * Rpx, mid.y + Math.sin(fa) * 0.08 * Rpx);
+  // one forked crack from the rim at 250°, inward 0.55 R, forking at 60%
+  {
+    const a = 250 * D, start = { x: Math.cos(a) * radiusAt(a) * 0.98, y: Math.sin(a) * radiusAt(a) * 0.98 };
+    const dir = { x: -Math.cos(a + 0.18), y: -Math.sin(a + 0.18) };
+    const mid = { x: start.x + dir.x * 0.33 * Rpx + dir.y * 0.03 * Rpx, y: start.y + dir.y * 0.33 * Rpx - dir.x * 0.03 * Rpx };
+    const end = { x: start.x + dir.x * 0.55 * Rpx, y: start.y + dir.y * 0.55 * Rpx };
+    const fa = Math.atan2(dir.y, dir.x) + 38 * D;
+    g.beginPath(); g.moveTo(start.x, start.y); g.lineTo(mid.x, mid.y); g.lineTo(end.x, end.y); g.stroke();
+    g.lineWidth = Math.max(1, lw * 0.7);
+    g.beginPath(); g.moveTo(mid.x, mid.y); g.lineTo(mid.x + Math.cos(fa) * 0.16 * Rpx, mid.y + Math.sin(fa) * 0.16 * Rpx); g.stroke();
   }
-  g.stroke();
-  // Six pock arcs.
-  g.lineWidth = Math.max(1, lw * 0.8);
+  // five comet chips on a ring at 0.70 R (300°–40°): a round head, a tapering tail trailing counter-clockwise
+  for (let i = 0; i < 5; i++) {
+    const ah = (300 + i * 25) * D, ring = 0.70 * Rpx, head = 0.035 * Rpx + 0.6, tail = 0.16 * Rpx;
+    const hx = Math.cos(ah) * ring, hy = Math.sin(ah) * ring;
+    g.beginPath(); g.arc(hx, hy, head, 0, Math.PI * 2); g.fill();
+    const span = tail / ring;
+    g.beginPath();
+    for (let j = 0; j <= 8; j++) { const t = j / 8, a = ah - span * t, w = head * (1 - t); const rr = ring + w; if (j) g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); else g.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    for (let j = 8; j >= 0; j--) { const t = j / 8, a = ah - span * t, w = head * (1 - t); const rr = ring - w; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    g.closePath(); g.fill();
+  }
+  // 14 irregular flecks
+  g.lineWidth = Math.max(0.8, lw * 0.7);
   g.beginPath();
-  for (const [ang, d] of [[15, 0.2], [100, 0.62], [160, 0.3], [215, 0.7], [290, 0.5], [340, 0.75]] as const) {
-    const a = ang * D, x = Math.cos(a) * d * Rpx, y = Math.sin(a) * d * Rpx, pr = 0.02 * Rpx + 1;
-    g.moveTo(x + pr * Math.cos(a), y + pr * Math.sin(a)); g.arc(x, y, pr, a, a + Math.PI * 1.1);
+  for (let i = 0; i < 14; i++) {
+    const a = r() * Math.PI * 2, d = (0.2 + 0.7 * r()) * Rpx, l = (0.015 + 0.03 * r()) * Rpx, t = r() * Math.PI;
+    const x = Math.cos(a) * d, y = Math.sin(a) * d;
+    g.moveTo(x - Math.cos(t) * l, y - Math.sin(t) * l); g.lineTo(x + Math.cos(t) * l, y + Math.sin(t) * l);
   }
   g.stroke();
   return c;

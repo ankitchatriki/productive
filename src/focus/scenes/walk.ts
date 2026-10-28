@@ -146,8 +146,8 @@ export function standOff(thDeg: number): { delta: number; psi0: number } {
 export const PSI_SPREAD = 7 * DEG;
 /** Both palms sit below the facing point, so the near arm descends under the face and the far arm rises behind it. */
 export const PSI_BIAS = 8.5 * DEG;
-/** The far palm sits 4° above the spread (≈ 199° at 22°), so the far arm rises gently behind the head. */
-export const FAR_LIFT = 4 * DEG;
+/** The far palm sits 5° above the near one (≈ 204° at 22°): in profile the far arm runs just above and behind the near. */
+export const FAR_LIFT = 9 * DEG;
 
 export interface Place { delta: number; psi0: number; psi: [number, number]; bias: [number, number] }
 let placeTrail: WalkTrail | null = null, placeD = NaN, placeV: Place | null = null;
