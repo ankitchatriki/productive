@@ -36,10 +36,15 @@ export class CanvasRenderer implements Renderer {
     this.rock = this.mk(N, N);
     const rg = id(this.rock); const im = rg.createImageData?.(N, N);
     if (im && im.data instanceof Uint8ClampedArray) {
+      // periodic in x through the circle mapping; blended against its copy one tile up so it also tiles in y
+      const f = (x: number, y: number) => {
+        const a = 2 * Math.PI * x / N;
+        const c = (k: number, o: number) => fbm2(Math.cos(a) * k + o, y / N * 4 * k + Math.sin(a) * k, 4);
+        return 0.55 * c(1.2, 0) + 0.30 * c(3.1, 7.3) + 0.15 * noise2(Math.cos(a) * 40 + 3, y * 0.6);
+      };
       for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-        const u = x / N, v = y / N;
-        const t = (a: number, b: number) => fbm2(Math.cos(2 * Math.PI * a) * 1.5 + Math.sin(2 * Math.PI * b) * 0.3, Math.sin(2 * Math.PI * a) * 1.5 + b * 4, 4);
-        const l = 0.12 + 0.18 * t(u * 3, v) + 0.05 * noise2(x * 0.3, y * 0.9);
+        const v = y / N, t = f(x, y) * (1 - v) + f(x, y - N) * v;
+        const l = 0.016 + 0.075 * Math.max(0, t - 0.15) / 0.7;          // scene luminance: the print's rock lobe ≈ L 56
         const [r, g2, b] = toneAt(printDensity(l));
         im.data.set([r, g2, b, 255], (y * N + x) * 4);
       }
@@ -83,7 +88,7 @@ export class CanvasRenderer implements Renderer {
     g.setTransform(this.s, 0, 0, this.s, 0, 0);
     // sky: brighter toward the crest, burned at the top
     const sky = g.createLinearGradient(0, 0, 0, h);
-    sky.addColorStop(0, css(0.50, e, wm)); sky.addColorStop(0.35, css(0.68, e, wm)); sky.addColorStop(0.7, css(0.82, e, wm)); sky.addColorStop(1, css(0.86, e, wm));
+    sky.addColorStop(0, css(0.23, e, wm)); sky.addColorStop(0.35, css(0.30, e, wm)); sky.addColorStop(0.7, css(0.38, e, wm)); sky.addColorStop(1, css(0.44, e, wm));
     g.fillStyle = sky; g.fillRect(0, 0, w, h);
     // rock under the crest
     const zH = m.cam.Hpx * m.cam.zoom;
@@ -93,13 +98,13 @@ export class CanvasRenderer implements Renderer {
     for (let i = 0; i < cr.length; i += 2) g.lineTo(i, cr[i]);
     g.lineTo(w, cr[cr.length - 1]); g.lineTo(w, h + 2); g.closePath();
     g.clip();
-    g.fillStyle = css(0.12, e, wm); g.fillRect(0, 0, w, h);
+    g.fillStyle = css(0.04, e, wm); g.fillRect(0, 0, w, h);
     if (this.rock) {
       const pat = g.createPattern(this.rock, 'repeat');
       if (pat) {
         const ox = -m.cam.x * zH, oy = m.cam.y * zH;
-        if (typeof DOMMatrix !== "undefined") pat.setTransform?.(new DOMMatrix([1.6, 0, 0, 2.4, ox % 410, oy % 615]));
-        g.fillStyle = pat; g.globalAlpha = 0.9; g.fillRect(0, 0, w, h); g.globalAlpha = 1;
+        if (typeof DOMMatrix !== "undefined") pat.setTransform?.(new DOMMatrix([2.4, 0, 0, 3.2, ox % 614, oy % 819]));
+        g.fillStyle = pat; g.globalAlpha = 1; g.fillRect(0, 0, w, h); g.globalAlpha = 1;
       }
     }
     g.restore();
@@ -107,22 +112,20 @@ export class CanvasRenderer implements Renderer {
     const sx = m.cam.ax + (m.stone.c.x - m.cam.x) * zH, sy = m.cam.ay - (m.stone.c.y - m.cam.y) * zH, Rp = m.stone.R * zH;
     g.save();
     g.beginPath(); g.arc(sx, sy, Rp, 0, Math.PI * 2); g.clip();
-    g.fillStyle = css(0.30, e, wm); g.fillRect(sx - Rp, sy - Rp, 2 * Rp, 2 * Rp);
-    if (this.albedo) { g.translate(sx, sy); g.rotate(m.stone.rot); g.globalAlpha = 0.55; g.drawImage(this.albedo, -Rp, -Rp, 2 * Rp, 2 * Rp); g.globalAlpha = 1; g.setTransform(this.s, 0, 0, this.s, 0, 0); }
+    g.fillStyle = css(0.13, e, wm); g.fillRect(sx - Rp, sy - Rp, 2 * Rp, 2 * Rp);
+    if (this.albedo) { g.translate(sx, sy); g.rotate(m.stone.rot); g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.9; g.drawImage(this.albedo, -Rp, -Rp, 2 * Rp, 2 * Rp); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.setTransform(this.s, 0, 0, this.s, 0, 0); }
     const lit = g.createRadialGradient(sx - 0.45 * Rp, sy - 0.4 * Rp, 0.1 * Rp, sx - 0.1 * Rp, sy - 0.05 * Rp, 1.25 * Rp);
-    lit.addColorStop(0, 'rgba(235,225,205,0.45)'); lit.addColorStop(0.55, 'rgba(120,110,95,0.0)'); lit.addColorStop(1, 'rgba(20,17,13,0.75)');
+    lit.addColorStop(0, 'rgba(225,212,190,0.42)'); lit.addColorStop(0.45, 'rgba(120,110,95,0.0)'); lit.addColorStop(0.8, 'rgba(18,15,11,0.72)'); lit.addColorStop(1, 'rgba(14,12,9,0.9)');
     g.fillStyle = lit; g.fillRect(sx - Rp, sy - Rp, 2 * Rp, 2 * Rp);
     g.restore();
     // figure: limbs as round-capped strokes of their own width (a fill, not an outline), lit back to dark front
     if (m.skel) {
       const S = (x: number, y: number) => [m.cam.ax + (x - m.cam.x) * zH, m.cam.ay - (y - m.cam.y) * zH];
       g.lineCap = 'round';
+      const farC = css(0.022, e, wm), nearC = css(0.034, e, wm);
       for (const p of figurePrims(m.skel)) {
         const [ax, ay] = S(p.a.x, p.a.y), [bx, by] = S(p.b.x, p.b.y);
-        const base = p.albedo * (p.side < 0 ? 0.7 : 0.95);
-        const gr = g.createLinearGradient(ax - 0.06 * zH, ay - 0.06 * zH, ax + 0.06 * zH, ay + 0.06 * zH);
-        gr.addColorStop(0, css(base * 1.25, e, wm)); gr.addColorStop(1, css(base * 0.5, e, wm));
-        g.strokeStyle = gr; g.lineWidth = (p.ra + p.rb) * zH;
+        g.strokeStyle = p.side < 0 ? farC : nearC; g.lineWidth = (p.ra + p.rb) * zH;
         g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
       }
     }
@@ -130,9 +133,9 @@ export class CanvasRenderer implements Renderer {
     if (this.snap && m.xfade > 0) { g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = m.xfade; g.drawImage(this.snap, 0, 0); g.globalAlpha = 1; g.setTransform(this.s, 0, 0, this.s, 0, 0); }
     // vignette and grain
     const vg = g.createRadialGradient(0.56 * w, 0.52 * h, 0.3 * Math.max(w, h), 0.56 * w, 0.52 * h, 0.85 * Math.max(w, h));
-    vg.addColorStop(0, 'rgba(15,12,9,0)'); vg.addColorStop(1, 'rgba(15,12,9,0.42)');
+    vg.addColorStop(0, 'rgba(15,12,9,0)'); vg.addColorStop(1, 'rgba(15,12,9,0.5)');
     g.fillStyle = vg; g.fillRect(0, 0, w, h);
-    if (this.grain) { const pat = g.createPattern(this.grain, 'repeat'); if (pat) { g.globalAlpha = 0.06; g.fillStyle = pat; g.fillRect(0, 0, w, h); g.globalAlpha = 1; } }
+    if (this.grain) { const pat = g.createPattern(this.grain, 'repeat'); if (pat) { g.globalAlpha = 0.09; g.fillStyle = pat; g.fillRect(0, 0, w, h); g.globalAlpha = 1; } }
   }
   destroy() { this.g = null; this.canvas = null; this.rock = this.albedo = this.grain = this.snap = null; }
 }
