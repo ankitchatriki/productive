@@ -5,7 +5,7 @@ import { HEADER, NOISE } from './common';
 
 const SURFACE = `
 // one octave of craters: 3D cells, each holding a crater with probability prob. Returns (height, albedo delta).
-vec2 craters(vec3 p, float prob) {
+vec2 craters(vec3 p, float prob, float depth) {
   vec3 i = floor(p), f = fract(p);
   vec2 acc = vec2(0.0);
   for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
@@ -15,19 +15,24 @@ vec2 craters(vec3 p, float prob) {
     vec3 c = g + 0.25 + 0.5 * h - f;
     float rc = 0.35 + 0.13 * fract(h.x * 7.3 + h.y * 3.1);
     float d = length(c) / rc;
-    if (d < 1.0) { acc.x += -0.45 * (1.0 - d * d); acc.y -= 0.06 * (1.0 - d); }
-    acc.x += 0.12 * exp(-((d - 1.0) / 0.22) * ((d - 1.0) / 0.22));
-    if (d > 1.0 && d < 1.8) acc.y += 0.02;
+    if (d < 1.0) { acc.x += -0.45 * depth * (1.0 - d * d); acc.y -= 0.05 * depth * (1.0 - d); }
+    float ring = exp(-((d - 1.0) / 0.22) * ((d - 1.0) / 0.22));
+    acc.x += 0.12 * depth * ring;
+    acc.y += 0.04 * ring;                                   // lighter rims: craters read in tone, not only in relief
   }
   return acc;
 }
 vec2 surface(vec3 m) {   // (height in R units, albedo)
-  float alb = 0.40 + 0.10 * (fbm3(m * 2.2 + uSeed, 4) - 0.5) * 2.0 - 0.05 * smoothstep(0.55, 0.75, fbm3(m * 1.3 + 7.0, 3)) + 0.03 * (fbm3(m * 18.0, 2) - 0.5) * 2.0;
-  vec2 c1 = craters(m * 3.0, 0.16), c2 = craters(m * 7.0 + 11.0, 0.22);
-  vec2 c3 = uQuality > 0.6 ? craters(m * 16.0 + 23.0, 0.30) : vec2(0.0);
-  float hgt = 0.022 * c1.x + 0.010 * c2.x + 0.005 * c3.x + 0.020 * (fbm3(m * 7.0, 4) - 0.5);
-  alb += c1.y + c2.y * 0.8 + c3.y * 0.6 + 0.16 * (fbm3(m * 5.0 + 3.0, 4) - 0.5) + 0.08 * (fbm3(m * 24.0 + 1.0, 3) - 0.5);
-  return vec2(hgt, clamp(alb, 0.24, 0.58));
+  // REVIEW_ROUND6 A4: lunar albedo first: 2–4 large dark maria, a mottled highland, few craters, little relief
+  float alb = 0.37 + 0.10 * (fbm3(m * 2.2 + uSeed, 4) - 0.5) * 2.0 + 0.05 * (fbm3(m * 18.0, 2) - 0.5) * 2.0;
+  // the pitted, speckled grain of the reference's surface: tone, not relief
+  alb += 0.16 * (fbm3(m * 42.0 + 9.0, 2) - 0.5) - 0.12 * smoothstep(0.68, 0.86, vnoise3(m * 70.0 + 3.0)) + 0.14 * (fbm3(m * 12.0 + 4.0, 3) - 0.5) * 2.0;
+  alb -= 0.14 * smoothstep(0.44, 0.62, fbm3(m * 0.9 + 7.0 + uSeed * 0.37, 3));
+  vec2 b0 = craters(m * 1.6 + 5.0, 0.10, 0.2);                 // a few large shallow basins
+  vec2 c1 = craters(m * 3.0, 0.12, 1.0), c2 = craters(m * 7.0 + 11.0, 0.14, 0.6);
+  float hgt = 0.030 * b0.x + 0.022 * c1.x + 0.010 * c2.x + 0.012 * (fbm3(m * 7.0, 4) - 0.5);
+  alb += b0.y * 1.5 + c1.y + c2.y * 0.8 + 0.22 * (fbm3(m * 5.0 + 3.0, 4) - 0.5) + 0.10 * (fbm3(m * 24.0 + 1.0, 3) - 0.5);
+  return vec2(hgt, clamp(alb, 0.18, 0.62));
 }
 
 `;
@@ -61,7 +66,7 @@ void main() {
   // a ragged limb in material angle: its bumps travel with the roll
   float ang = atan(pp.y, pp.x) + uRot;
   float rim = 1.0 + 0.006 * (vnoise(vec2(ang * 6.366, 2.0 + uSeed)) * 2.0 - 1.0) + 0.004 * (vnoise(vec2(ang * 19.1, 5.0)) * 2.0 - 1.0);
-  float aa = 0.8 / (uDpr * uStone.z);
+  float aa = 1.3 / (uDpr * uStone.z);                              // a soft 1.3 px limb
   float cov = smoothstep(rim + aa, rim - aa, sqrt(r2));
   float L = 0.0, alpha = 0.0;
   if (cov > 0.0) {
@@ -74,10 +79,10 @@ void main() {
     float e = 0.012;
     vec3 tx = normalize(vec3(1.0, 0.0, -nV.x / nV.z)), ty = normalize(vec3(0.0, 1.0, -nV.y / nV.z));
     float hx = surf(toMat(normalize(nV + tx * e))).x, hy = surf(toMat(normalize(nV + ty * e))).x;
-    vec3 nB = normalize(nV - ((hx - s0.x) / e) * tx * 6.0 - ((hy - s0.x) / e) * ty * 6.0);
+    vec3 nB = normalize(nV - ((hx - s0.x) / e) * tx * 2.0 - ((hy - s0.x) / e) * ty * 2.0);
     vec3 lk = normalize(LKEY);
-    float wrap = clamp((dot(nB, lk) + 0.45) / 1.45, 0.0, 1.0);
-    L = alb * (1.25 * pow(wrap, 2.3) + 0.05 * (0.5 + 0.5 * nB.y) + 0.010);
+    float wrap = clamp((dot(nB, lk) + 0.55) / 1.55, 0.0, 1.0);
+    L = alb * (1.10 * pow(wrap, 2.3) + 0.05 * (0.5 + 0.5 * nB.y) + 0.010);
     L += 0.10 * pow(1.0 - nV.z, 3.0) * max(0.0, dot(normalize(nV.xy + 1e-5), normalize(lk.xy)));  // rim brightening
     L *= 1.0 - 0.20 * smoothstep(0.80, 0.98, -nV.y);                                            // ground occlusion
     L *= 0.95;
