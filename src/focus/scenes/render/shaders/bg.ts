@@ -61,62 +61,86 @@ uniform float uSeed, uQuality;
 varying vec2 vUv;
 ` + RIDGE + `
 const vec3 LKEY = vec3(-0.55, 0.45, 0.70);
-// faceted rock: an anisotropic cellular field; every cell is a flat facet with its own tilt, cracks along the borders
-vec4 facets(vec2 q, float sx, float sy, float salt) {
+// Fractured rock (REVIEW_ROUND6 A1): every cell of an anisotropic Voronoi field is a flat plane with its own normal,
+// so the light changes abruptly at the cell borders: hard 1 px cleavage edges made of light, never drawn seams.
+// Returns (tilt.xy, unused, cell hash).
+vec4 planes(vec2 q, float sx, float sy, float salt) {
   vec2 g = vec2(q.x / sx, q.y / sy);
   vec2 i = floor(g), f = fract(g);
-  float d1 = 9.0, d2 = 9.0; vec2 id = vec2(0.0);
+  float d1 = 9.0; vec2 id = vec2(0.0);
   for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
     vec2 o = vec2(float(x), float(y));
     vec2 r = o + vec2(hash12(i + o + salt), hash12(i + o + salt + 7.7)) * 0.9 + 0.05 - f;
     float d = dot(r, r);
-    if (d < d1) { d2 = d1; d1 = d; id = i + o; } else if (d < d2) d2 = d;
+    if (d < d1) { d1 = d; id = i + o; }
   }
-  float crack = sqrt(d2) - sqrt(d1);
-  // facet normal: mostly facing out, tilted left/up (lit) or right/down (shadowed), cleavage-steep
   float a = hash12(id + salt + 3.1), b = hash12(id + salt + 9.4);
-  vec2 tilt = vec2((a - 0.42) * 1.5, (b - 0.40) * 0.9);
-  return vec4(tilt, crack, hash12(id + salt + 1.9));
+  return vec4((a - 0.45) * 1.2, (b - 0.42) * 0.9, 0.0, hash12(id + salt + 1.9));
 }
-float rockDetail(vec2 q) { return 0.55 * ridged(vec2(q.x * 3.2, q.y * 1.7) + uSeed * 0.3, 5) + 0.25 * fbm(vec2(q.x * 9.0, q.y * 6.0), 3) + 0.20 * fbm(vec2(q.x * 26.0, q.y * 9.0) + 4.0, 3); }
+float rockDetail(vec2 q) { return 0.55 * ridged(vec2(q.x * 3.2, q.y * 2.4) + uSeed * 0.3, 2) + 0.30 * fbm(vec2(q.x * 11.0, q.y * 8.0), 2) + 0.15 * vnoise(q * 34.0); }
 
 void main() {
   vec2 px = vec2(gl_FragCoord.x, uTarget.y - gl_FragCoord.y);          // target px, y down
   vec2 wp = vec2(uW0.x + px.x / uPxPerH, uW0.y - px.y / uPxPerH);
   float d = max((px.y - ridgeAt(px.x)) / uPxPerH, 0.0);                // H below the (unbroken) crest line
-    vec2 p = wp + uOrigin;
-    vec2 q = mat2(0.990, 0.140, -0.140, 0.990) * p;                 // cleavage tilted ~8° from vertical
-    vec2 wv = vec2(fbm(q * 0.7 + uSeed, 3), fbm(q * 0.7 + uSeed + 5.2, 3)) - 0.5;
-    vec2 qw = q + wv * vec2(0.40, 0.9);
-    vec4 big = facets(qw, 0.45, 2.2, uSeed);                       // slabs ≈ 0.45 H wide, 2.2 H tall
-    vec4 mid = facets(qw + 11.0, 0.14, 0.55, uSeed + 3.0);           // broken faces
-    // detail relief on top of the facets
-    float e = 1.0 / uPxPerH;
-    float h0 = rockDetail(qw), hx = rockDetail(qw + vec2(e, 0.0)), hy = rockDetail(qw + vec2(0.0, e));
-    // facet edges are where the light changes, never drawn lines: the tilt eases across a narrow border
-    vec2 tilt = big.xy * 0.75 * smoothstep(0.0, 0.08, big.z) + mid.xy * 0.22 - vec2(hx - h0, hy - h0) / e * 0.15;
-    vec3 n = normalize(vec3(tilt, 1.0));
-    float lit = clamp((dot(n, normalize(LKEY)) - 0.05) / 0.95, 0.0, 1.0);
-    float crack = 0.55 + 0.45 * smoothstep(0.08, 0.6, h0);           // the deep parts of the relief hold shadow
-    float gully = smoothstep(0.58, 0.82, fbm(vec2(p.x * 0.30 + uSeed, 0.3), 3));
-    float alb = (0.85 + 0.30 * (big.w - 0.5) + 0.2 * (fbm(p * 1.3, 3) - 0.5) + 0.70 * (fbm(vec2(q.x * 14.0, q.y * 6.0), 3) - 0.5)) * (1.0 - 0.55 * gully * smoothstep(0.0, 0.5, d));
-    float r = alb * (0.30 + 0.9 * pow(lit, 2.0) + 0.08 * (0.5 + 0.5 * n.y)) * crack;
-    r *= mix(1.0, 0.6, smoothstep(0.0, 4.0, d));                    // heavier toward the base
-    // snow or scree: one patch per 12 H cell in three, never within 0.4 H of the crest
-    float cell = floor(p.x / 12.0);
-    if (hash12(vec2(cell, uSeed)) < 0.34) {
-      float cx = (cell + 0.25 + 0.5 * hash12(vec2(cell, uSeed + 1.0))) * 12.0, top = 0.6 + 0.9 * hash12(vec2(cell, uSeed + 2.0));
-      float wdt = 0.4 + 0.5 * hash12(vec2(cell, uSeed + 3.0)), hgt = 0.8 + 0.8 * hash12(vec2(cell, uSeed + 4.0));
-      float sx = (p.x - cx + (d - top) * 0.25) / wdt;                // sheared along the cleavage
-      float sy = (d - top) / hgt;
-      float edge = 0.12 * (fbm(vec2(p.x * 3.0, d * 3.0) + 9.0, 3) - 0.5);
-      float inPatch = smoothstep(0.5 + edge, 0.42 + edge, abs(sx)) * smoothstep(-0.02, 0.04, sy) * (1.0 - smoothstep(0.6, 1.0, sy + 0.3 * fbm(vec2(p.x * 9.0, 1.0), 2)));
-      inPatch *= step(0.4, d) * (0.55 + 0.45 * fbm(vec2(p.x * 14.0, d * 2.0), 3));
-      r = mix(r, 0.62 * (0.35 + 0.65 * lit) * 0.42, inPatch);
-    }
-    r *= 0.26;                                                     // calibrated: rock body ≈ L 30–70, lit edges ≈ 120
-    r += 0.030 * exp(-d / 0.04);                                    // the lit crest lip
-    r = mix(r, 0.09, 0.10 * exp(-d / 1.2));                         // haze near the crest
+  float e = 1.0 / uPxPerH;                                              // one target px in H
+  vec2 p = wp + uOrigin;
+  vec2 q = mat2(0.966, 0.259, -0.259, 0.966) * p;                       // cleavage ~15° from vertical
+  vec2 wv = vec2(fbm(q * 0.6 + uSeed, 2), fbm(q * 0.6 + uSeed + 5.2, 2)) - 0.5;
+  vec2 qw = q + wv * vec2(0.25, 0.5);
+  // two joint sets of planes: slabs 0.25–0.5 H wide and 1.2–2.5 H tall, broken faces inside them
+  vec4 big = planes(qw, 0.38, 1.8, uSeed);
+  vec2 qj = qw + 0.035 * (vec2(fbm(q * 9.0 + 3.0, 2), fbm(q * 9.0 + 8.0, 2)) - 0.5);   // jagged, not ruled, borders
+  vec4 mid = planes(qj + 11.0, 0.13, 0.42, uSeed + 3.0);
+  vec4 sml = planes(qj * mat2(0.94, -0.34, 0.34, 0.94) + 23.0, 0.05, 0.13, uSeed + 5.0);   // crumbly chips, a second joint direction
+  // fine relief: two octaves at half weight; the crispness comes from the plane edges
+  float h0 = rockDetail(qw), hx = rockDetail(qw + vec2(e, 0.0)), hy = rockDetail(qw + vec2(0.0, e));
+  vec2 tilt = big.xy * 1.15 + mid.xy * 0.55 + sml.xy * 0.45 - vec2(hx - h0, hy - h0) / e * 0.11;
+  // buttresses: lit ribs and shadowed channels 1.5–3 H apart along the cleavage (the large-scale form of the face)
+  vec2 mq = vec2(qw.x * 0.85, qw.y * 0.16) + uSeed * 1.7;
+  float m0 = fbm(mq, 3), mx = fbm(mq + vec2(0.04, 0.0), 3);
+  tilt.x -= (mx - m0) / 0.04 * 0.85 * 0.55;
+  vec3 n = normalize(vec3(tilt, 1.0));
+  float lit = clamp(dot(n, normalize(LKEY)), 0.0, 1.0);
+  float alb = 0.85 + 0.30 * (big.w - 0.5) + 0.14 * (mid.w - 0.5) + 0.20 * (sml.w - 0.5) + 0.16 * (fbm(p * 1.3, 2) - 0.5);
+  float r = alb * (0.30 + 1.15 * pow(lit, 1.8));
+  r *= 0.80 + 0.20 * smoothstep(0.1, 0.7, h0);                         // the deep parts of the relief hold shadow
+  // ledges: sub-horizontal steps every 0.25–0.6 H, jittered per column band; lit top 2–3 px, shadow under 4–8 px
+  float bw = 0.7 + 0.5 * hash12(vec2(floor(p.x / 0.9), uSeed + 21.0));
+  float band = floor(p.x / bw);
+  float sp = 0.25 + 0.35 * hash12(vec2(band, uSeed + 13.0));
+  float yy = d + (p.x - band * bw) * (hash12(vec2(band, uSeed + 17.0)) - 0.5) * 0.35 + hash12(vec2(band, uSeed + 19.0)) * sp;
+  float k = floor(yy / sp), fy = (yy - k * sp);                          // H below this ledge's line
+  if (hash12(vec2(band, k + uSeed)) < 0.40 && d > 0.12) {
+    float top = sp - fy;                                                // H above the next ledge line
+    r += 0.25 * 0.30 * (1.0 - smoothstep(1.5 * e, 3.0 * e, top)) * (0.6 + 0.4 * lit);
+    r *= 1.0 - 0.45 * (1.0 - smoothstep(2.0 * e, 9.0 * e, fy));
+  }
+  // one dark gully per 8–14 H of world x, 0.5–1 H wide at the crest, widening 1.5× by 3 H down
+  float gc = floor(p.x / 11.0);
+  float gx = (gc + 0.2 + 0.6 * hash12(vec2(gc, uSeed + 31.0))) * 11.0;
+  float gw = (0.5 + 0.5 * hash12(vec2(gc, uSeed + 37.0))) * (1.0 + 0.5 * min(d / 3.0, 1.5));
+  float gdx = p.x - gx + d * 0.27 + 0.25 * (fbm(vec2(d * 1.5, gc) + uSeed, 2) - 0.5);
+  float gully = 1.0 - smoothstep(0.32 * gw, 0.5 * gw, abs(gdx));
+  r = mix(r, min(r * 0.5, 0.20), gully);
+  r *= mix(1.0, 0.82, smoothstep(0.0, 4.0, d));                        // heavier toward the base
+  // snow or scree: one patch per 12 H cell in three, never within 0.4 H of the crest
+  float cell = floor(p.x / 12.0);
+  if (hash12(vec2(cell, uSeed)) < 0.34) {
+    float cx = (cell + 0.25 + 0.5 * hash12(vec2(cell, uSeed + 1.0))) * 12.0, top = 0.6 + 0.9 * hash12(vec2(cell, uSeed + 2.0));
+    float wdt = 0.4 + 0.5 * hash12(vec2(cell, uSeed + 3.0)), hgt = 0.8 + 0.8 * hash12(vec2(cell, uSeed + 4.0));
+    float sx = (p.x - cx + (d - top) * 0.25) / wdt;
+    float sy = (d - top) / hgt;
+    float ed = 0.12 * (fbm(vec2(p.x * 3.0, d * 3.0) + 9.0, 3) - 0.5);
+    float inPatch = smoothstep(0.5 + ed, 0.42 + ed, abs(sx)) * smoothstep(-0.02, 0.04, sy) * (1.0 - smoothstep(0.6, 1.0, sy + 0.3 * fbm(vec2(p.x * 9.0, 1.0), 2)));
+    inPatch *= step(0.4, d) * (0.55 + 0.45 * fbm(vec2(p.x * 14.0, d * 2.0), 3));
+    r = mix(r, 2.4 * (0.35 + 0.65 * lit), inPatch * (1.0 - gully));
+  }
+  // the top of a near-vertical face: darker just under the lip, then lifting
+  r *= mix(1.0, 0.6, smoothstep(0.02, 0.12, d) * (1.0 - smoothstep(0.2, 0.45, d)));
+  r *= 0.21;                                                           // calibrated: the rock lobe ≈ L 32–48
+  r += 0.10 * (1.0 - smoothstep(1.0 * e, 3.0 * e, d));                 // the lit crest lip, 1–3 px
+  r = mix(r, 0.09, 0.08 * exp(-d / 1.2));                              // haze near the crest
   gl_FragColor = vec4(sqrt(max(r, 0.0)), 1.0, 0.0, 1.0);
 }
 `;
