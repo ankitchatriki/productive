@@ -7,6 +7,8 @@ import { PACE_H } from '../../domain/mountain';
 import { BODY, LEG_CHAIN, armSpan } from './body';
 
 export const DEG = Math.PI / 180;
+/** ΔS re-solved once for round 6 (R = 0.75) so the figure's place δ is ≈ 0 at θ = 24° (§4.4); frozen. */
+const DS_FROZEN = 1.44;
 export const WALK = {
   /** Stride (two steps), H. */
   L: 0.40,
@@ -19,7 +21,7 @@ export const WALK = {
   /** Heel peel at toe-off, deg. */
   peel: 28,
   /** Stone ahead of the pelvis along the trail, H (constant: the stone rolls with the ground). */
-  dS: 1.20,
+  dS: DS_FROZEN,
   R: BODY.R,
   /** Walk speed along the trail, H/s. */
   v: PACE_H,
@@ -39,7 +41,6 @@ export interface ArmP { shoulder: V; elbow: V; wrist: V }
 /** A hand: its sole origin (the palm's contact point), finger direction (world rad) and sole curvature (1/R or 0). */
 export interface HandP { origin: V; dir: number; curve: number }
 /** Tertiary channels (rad). */
-export interface Secondary { beard: number; ringlet: number; flapF: number; flapB: number }
 export interface Skel {
   facing: 1 | -1;
   pelvis: V;
@@ -58,7 +59,6 @@ export interface Skel {
   hands: [HandP, HandP];
   /** Chest breath factor (1 ± 0.015). */
   breath: number;
-  sec: Secondary;
 }
 export interface WalkPose extends Skel {
   D: number; phi: number; theta: number;
@@ -84,7 +84,7 @@ export const fromVertical = (ang: number, facing: 1 | -1): V => ({ x: Math.sin(a
 /** Pelvis height over the ground point (§2.4): 0.400 at 22°. */
 export const h0 = (thDeg: number) => 0.400 - 0.0038 * (thDeg - 22);
 /** Torso lean (deg) for a slope. */
-export const lam0 = (thDeg: number) => clamp(17 + 0.2 * (thDeg - 22), 14, 20);
+export const lam0 = (thDeg: number) => clamp(20 + 0.2 * (thDeg - 22), 17, 24); // ROUND6 §4.4
 /** Breath on its own clock (4.2 s). */
 export const breathRise = (t: number) => 0.003 * Math.sin((2 * Math.PI * t) / 4.2);
 export const breathK = (t: number) => 1 + 0.015 * Math.sin((2 * Math.PI * t) / 4.2);
@@ -133,7 +133,7 @@ let REACH = 0.36;
 export function standOff(thDeg: number): { delta: number; psi0: number } {
   const th = thDeg * DEG, t = dir(th), n = { x: -Math.sin(th), y: Math.cos(th) };
   const lam = lam0(thDeg) * DEG;
-  const S0 = { x: 0.31 * Math.sin(lam), y: h0(thDeg) + 0.31 * Math.cos(lam) };
+  const S0 = { x: BODY.torso * Math.sin(lam), y: h0(thDeg) + BODY.torso * Math.cos(lam) };
   const C = { x: WALK.dS * t.x + WALK.R * n.x, y: WALK.dS * t.y + WALK.R * n.y };
   const A = sub(C, S0);
   const T = WALK.R + REACH;
@@ -143,11 +143,11 @@ export function standOff(thDeg: number): { delta: number; psi0: number } {
   return { delta, psi0: Math.atan2(S.y - C.y, S.x - C.x) };
 }
 /** Palms either side of the facing point, ≈ 7° below (near) and above (far): 200° / 186° at 22°. */
-export const PSI_SPREAD = 7 * DEG;
+export const PSI_SPREAD = 5 * DEG;
 /** Both palms sit below the facing point, so the near arm descends under the face and the far arm rises behind it. */
-export const PSI_BIAS = 8.5 * DEG;
+export const PSI_BIAS = 4 * DEG;
 /** The far palm sits 5° above the near one (≈ 204° at 22°): in profile the far arm runs just above and behind the near. */
-export const FAR_LIFT = 9 * DEG;
+export const FAR_LIFT = 6 * DEG;
 
 export interface Place { delta: number; psi0: number; psi: [number, number]; bias: [number, number] }
 let placeTrail: WalkTrail | null = null, placeD = NaN, placeV: Place | null = null;
@@ -161,7 +161,7 @@ let placeTrail: WalkTrail | null = null, placeD = NaN, placeV: Place | null = nu
 export function placeAt(trail: WalkTrail, D: number): Place {
   if (trail === placeTrail && D === placeD && placeV) return placeV;
   const th = trail.angleAt(D), lam = lam0(th) * DEG;
-  const off = { x: 0.31 * Math.sin(lam), y: h0(th) + 0.31 * Math.cos(lam) };
+  const off = { x: BODY.torso * Math.sin(lam), y: h0(th) + BODY.torso * Math.cos(lam) };
   const C = trail.centreAt(D + WALK.dS, WALK.R);
   const S = (d: number) => add(trail.at(D + d), off);
   const T = WALK.R + REACH;
@@ -289,31 +289,13 @@ export function interior(a: V, b: V, c: V): number {
   const u = sub(a, b), v = sub(c, b);
   return (Math.acos(clamp((u.x * v.x + u.y * v.y) / ((len(u) * len(v)) || 1), -1, 1)) * 180) / Math.PI;
 }
-const THIGH_MEAN = 9 * DEG;
-const softDeg = (x: number, maxDeg: number) => maxDeg * DEG * Math.tanh(x / (maxDeg * DEG));
-
-/** The analytic secondary channels while climbing (§3.6): phase-lagged copies of the primary ones, plus wind. */
-export function secondaryAt(trail: WalkTrail, D: number, t: number): Secondary {
-  const phi = frac(D / WALK.L), wind = windAt(t);
-  const thighLag = (i: 0 | 1, lag: number) => {
-    const Dl = D - lag * WALK.L;
-    return thighAngle(legIK(pelvisAt(trail, Dl), walkFoot(trail, Dl, i).ankle, 1));
-  };
-  return {
-    beard: -2.5 * DEG * Math.cos(PI4 * (phi - 0.18)),
-    ringlet: 3 * DEG * Math.cos(PI4 * (phi - 0.20)) + wind,
-    flapF: softDeg(0.35 * (thighLag(0, 0.12) - THIGH_MEAN), 6) + wind,
-    flapB: softDeg(0.30 * (thighLag(1, 0.15) - THIGH_MEAN), 5) + 0.5 * DEG * Math.sin(PI4 * (phi - 0.08)),
-  };
-}
-
 /** Upper body from the pelvis: shoulder, neck base and head (§3.4). */
 export function upperBody(pelvis: V, lean: number, headPitch: number, rise: number, facing: 1 | -1): { shoulder: V; neck: V; head: V; headAxis: number } {
   const td = fromVertical(lean, facing);
   const shoulder = { x: pelvis.x + td.x * BODY.torso, y: pelvis.y + td.y * BODY.torso + rise };
   const neck = add(shoulder, mul(td, 0.03));
   const headAxis = lean + headPitch;
-  const head = add(neck, mul(fromVertical(headAxis, facing), 0.075));
+  const head = add(neck, mul(fromVertical(headAxis, facing), 0.072));
   return { shoulder, neck, head, headAxis };
 }
 
@@ -322,7 +304,7 @@ export function walkPose(trail: WalkTrail, D: number, t: number): WalkPose {
   const phi = frac(D / WALK.L), th = trail.angleAt(D);
   const pelvis = pelvisAt(trail, D);
   const lean = (lam0(th) + 0.8 * Math.cos(PI4 * (phi - 0.11))) * DEG;
-  const headPitch = (18 + 1.2 * Math.cos(PI4 * (phi - 0.14))) * DEG;
+  const headPitch = (34 + 1.5 * Math.cos(PI4 * (phi - 0.14))) * DEG; // ROUND6 §4.4: bowed between the arms
   const ub = upperBody(pelvis, lean, headPitch, breathRise(t), 1);
   const feet: [FootP, FootP] = [walkFoot(trail, D, 0), walkFoot(trail, D, 1)];
   const legs: [LegP, LegP] = [legIK(pelvis, feet[0].ankle, 1), legIK(pelvis, feet[1].ankle, 1)];
@@ -336,7 +318,7 @@ export function walkPose(trail: WalkTrail, D: number, t: number): WalkPose {
     facing: 1, pelvis, pelvisPitch: -1.5 * DEG * Math.cos(PI4 * (phi - 0.14)), lean,
     shoulder: ub.shoulder, neck: ub.neck, head: ub.head, headAxis: ub.headAxis,
     legs, feet, arms: [near.arm, far.arm], hands: [near.hand, far.hand],
-    breath: breathK(t), sec: secondaryAt(trail, D, t),
+    breath: breathK(t),
     D, phi, theta: th, centre, rot, sB, psi: [near.psi, far.psi], protraction: [near.prot, far.prot],
   };
 }

@@ -3,8 +3,8 @@
 import type { V } from './path';
 import { BODY, armSpan } from './body';
 import {
-  DEG, WALK, armIK, breathK, breathRise, clamp, dist, footFromBall, handOnStone, handPoint, legIK, upperBody, windAt,
-  type FootP, type HandP, type Secondary, type Skel, type WalkPose,
+  DEG, WALK, armIK, breathK, breathRise, clamp, dist, footFromBall, handOnStone, handPoint, legIK, upperBody,
+  type FootP, type HandP, type Skel, type WalkPose,
 } from './walk';
 
 /** Everything a pose is made of; a Skel is assembled from it by IK. */
@@ -20,7 +20,6 @@ export interface PoseParams {
   hands: [HandP, HandP];
   /** Each arm's root relative to the shoulder (protraction, the far shoulder's place). */
   armOff: [V, V];
-  sec: Secondary;
 }
 
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
@@ -44,7 +43,6 @@ export function paramsOf(w: WalkPose): PoseParams {
     facing: w.facing, pelvis: w.pelvis, pelvisPitch: w.pelvisPitch, lean: w.lean, headPitch: w.headAxis - w.lean,
     rise: w.shoulder.y - ub.shoulder.y, breath: w.breath, feet: w.feet, hands: w.hands,
     armOff: [{ x: w.arms[0].shoulder.x - w.shoulder.x, y: w.arms[0].shoulder.y - w.shoulder.y }, { x: w.arms[1].shoulder.x - w.shoulder.x, y: w.arms[1].shoulder.y - w.shoulder.y }],
-    sec: w.sec,
   };
 }
 
@@ -69,7 +67,7 @@ export function assemble(p: PoseParams): Skel {
     if (dist(arm.wrist, want) > 1e-12) hands[i] = { ...p.hands[i], origin: { x: p.hands[i].origin.x + arm.wrist.x - want.x, y: p.hands[i].origin.y + arm.wrist.y - want.y } };
     return arm;
   }) as Skel['arms'];
-  return { facing: p.facing, pelvis: p.pelvis, pelvisPitch: p.pelvisPitch, lean: p.lean, shoulder: ub.shoulder, neck: ub.neck, head: ub.head, headAxis: ub.headAxis, legs, feet: p.feet, arms, hands, breath: p.breath, sec: p.sec };
+  return { facing: p.facing, pelvis: p.pelvis, pelvisPitch: p.pelvisPitch, lean: p.lean, shoulder: ub.shoulder, neck: ub.neck, head: ub.head, headAxis: ub.headAxis, legs, feet: p.feet, arms, hands, breath: p.breath };
 }
 
 /** Blend two parameter sets (feet: ball position and sole angle; hands: origin, direction, curvature). */
@@ -81,7 +79,6 @@ export function blendParams(a: PoseParams, b: PoseParams, k: number): PoseParams
     headPitch: lerp(a.headPitch, b.headPitch, k), rise: lerp(a.rise, b.rise, k), breath: lerp(a.breath, b.breath, k),
     feet: [foot(a.feet[0], b.feet[0]), foot(a.feet[1], b.feet[1])], hands: [hand(a.hands[0], b.hands[0]), hand(a.hands[1], b.hands[1])],
     armOff: [lerpV(a.armOff[0], b.armOff[0], k), lerpV(a.armOff[1], b.armOff[1], k)],
-    sec: { beard: lerp(a.sec.beard, b.sec.beard, k), ringlet: lerp(a.sec.ringlet, b.sec.ringlet, k), flapF: lerp(a.sec.flapF, b.sec.flapF, k), flapB: lerp(a.sec.flapB, b.sec.flapB, k) },
   };
 }
 
@@ -120,7 +117,7 @@ export function standParams(from: PoseParams, centre: V, t: number, idle = stand
   const hang = freeHand({ x: ub.shoulder.x + 0.03 * f, y: ub.shoulder.y - 0.335 }, -Math.PI / 2 + 0.08 * f, f);
   return {
     facing: f, pelvis, pelvisPitch: 0, lean, headPitch, rise: breathRise(t), breath: breathK(t), feet, hands: [hand, hang],
-    armOff: [{ x: 0, y: 0 }, { x: -0.02 * f, y: 0.005 }], sec: { beard: 0, ringlet: windAt(t), flapF: windAt(t), flapB: 0 },
+    armOff: [{ x: 0, y: 0 }, { x: -0.02 * f, y: 0.005 }],
   };
 }
 
@@ -138,21 +135,7 @@ export function sitParams(centre: V, t: number, ground: (x: number) => number): 
   void ub;
   return {
     facing: f, pelvis, pelvisPitch: 0, lean, headPitch: -6 * DEG, rise: breathRise(t), breath: breathK(t), feet, hands,
-    armOff: [{ x: 0, y: 0 }, { x: 0.02, y: 0.005 }], sec: { beard: 0, ringlet: windAt(t), flapF: windAt(t), flapB: 0 },
+    armOff: [{ x: 0, y: 0 }, { x: 0.02, y: 0.005 }],
   };
 }
 
-/**
- * A tertiary channel outside the walk (§3.6): a spring (k 120, c 22, unit mass) driven toward its rest value,
- * initialised from the analytic value and its derivative at the hand-off, so the hand-off is C1.
- */
-export class Spring {
-  x = 0; v = 0;
-  set(x: number, v: number) { this.x = x; this.v = v; }
-  step(target: number, dt: number) {
-    const n = Math.max(1, Math.ceil(dt / (1 / 120)));
-    const h = dt / n;
-    for (let i = 0; i < n; i++) { const a = -120 * (this.x - target) - 22 * this.v; this.v += a * h; this.x += this.v * h; }
-    return this.x;
-  }
-}

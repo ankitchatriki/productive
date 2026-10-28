@@ -102,7 +102,7 @@ describe('reduced motion (§6.5)', () => {
 });
 
 describe('F3: hand-offs and transitions', () => {
-  it('summit: planted feet never slide (< 1 px) through the push, the stop and the stand blend; every tertiary channel hands off to its spring with no velocity step (≤ 5%)', async () => {
+  it('summit: planted feet never slide (< 1 px) through the push, the stop and the stand blend', async () => {
     const e = await makeEngine(1440, 900);
     let f = 1500 - 3;
     e.setClimb!(climb1(f * PACE_M)); e.setProgress(f / 1500); e.setPhase('focus', { instant: true });
@@ -123,20 +123,6 @@ describe('F3: hand-offs and transitions', () => {
     }
     console.log(`summit: planted-foot drift ${worst.toExponential(2)} px`);
     expect(worst).toBeLessThan(1);
-    // the hand-off: the last analytic frame vs the first spring frame (60 Hz, fixed dt)
-    const keys = ['beard', 'ringlet', 'flapF', 'flapB'] as const;
-    const series = keys.map((k) => seen.map((s) => sk(s).sec[k]));
-    const dts = seen.map((s, i) => (i ? (s.clock as number) - (seen[i - 1].clock as number) : 1 / 60));
-    const iH = seen.findIndex((s) => s.springs);
-    expect(iH).toBeGreaterThan(3);
-    for (const [j, k] of keys.entries()) {
-      const v = series[j].map((x, i) => (i ? (x - series[j][i - 1]) / dts[i] : 0));
-      const peak = Math.max(...v.map(Math.abs), 1e-6);
-      // the velocity's change across the hand-off frame vs its trend just before (a step would stand out)
-      const step = Math.abs((v[iH] - v[iH - 1]) - (v[iH - 1] - v[iH - 2]));
-      console.log(`${k}: velocity step at the hand-off ${(step / peak * 100).toFixed(2)}% of peak`);
-      expect(step).toBeLessThanOrEqual(0.05 * peak + 1e-9);
-    }
     e.destroy();
   }, 30_000);
 

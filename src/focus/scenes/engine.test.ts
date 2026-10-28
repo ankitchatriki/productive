@@ -67,12 +67,11 @@ describe('engine transitions (stub canvas)', () => {
     e.destroy();
   });
 
-  it('reduced motion: the still draws all three ranges and the clouds', async () => {
+  it('reduced motion: a still frame is rendered with no running loop', async () => {
     const e = await engine(true);
     e.setClimb!(climb1(lenM * 0.4)); e.setProgress(0.4); e.setPhase('focus', { instant: true });
-    expect(e.stats.rangesDrawn).toBe(3);
-    expect(e.stats.cloudsDrawn as number).toBeGreaterThanOrEqual(3);
     expect(e.stats.frames).toBeGreaterThan(0);
+    expect((e as unknown as { model(): unknown }).model()).not.toBeNull();
     e.destroy();
   });
 });

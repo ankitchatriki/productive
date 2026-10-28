@@ -27,7 +27,6 @@ function channels(w: WalkPose): Record<string, number> {
   }
   out.lean = w.lean / DEG;
   out.headPitch = (w.headAxis - w.lean) / DEG;
-  for (const [k, v] of Object.entries(w.sec)) out[k] = v / DEG;
   return out;
 }
 

@@ -7,11 +7,13 @@ let rafQ: Array<(t: number) => void> = [];
 const g = globalThis as Record<string, unknown>;
 const saved: Record<string, unknown> = {};
 
+/** Anything a canvas call returns (gradients, patterns, image data): every method a no-op. */
+const dummy: unknown = new Proxy({}, { get: (_o, k) => (k === 'then' ? undefined : () => dummy) });
 function stubCtx(record = false): unknown {
   const target: Record<string, unknown> = { canvas: null };
   if (record) target.rotate = (a: number) => { state.rotates.push(a); };
   return new Proxy(target, {
-    get: (o, k) => (k in o ? o[k as string] : () => undefined),
+    get: (o, k) => (k in o ? o[k as string] : () => dummy),
     set: (o, k, v) => { o[k as string] = v; return true; },
   });
 }
@@ -50,6 +52,9 @@ export function run(sec: number, each?: (stats: Record<string, unknown>) => void
 }
 
 export async function makeEngine(w = 1440, h = 900, reduced = false, record = false) {
+  // the tests run on FrameModels: a null renderer records them (ROUND6 §3.2)
+  const { setRendererFactory, NullRenderer } = await import('../render/renderer');
+  setRendererFactory(() => [new NullRenderer()]);
   const { createSisyphus } = await import('../sisyphus');
   const e = createSisyphus();
   e.mount(stubCanvas(w, h, record) as unknown as HTMLCanvasElement, { reducedMotion: reduced, colorScheme: 'dark', accent: '#a3461a' });
@@ -71,7 +76,7 @@ export async function captureClimb(w: number, h: number, startS: number, secs: n
   for (let k = 0; k < secs; k++) {
     focused = Math.min(lenS, focused + 1);
     e.setClimb!(climb(focused * PACE_M)); e.setProgress(focused / lenS);
-    run(1, (s) => { const r = { ...s, rotRec: state.rotates[state.rotates.length - 1] }; rows.push(r); opts.each?.(r); }, st);
+    run(1, (s) => { const m = (e as unknown as { model(): { stone: { rot: number } } | null }).model(); const r = { ...s, rotRec: m ? m.stone.rot : NaN, model: m }; rows.push(r); opts.each?.(r); }, st);
   }
   return { e, rows, lenH: lenM / M_PER_H };
 }

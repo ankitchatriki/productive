@@ -4,7 +4,7 @@ import { reducer } from './reducer';
 import type { Action } from './actions';
 import { at, course, data, section } from '../domain/fixtures';
 import { climbFor, liveClimb } from '../domain/climb';
-import { M_PER_H, PACE_M, PREFIX_LEN, SUMMIT_TO_COL, buildStage, stageAt, stageHeading } from '../domain/mountain';
+import { M_PER_H, PACE_M, PREFIX_LEN, SUMMIT_TO_COL, buildStage, stageAt, stageHeading, END_LEAD } from '../domain/mountain';
 import type { AppData } from '../domain/types';
 
 const T = (min: number, sec = 0) => new Date(at(2026, 10, 27, 14, 0).getTime() + min * 60_000 + sec * 1000).toISOString();
@@ -63,8 +63,8 @@ describe('mountain bookkeeping (schema v3)', () => {
     const next = run(done, { type: 'focus/nextBlock', now: T(26) });
     expect(next.mountain).toMatchObject({ stage: 2, fromSummit: true, atSummit: false, summits: 1 });
     expect(next.mountain.stageStartM).toBeCloseTo(done.mountain.posM + SUMMIT_TO_COL * M_PER_H, 2);
-    // the col is below the summit but above the foot
-    expect(next.mountain.stageStartAltM).toBeLessThan(done.mountain.altM);
+    // the col is below the summit (≤ END_LEAD of trail above where he stopped) but above the foot
+    expect(next.mountain.stageStartAltM).toBeLessThan(done.mountain.altM + END_LEAD * M_PER_H);
     expect(next.mountain.stageStartAltM).toBeGreaterThan(0);
   });
 

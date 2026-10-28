@@ -6,15 +6,16 @@ import { makeTrail } from './trail';
 import { M_PER_H, PACE_H, PACE_M, END_LEAD, buildStage } from '../../domain/mountain';
 import { WALK } from './walk';
 
-const VIEWPORTS: Array<[number, number]> = [[1280, 800], [1440, 900], [1920, 1080], [390, 844]];
+const VIEWPORTS: Array<[number, number]> = [[1280, 800], [1440, 900], [1920, 1080], [390, 844], [3440, 1440], [844, 390]];
 
 describe('camera layout', () => {
-  it('the figure scale is 0.33 h on desktop and min(0.21 h, 0.42 w) on a phone (ROUND5 §0)', () => {
-    for (const [w, h] of VIEWPORTS.slice(0, 3)) expect(camLayout(w, h).Hpx / h).toBeCloseTo(0.33, 9);
-    expect(camLayout(390, 844).Hpx).toBeCloseTo(Math.min(0.21 * 844, 0.42 * 390), 9);
+  it('the figure scale is 0.17 h on desktop and min(0.13 h, 0.30 w) on a phone (ROUND6 §4.5)', () => {
+    for (const [w, h] of VIEWPORTS.slice(0, 3)) expect(camLayout(w, h).Hpx / h).toBeCloseTo(0.17, 9);
+    expect(camLayout(390, 844).Hpx).toBeCloseTo(Math.min(0.13 * 844, 0.30 * 390), 9);
     const l = camLayout(1440, 900);
-    expect(l.Hpx).toBeCloseTo(297, 6); expect(l.anchor.x).toBeCloseTo(504, 6); expect(l.anchor.y).toBeCloseTo(576, 6);
-    expect(camLayout(3440, 1440).anchor.x).toBeCloseTo(0.5 * 3440 - 0.27 * 1440, 6);
+    expect(l.Hpx).toBeCloseTo(153, 6); expect(l.anchor.x).toBeCloseTo(0.38 * 1440, 6); expect(l.anchor.y).toBeCloseTo(540, 6);
+    expect(camLayout(3440, 1440).anchor.x).toBeCloseTo(0.5 * 3440 - 0.20 * 1440, 6);
+    expect(camLayout(844, 390).Hpx).toBeCloseTo(78, 6);
   });
 });
 
@@ -36,6 +37,8 @@ describe('the end is never on screen during focus', () => {
           const pelvis = trail.at(p * lenH);
           const camX = clampCamX(pelvis.x, crestX, w, lay.anchor.x, lay.Hpx);
           const rightEdge = camX + (w - lay.anchor.x) / lay.Hpx;
+          // ROUND6 §3.4: the clamp engages only in the block's last END_LEAD / PACE_H seconds
+          if (camX < pelvis.x - 1e-9) expect(p * lenH).toBeGreaterThanOrEqual(lenH - END_LEAD);
           expect(rightEdge).toBeLessThan(firstFlat);
           expect(trail.at(trail.geom.crestS).x - rightEdge).toBeGreaterThanOrEqual(0.3 * Math.cos(0.4) - 1e-6);
           // the stone (ΔS ahead of the camera point) stays on screen, so the climber walks into frame at the end
@@ -48,7 +51,7 @@ describe('the end is never on screen during focus', () => {
 });
 
 describe('visible progress and determinism', () => {
-  it('the ground scrolls ≥ 20 px per second at 1440×900 for 25- and 50-minute blocks', () => {
+  it('the ground scrolls ≥ 15 px per second at 1440×900 for 25- and 50-minute blocks (ROUND6 §9)', () => {
     for (const minutes of [25, 50]) {
       const lenH = (minutes * 60 * PACE_M) / M_PER_H;
       const trail = makeTrail({ stage: 1, startH: 0, lenH, fromSummit: false });
@@ -57,7 +60,7 @@ describe('visible progress and determinism', () => {
       const camAt = (sec: number) => clampCamX(trail.at(sec * PACE_H).x, crestX, 1440, anchor.x, Hpx);
       const total = minutes * 60;
       const pxPerSec = ((camAt(total) - camAt(0)) * Hpx) / total;
-      expect(pxPerSec).toBeGreaterThanOrEqual(20);
+      expect(pxPerSec).toBeGreaterThanOrEqual(15);
     }
   });
   it('the same mountain state gives the same geometry; the climb ends END_LEAD before its crest fillet', () => {
