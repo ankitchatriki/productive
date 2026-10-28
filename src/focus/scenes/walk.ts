@@ -81,8 +81,10 @@ const dir = (a: number): V => ({ x: Math.cos(a), y: Math.sin(a) });
 /** Unit vector `ang` from vertical toward the facing side. */
 export const fromVertical = (ang: number, facing: 1 | -1): V => ({ x: Math.sin(ang) * facing, y: Math.cos(ang) });
 
-/** Pelvis height over the ground point (§2.4): 0.400 at 22°. */
-export const h0 = (thDeg: number) => 0.400 - 0.0038 * (thDeg - 22);
+/** Review Z3: the pelvis 0.003 H lower and the heel peeled to 31° at toe-off (with the softer knee lock below). */
+const H0OFF = -0.003, PEEL = 31;
+/** Pelvis height over the ground point (§2.4): 0.397 at 22°. */
+export const h0 = (thDeg: number) => 0.400 + H0OFF - 0.0038 * (thDeg - 22);
 /** Torso lean (deg) for a slope. */
 export const lam0 = (thDeg: number) => clamp(20 + 0.2 * (thDeg - 22), 17, 24); // ROUND6 §4.4
 /** Breath on its own clock (4.2 s). */
@@ -115,10 +117,10 @@ export function footFromBall(ball: V, ang: number, planted = true, ballS = NaN, 
 /** The heel peels on to 50° over the first quarter of the swing (toes last off). */
 const PEEL_Q = 0.25;
 export function swingPitch(q: number): number {
-  return (28 + 22 * sm(q / PEEL_Q)) * (1 - sm((q - 0.2) / 0.45)) - 8 * sm((q - 0.3) / 0.3) * (1 - sm((q - 0.75) / 0.25));
+  return (PEEL + (50 - PEEL) * sm(q / PEEL_Q)) * (1 - sm((q - 0.2) / 0.45)) - 8 * sm((q - 0.3) / 0.3) * (1 - sm((q - 0.75) / 0.25));
 }
 /** Stance heel peel (deg) over p ∈ [0, β). */
-export const stancePeel = (p: number) => WALK.peel * sm((p - 0.279) / 0.341);
+export const stancePeel = (p: number) => PEEL * sm((p - 0.279) / 0.341);
 /** Swing lift (H): an early-peaked C2 arc, 0.06 at q = 0.375. */
 export const swingLift = (q: number) => WALK.lift * 198.8 * q ** 3 * (1 - q) ** 5;
 
@@ -212,11 +214,13 @@ export function armIK(shoulder: V, wrist: V): ArmP {
   return { shoulder, elbow: r.joint, wrist: r.end };
 }
 /**
- * Soft two-bone leg IK, knee forward (§3.3): above SOFT_IK of the chain the reach eases toward SOFT_IK + 0.009, so a
- * swing foot near full extension never snaps the knee. Planted feet stay ≤ SOFT_IK (0.989: the rear knee opens to
- * ≈ 162° at toe-off) and are reached exactly; a swing ankle falls short by < 0.002 H.
+ * Soft two-bone leg IK, knee forward (§3.3): above SOFT_IK of the chain the reach eases toward SOFT_IK + SOFT_K, so a
+ * swing foot near full extension never snaps the knee. Planted feet stay ≤ SOFT_IK and are reached exactly; a swing
+ * ankle falls short by < 0.003 H.
  */
-export const SOFT_IK = 0.989, SOFT_K = 0.009;
+/** Review Z3: a softer, lower knee lock (with the pelvis 0.003 H lower and the heel peeled to 31° at toe-off) halves
+ *  the knee's toe-off acceleration spike; the rear knee still opens to ≈ 158–161°. */
+export const SOFT_IK = 0.978, SOFT_K = 0.02;
 export function legIK(hip: V, ankle: V, facing: 1 | -1): LegP {
   const d = dist(hip, ankle), r = d / LEG_CHAIN;
   let eff = r;
@@ -265,7 +269,9 @@ const OFFS = [0, 0.5] as const;
 export function pelvisAt(trail: WalkTrail, D: number): V {
   const phi = frac(D / WALK.L), th = trail.angleAt(D);
   const g = trail.at(D + deltaAt(trail, D) + surge(phi));
-  return { x: g.x, y: g.y + h0(th) + bob(phi) };
+  // the bob runs along the slope's normal (review Z4): it no longer projects onto the walking direction
+  const a = th * DEG, b = bob(phi);
+  return { x: g.x - Math.sin(a) * b, y: g.y + h0(th) + Math.cos(a) * b };
 }
 
 /** Leg i's foot at D: planted at its stance contact, or swinging to the next one. */
@@ -293,7 +299,8 @@ export function interior(a: V, b: V, c: V): number {
 export function upperBody(pelvis: V, lean: number, headPitch: number, rise: number, facing: 1 | -1): { shoulder: V; neck: V; head: V; headAxis: number } {
   const td = fromVertical(lean, facing);
   const shoulder = { x: pelvis.x + td.x * BODY.torso, y: pelvis.y + td.y * BODY.torso + rise };
-  const neck = add(shoulder, mul(td, 0.03));
+  // the neck leaves the chest just in front of the shoulder joint, so a bowed head drops between the arms
+  const neck = add(shoulder, { x: td.y * facing * 0.025 - td.x * 0.005, y: -td.x * facing * 0.025 - td.y * 0.005 });
   const headAxis = lean + headPitch;
   const head = add(neck, mul(fromVertical(headAxis, facing), 0.072));
   return { shoulder, neck, head, headAxis };
@@ -304,7 +311,7 @@ export function walkPose(trail: WalkTrail, D: number, t: number): WalkPose {
   const phi = frac(D / WALK.L), th = trail.angleAt(D);
   const pelvis = pelvisAt(trail, D);
   const lean = (lam0(th) + 0.8 * Math.cos(PI4 * (phi - 0.11))) * DEG;
-  const headPitch = (34 + 1.5 * Math.cos(PI4 * (phi - 0.14))) * DEG; // ROUND6 §4.4: bowed between the arms
+  const headPitch = (50 + 1.5 * Math.cos(PI4 * (phi - 0.14))) * DEG; // ROUND6 §4.4 (34°, deepened to 50° so the head drops between the arms)
   const ub = upperBody(pelvis, lean, headPitch, breathRise(t), 1);
   const feet: [FootP, FootP] = [walkFoot(trail, D, 0), walkFoot(trail, D, 1)];
   const legs: [LegP, LegP] = [legIK(pelvis, feet[0].ankle, 1), legIK(pelvis, feet[1].ankle, 1)];

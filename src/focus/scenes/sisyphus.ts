@@ -26,7 +26,7 @@ const SUMMIT_DUR = 6.0, MINI_DUR = 6.0, NEXT_DUR = 3.2, CROSSFADE_DUR = 0.4;
 const E_IN = 0.6, E_OUT = 0.4, NEXT_HOLD = 0.3;
 /** The summit push (peak cadence × SUMMIT_E), its quintic stop over the last DECEL_DIST, the stand's tail. When the
  *  stand spot is more than PUSH_MAX away (round 6's longer END_LEAD), the beat opens with a cut to PUSH_FROM before it. */
-const SUMMIT_E = 3.0, DECEL_DIST = 0.35, STAND_TAIL = 0.6, PUSH_MAX = 2.0, PUSH_FROM = 1.6;
+const SUMMIT_E = 2.0, DECEL_DIST = 0.35, STAND_TAIL = 0.6, PUSH_MAX = 1.6, PUSH_FROM = 1.2; // review Z2: ×2, not ×3
 const R = WALK.R; // H units
 
 /** Debug/measurement hook read by the tests and the e2e scripts. */
@@ -365,7 +365,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
       contacts: [...skel.feet.map((f) => f.ball.x), centre.x - Math.sin((trail.angleAt(sB) * Math.PI) / 180) * R],
       hazeFromX: mode === 'climb' ? Infinity : trail.at(trail.geom.ledgeEnd).x,
       stone: { c: centre, R, rot },
-      skel,
+      skel: (globalThis as { __hideFigure?: boolean }).__hideFigure === true ? null : skel,
       sky: {
         drift: skyDrift, evolve: skyEvolve, glow: grade.glow + 0.04 * summitOpen, burn: grade.burn, open: phase === 'break' ? 0 : summitOpen,
         openX: ledge.x, openY: ledge.y - 0.25 * h, moon: moonK, moonX: (0.15 + 0.6 * Math.min(1, progress)) * w, moonY: (0.32 - 0.15 * Math.sin(Math.PI * Math.min(1, progress))) * h,
@@ -404,7 +404,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
 
   // ---------- loop ----------
   function targetFps(): number {
-    if (typeof document !== 'undefined' && !document.hasFocus()) return 15;
+    // review Z5: an unfocused but visible window (a timer on a second screen; headless Chromium) keeps its full rate;
+    // only a hidden page drops to 15 fps (where rAF is throttled anyway)
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return 15;
     if (seq || xfadeT0 >= 0 || mode === 'summit') return 60;
     if (mode === 'climb' && (phase === 'focus' || phase === 'open') && quality >= 1) return fpsCap;
     return 30;

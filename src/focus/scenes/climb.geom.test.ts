@@ -37,8 +37,8 @@ describe('the end is never on screen during focus', () => {
           const pelvis = trail.at(p * lenH);
           const camX = clampCamX(pelvis.x, crestX, w, lay.anchor.x, lay.Hpx);
           const rightEdge = camX + (w - lay.anchor.x) / lay.Hpx;
-          // ROUND6 §3.4: the clamp engages only in the block's last END_LEAD / PACE_H seconds
-          if (camX < pelvis.x - 1e-9) expect(p * lenH).toBeGreaterThanOrEqual(lenH - END_LEAD);
+          // review Z1: the camera tracks him to the block's last second: the end clamp never engages during a block
+          expect(camX).toBe(pelvis.x);
           expect(rightEdge).toBeLessThan(firstFlat);
           expect(trail.at(trail.geom.crestS).x - rightEdge).toBeGreaterThanOrEqual(0.3 * Math.cos(0.4) - 1e-6);
           // the stone (ΔS ahead of the camera point) stays on screen, so the climber walks into frame at the end

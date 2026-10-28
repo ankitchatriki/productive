@@ -20,10 +20,15 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
 
     it('constant speed: the pelvis never moves slower than 0.90 or faster than 1.10 of its mean (after the 600 ms entrance)', () => {
       const live = rows.filter((r) => (r.clock as number) - (rows[0].clock as number) > 0.6);
-      const v = live.slice(1).map((r, k) => (sk(r).pelvis.x - sk(live[k]).pelvis.x) / ((r.clock as number) - (live[k].clock as number)));
+      // along the slope's tangent (review Z4: the bob runs on the slope normal, so it no longer modulates this)
+      const tr = makeTrail({ stage: 1, startH: 0, lenH: (1500 * PACE_M) / M_PER_H, fromSummit: false });
+      const v = live.slice(1).map((r, k) => {
+        const th = (tr.angleAt(r.D as number) * Math.PI) / 180, a = sk(live[k]).pelvis, b = sk(r).pelvis;
+        return ((b.x - a.x) * Math.cos(th) + (b.y - a.y) * Math.sin(th)) / ((r.clock as number) - (live[k].clock as number));
+      });
       const mean = v.reduce((a, b) => a + b, 0) / v.length;
       const lo = Math.min(...v) / mean, hi = Math.max(...v) / mean;
-      console.log(`${w}×${h}: pelvis horizontal speed ${lo.toFixed(3)}–${hi.toFixed(3)} of mean (${v.length} frames); camera = trail at D`);
+      console.log(`${w}×${h}: pelvis speed along the slope ${lo.toFixed(3)}–${hi.toFixed(3)} of mean (${v.length} frames); camera = trail at D`);
       expect(lo).toBeGreaterThanOrEqual(0.90);
       expect(hi).toBeLessThanOrEqual(1.10);
       expect(Math.min(...v)).toBeGreaterThan(0); // never stops
@@ -99,4 +104,18 @@ describe('pause, resume and persistence', () => {
     expect(Math.abs(a.skel.pelvis.x - b.skel.pelvis.x) + Math.abs(a.skel.arms[0].elbow.y - b.skel.arms[0].elbow.y)).toBeLessThan(1e-6);
     expect(a.phi).toBeCloseTo(((523.25 * PACE_M) / M_PER_H / WALK.L) % 1, 2);
   });
+});
+
+describe('the end of a block (review Z1)', () => {
+  it('1440×900: through the last 20 s the camera keeps tracking him: the ground scrolls ≥ 15 px/s and he stays at his place in the frame', async () => {
+    const { e, rows } = await captureClimb(1440, 900, 1500 - 22, 22);
+    const tail = rows.filter((r) => (r.clock as number) - (rows[0].clock as number) > 1.0 && (r.D as number) < (1500 * PACE_M) / M_PER_H - 0.05);
+    const t0 = tail[0], t1 = tail[tail.length - 1];
+    const scroll = (((t1.camX as number) - (t0.camX as number)) * 153) / ((t1.clock as number) - (t0.clock as number));
+    const xs = tail.map((r) => (r.anchor as number[])[0] + (sk(r).pelvis.x - (r.camX as number)) * 153);
+    console.log(`last 20 s: ground scroll ${scroll.toFixed(1)} px/s; pelvis screen x ${Math.min(...xs).toFixed(0)}–${Math.max(...xs).toFixed(0)}`);
+    expect(scroll).toBeGreaterThanOrEqual(15);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(40);
+    e.destroy();
+  }, 30_000);
 });

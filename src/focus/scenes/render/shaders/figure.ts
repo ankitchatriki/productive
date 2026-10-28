@@ -38,7 +38,7 @@ void main() {
       float z = mix(A.z, B.z, u) + h;
       vec3 n = normalize(vec3((p - c) / max(r, 1e-5), h / max(r, 1e-5) / max(C.w, 0.3)));
       // smooth union on height: organic joins
-      float k = 0.006;
+      float k = 0.018;
       float hh = clamp(0.5 + 0.5 * (z - zBest) / k, 0.0, 1.0);
       float wNew = hh;
       zBest = mix(zBest, z, hh) + k * hh * (1.0 - hh);
@@ -50,10 +50,10 @@ void main() {
   if (cov > 0.0) {
     vec3 n = normalize(nAcc + vec3(0.0, 0.0, 1e-4));
     vec3 lk = normalize(LKEY);
-    float wrap = clamp((dot(n, lk) + 0.25) / 1.25, 0.0, 1.0);
+    float wrap = clamp((dot(n, lk) + 0.12) / 1.12, 0.0, 1.0);
     float sky = 0.5 + 0.5 * n.y;
-    float far = side < -0.5 ? 0.74 : 1.0;
-    L = alb * far * (0.88 * pow(wrap, 1.2) + 0.16 * sky + 0.04);
+    float far = side < -0.5 ? 0.72 : 1.0;
+    L = alb * far * (1.05 * pow(wrap, 1.3) + 0.12 * sky + 0.03);
     L += 0.05 * pow(1.0 - n.z, 3.0) * step(0.0, -n.x) * (side < -0.5 ? 0.3 : 1.0); // a thin light rim on the back
     alpha = cov;
   } else {

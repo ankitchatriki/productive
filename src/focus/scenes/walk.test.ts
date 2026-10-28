@@ -104,26 +104,33 @@ for (const [name, trail, D0] of TRAILS) {
       }
     });
 
-    it('legs: stance reach ≤ 0.989 and exact; solved reach ≤ 0.9965; the rear knee opens ≥ 160° at toe-off', () => {
+    it('legs: stance reach ≤ 0.985 and exact; solved reach ≤ 0.9965; the rear knee opens ≥ 156° at toe-off', () => {
       for (const w of poses) for (const i of [0, 1] as const) {
         const f = w.feet[i], r = dist(w.pelvis, f.ankle) / LEG_CHAIN;
         expect(dist(w.pelvis, w.legs[i].ankle) / LEG_CHAIN).toBeLessThanOrEqual(0.9965);
-        if (f.planted) { expect(r).toBeLessThanOrEqual(0.989); expect(dist(w.legs[i].ankle, f.ankle)).toBeLessThan(1e-9); }
+        if (f.planted) { expect(r).toBeLessThanOrEqual(0.985); expect(dist(w.legs[i].ankle, f.ankle)).toBeLessThan(1e-5); } // (≤ 0.002 px)
         else expect(dist(w.legs[i].ankle, f.ankle)).toBeLessThan(0.002);
       }
       for (const i of [0, 1] as const) {
         const win = poses.filter((w) => p(w.D, i) >= 0.62 && p(w.D, i) <= 0.63).map((w) => interior(w.legs[i].hip, w.legs[i].knee, w.legs[i].ankle));
-        expect(Math.max(...win)).toBeGreaterThanOrEqual(160);
+        expect(Math.max(...win)).toBeGreaterThanOrEqual(156); // review Z3: a softer knee lock (no flick) costs ≈ 3°
       }
     });
 
-    it('speed: the pelvis advances (horizontally, the bob is vertical) at 0.94–1.06 v for a constant Ḋ = v', () => {
+    it('speed: along the slope the pelvis moves at 0.94–1.06 v for a constant Ḋ = v (review Z4: the bob runs on the normal)', () => {
       const lim = name === 'real trail' ? 0.08 : 0.06; // (on the real trail the slope offset δ(θ) adds ≤ ±2%)
       for (let k = 1; k < N; k++) {
-        const a = poses[k - 1], b = poses[k];
-        const ground = trail.at(b.D).x - trail.at(a.D).x;
-        expect(Math.abs((b.pelvis.x - a.pelvis.x) / ground - 1)).toBeLessThanOrEqual(lim);
+        const a = poses[k - 1], b = poses[k], th = (trail.angleAt(b.D) * Math.PI) / 180;
+        const along = ((b.pelvis.x - a.pelvis.x) * Math.cos(th) + (b.pelvis.y - a.pelvis.y) * Math.sin(th)) / (b.D - a.D);
+        expect(Math.abs(along - 1)).toBeLessThanOrEqual(lim);
       }
+    });
+
+    it('no knee flick at toe-off (review Z3): the knee peak acceleration is ≤ 32× its median over the cycle', () => {
+      const P = poses.filter((_, k) => k % 4 === 0).map((w) => w.legs[0].knee);
+      const acc = P.slice(2).map((q, i) => Math.hypot(q.x - 2 * P[i + 1].x + P[i].x, q.y - 2 * P[i + 1].y + P[i].y)).sort((x, y) => x - y);
+      const ratio = acc[acc.length - 1] / acc[acc.length >> 1];
+      expect(ratio).toBeLessThanOrEqual(32);
     });
 
     it('roll: rotation strictly increases with D, d rot/dD · R within 0.99–1.01', () => {
@@ -140,7 +147,7 @@ describe('the pose table (§2.5, 22°, ±4°)', () => {
   const tr = line(22);
   const rows: Array<[number, number, number, number]> = [
     // p, thigh, knee, foot peel
-    [0.00, 38, 98, 0], [0.08, 32, 101, 0], [0.31, 6, 133, 0], [0.45, -3, 140, 14],
+    [0.00, 38, 98, 0], [0.08, 32, 101, 0], [0.31, 6, 133, 0], [0.45, -3, 136, 15], // (round 6: the pelvis 0.003 H lower)
     [0.70, -7, 129, 50], [0.81, 11, 113, 4], [0.95, 39, 100, -4],
   ];
   it('contact, down, passing, up and the swing keys match', () => {

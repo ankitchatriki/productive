@@ -7,7 +7,7 @@ import { fromVertical, handPoint, type Skel } from '../walk';
 export interface Prim { a: V; b: V; az: number; bz: number; ra: number; rb: number; albedo: number; kind: number; side: number; squash: number; name: string }
 
 /** Scene-luminance albedos (§4.3, rescaled to the print curve as it is: the plan's 0.36/0.16/0.42 printed far too light). */
-export const ALBEDO = { skin: 0.23, hair: 0.085, wrap: 0.235 }; // calibrated: lit back ≈ L 150, chest ≈ L 70
+export const ALBEDO = { skin: 0.23, hair: 0.085, wrap: 0.23 }; // calibrated: lit back ≈ L 150, chest ≈ L 70
 const Z = { near: 0.06, mid: 0, far: -0.06 };
 
 const add = (a: V, b: V): V => ({ x: a.x + b.x, y: a.y + b.y });
@@ -51,14 +51,14 @@ export function figurePrims(s: Skel): Prim[] {
   limbs(1); arm(1);
   // torso masses (mid plane)
   const br = s.breath;
-  P('glute', at(0.005, -0.034), at(-0.030, -0.030), 0.054, 0.048, Z.mid, 0);
-  P('pelvis', at(-0.025, 0.004), at(0.05, 0.004), 0.068, 0.062, Z.mid, 0);
-  P('abdomen', at(0.05, 0.006), at(0.16, 0.008), 0.058, 0.066 * br, Z.mid, 0);
+  P('glute', at(0.010, -0.030), at(-0.030, -0.026), 0.052, 0.046, Z.mid, 0);
+  P('pelvis', at(-0.020, 0.000), at(0.05, 0.004), 0.060, 0.058, Z.mid, 0);
+  P('abdomen', at(0.02, 0.004), at(0.16, 0.008), 0.062, 0.066 * br, Z.mid, 0);
   P('ribcage', at(0.15, 0.004), at(0.255, 0.000), 0.078 * br, 0.072, Z.mid, 0);
   P('lats', at(0.13, -0.026), at(0.27, -0.032), 0.046, 0.058, Z.mid - 0.005, 0);
   P('pectoral', at(0.21, 0.030), at(0.25, 0.024), 0.046, 0.040, Z.mid + 0.004, 0);
   // the modesty wrap: a close band, barely lighter, invisible as a costume at this scale
-  P('wrap', at(-0.045, 0.012), at(0.03, 0.008), 0.064, 0.060, Z.mid + 0.002, 0, ALBEDO.wrap);
+  P('wrap', at(-0.040, 0.010), at(0.02, 0.008), 0.058, 0.056, Z.mid + 0.002, 0, ALBEDO.wrap);
   limbs(0);
   // head group: neck, cranium, jaw, hair
   const hd = fromVertical(s.headAxis, f), face = { x: hd.y * f, y: -hd.x * f };

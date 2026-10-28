@@ -19,10 +19,11 @@ export const COL_DESCENT = 3.5;                          // −10° → −4°
 /** Distance (H) from the crest-fillet's nominal end point L to the next col bottom. */
 export const TAIL_TO_COL = CREST.after + LEDGE_LEN + BACK_STEEP + COL_DESCENT;
 /** The climber's end position sits END_LEAD before L, so the stone (≈1.1 H ahead) is fully on screen at the end
- *  (ROUND6 §3.4: raised from 2.45 to 4.7 so that with the wider, smaller-figure view the camera's end clamp engages
- *  only in the last END_LEAD/PACE_H s of a block on every viewport, 3440×1440 included)
- *  while the crest-fillet start (L − 0.3) stays just beyond the right edge. */
-export const END_LEAD = 4.7;
+ *  (ROUND6 §3.4 + review Z1: raised from 2.45 to 9.6 so that with the wider, smaller-figure view the crest stays
+ *  beyond the right edge with the camera still tracking him to the block's last second, on every viewport up to
+ *  21:9; the end clamp remains only as a safety for wider screens)
+ */
+export const END_LEAD = 9.6;
 /** Distance (H) from where the climber stands at a block's end to the next climb's start (the col bottom). */
 export const SUMMIT_TO_COL = END_LEAD + TAIL_TO_COL;
 /** Prefix behind a stage that starts in a col: the last 1.5 H of the ledge + the descent. */
