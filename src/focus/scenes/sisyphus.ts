@@ -12,7 +12,7 @@ import type { V } from './path';
 import { WALK, frac, sm, walkPose, type Secondary, type Skel, type WalkPose } from './walk';
 import { Spring, assemble, blendParams, easeStd, paramsOf, sitParams, standParams, type PoseParams } from './poses';
 import { drawFigure, figureTier } from './figure';
-import { DEG, armToStone } from './walk';
+import { DEG, armToStone, footFromBall } from './walk';
 import { birdSchedule, birdsAt, type BirdGroup } from './ambient';
 
 type Mode = 'climb' | 'summit' | 'stand' | 'sit';
@@ -23,7 +23,7 @@ const SUMMIT_DUR = 6.0, MINI_DUR = 6.0, NEXT_DUR = 3.2, CROSSFADE_DUR = 0.4;
 /** §5: the speed envelope's entrance (600 ms) and exit (400 ms); a new climb holds 0.3 s before it starts. */
 const E_IN = 0.6, E_OUT = 0.4, NEXT_HOLD = 0.3;
 /** §6.1: the summit push (peak cadence × SUMMIT_E), its quintic stop over the last DECEL_DIST, then the stand. */
-const SUMMIT_E = 3.0, DECEL_DIST = 0.35, STAND_TAIL = 0.4;
+const SUMMIT_E = 3.0, DECEL_DIST = 0.35, STAND_TAIL = 0.6;
 const R = WALK.R; // H units
 
 /** Debug/measurement hook read by the tests and the e2e scripts. */
@@ -33,7 +33,7 @@ export interface SceneStats {
   zoom?: number; rangesDrawn?: number; cloudsDrawn?: number; stripBuilds?: number; rot?: number; sB?: number; figureMs?: number;
   tier?: number; clock?: number; figBox?: number[]; figBounds?: number[]; figureAvg?: number; cut?: boolean;
   /** Round 5: the distance clock, its envelope and phase, the rendered skeleton (world, H) and the camera. */
-  D?: number; e?: number; phi?: number; skel?: Skel; centre?: V; Hpx?: number; anchor?: number[]; walking?: boolean; fpsCap?: number;
+  D?: number; e?: number; phi?: number; skel?: Skel; centre?: V; Hpx?: number; anchor?: number[]; walking?: boolean; fpsCap?: number; springs?: boolean; lastMs?: number; poseMs?: number;
 }
 
 export function createSisyphus(): SceneEngine & { stats: SceneStats } {
@@ -444,7 +444,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   /** §6.1: the block ends: the walk speeds up to a triumphant last push and stops in double support on the ledge. */
   function startSummit(t: number, kind: 'summit' | 'mini') {
     mode = 'summit';
-    summit = { kind, t0: t, e0: Math.max(envelope(), 0.6), dec: null, blendDur: 1.2 };
+    summit = { kind, t0: t, e0: envelope(), dec: null, blendDur: 1.2 }; // (the speed carries on from where it was: no step)
     D = Math.min(D, standBase().Dstop);
     startSeq(kind, t);
   }
@@ -458,7 +458,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     mode = 'climb';
     summit = null; seq = null;
     const tgt = sTarget();
-    D = WALK.L * (Math.floor(tgt / WALK.L - 0.06) + 0.06);
+    D = WALK.L * (Math.round(tgt / WALK.L - 0.06) + 0.06); // (the nearest such spot: within 0.2 H of the target)
     eU = 0; holdUntil = t + NEXT_HOLD;
     camInit = false; springsLive = false; secPrev = null;
     rebuildAll = true;
@@ -548,8 +548,8 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
   }
 
   /** Tertiary channels: analytic while walking; springs (seeded from the analytic value and slope) otherwise. */
-  function secondary(analytic: Secondary | null, rest: Secondary, k: number, dt: number): Secondary {
-    if (analytic && k <= 0) {
+  function secondary(analytic: Secondary | null, rest: Secondary, k: number, dt: number, handOff = k > 0): Secondary {
+    if (analytic && !handOff) {
       if (secPrev && dt > 0) secVel = { beard: (analytic.beard - secPrev.beard) / dt, ringlet: (analytic.ringlet - secPrev.ringlet) / dt, flapF: (analytic.flapF - secPrev.flapF) / dt, flapB: (analytic.flapB - secPrev.flapB) / dt };
       secPrev = analytic; springsLive = false;
       return analytic;
@@ -582,17 +582,27 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
       const wp = walkPose(trail, D, ambientT);
       const k = summit.dec ? easeStd((t - summit.dec.t0) / summit.blendDur) : 0;
       const stand = standParams(base.from, wp.centre, ambientT, undefined, ground);
-      const sec = secondary(wp.sec, stand.sec, k, dt);
+      // tertiary channels: analytic (D-driven) while he walks; at the stop, where D's velocity and acceleration are
+      // both zero, springs seeded from the analytic value and slope take over and ease to rest (a C2 hand-off)
+      const tStop0 = summit.dec ? summit.dec.t0 + summit.dec.Td : Infinity;
+      const sec = secondary(wp.sec, stand.sec, t >= tStop0 ? easeStd((t - tStop0) / STAND_TAIL) : 0, dt, t >= tStop0);
       let skel: Skel = wp;
       if (k > 0) {
         const p = blendParams(paramsOf(wp), stand, k);
+        // the feet are never blended: they keep walking to their planted spots (no slide); once stopped, the rear
+        // heel lowers to the ground about its ball over the last 0.6 s
+        const tStop = summit.dec!.t0 + summit.dec!.Td;
+        const kh = easeStd((t - tStop) / STAND_TAIL);
+        p.feet = wp.feet.map((ft) => {
+          const ga = Math.atan2(ground(ft.ball.x + 0.01) - ground(ft.ball.x - 0.01), 0.02);
+          return kh > 0 ? footFromBall(ft.ball, ft.ang + (ga - ft.ang) * kh, true, ft.ballS, ft.peel * (1 - kh)) : ft;
+        }) as typeof p.feet;
         // the near palm slides round the stone (polar blend), never through it
         const psiS = Math.atan2(stand.hands[0].origin.y - wp.centre.y, stand.hands[0].origin.x - wp.centre.x);
         let dpsi = psiS - wp.psi[0]; while (dpsi > Math.PI) dpsi -= 2 * Math.PI; while (dpsi < -Math.PI) dpsi += 2 * Math.PI;
         // (and keeps the arm long: from the blended angle it creeps to where the elbow stays in its band)
         const ub = assemble(p);
         p.hands[0] = armToStone(ub.shoulder, wp.centre, wp.psi[0] + dpsi * k, 1, 0, 40 * DEG).hand;
-        p.armOff[0] = { x: 0, y: 0 };
         skel = assemble(p);
       }
       skel.sec = sec;
@@ -627,7 +637,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     else if (mode === 'summit') stepSummit(t, dt);
     ambientT += dt * (mode === 'climb' && !reduced ? envelope() : phase === 'paused' ? 0 : 1);
 
+    const tP = performance.now();
     const fs = figureState(t, dt);
+    stats.poseMs = performance.now() - tP;
     const { skel, centre, rot, sB } = fs;
     updateCamera(t, dt);
     cam.anchor = renderCam.anchor; const keepPos = cam.pos; cam.pos = renderCam.pos; cam.zoom = renderCam.zoom;
@@ -712,7 +724,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
     stats.camX = renderCam.pos.x; stats.camY = renderCam.pos.y; stats.clock = t;
     stats.D = D; stats.sLocal = D; stats.e = mode === 'climb' ? envelope() : lastDdot / WALK.v; stats.phi = frac(D / WALK.L);
     stats.skel = skel; stats.centre = centre; stats.walking = mode === 'climb' || mode === 'summit'; stats.fpsCap = fpsCap;
-    stats.gait = mode;
+    stats.gait = mode; stats.springs = springsLive;
   }
 
   function drawClouds(g: CanvasRenderingContext2D, dt: number, back: boolean) {
@@ -783,6 +795,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats } {
 
   function record(ms: number, t: number) {
     if (stats.frames === 0) stats.firstMs = Math.round(ms * 10) / 10;
+    stats.lastMs = ms;
     frameTimes.push(ms);
     if (frameTimes.length > 90) frameTimes.shift();
     stats.frames++;

@@ -100,3 +100,72 @@ describe('reduced motion (§6.5)', () => {
     g.window.setTimeout = saved;
   });
 });
+
+describe('F3: hand-offs and transitions', () => {
+  it('summit: planted feet never slide (< 1 px) through the push, the stop and the stand blend; every tertiary channel hands off to its spring with no velocity step (≤ 5%)', async () => {
+    const e = await makeEngine(1440, 900);
+    let f = 1500 - 3;
+    e.setClimb!(climb1(f * PACE_M)); e.setProgress(f / 1500); e.setPhase('focus', { instant: true });
+    for (let k = 0; k < 3; k++) { f++; e.setClimb!(climb1(f * PACE_M)); run(1); }
+    e.setClimb!(climb1(lenM, true)); e.setProgress(0); e.setPhase('complete');
+    const seen: Stats[] = [];
+    run(9, (s) => seen.push({ ...s }), e.stats as unknown as Stats);
+    const Hpx = e.stats.Hpx!;
+    let worst = 0;
+    for (const i of [0, 1] as const) {
+      let ref: { x: number; y: number } | null = null;
+      for (const s of seen) {
+        const ft = sk(s).feet[i];
+        if (!ft.planted) { ref = null; continue; }
+        if (!ref) ref = ft.ball;
+        worst = Math.max(worst, dist(ref, ft.ball) * Hpx);
+      }
+    }
+    console.log(`summit: planted-foot drift ${worst.toExponential(2)} px`);
+    expect(worst).toBeLessThan(1);
+    // the hand-off: the last analytic frame vs the first spring frame (60 Hz, fixed dt)
+    const keys = ['beard', 'ringlet', 'flapF', 'flapB'] as const;
+    const series = keys.map((k) => seen.map((s) => sk(s).sec[k]));
+    const dts = seen.map((s, i) => (i ? (s.clock as number) - (seen[i - 1].clock as number) : 1 / 60));
+    const iH = seen.findIndex((s) => s.springs);
+    expect(iH).toBeGreaterThan(3);
+    for (const [j, k] of keys.entries()) {
+      const v = series[j].map((x, i) => (i ? (x - series[j][i - 1]) / dts[i] : 0));
+      const peak = Math.max(...v.map(Math.abs), 1e-6);
+      // the velocity's change across the hand-off frame vs its trend just before (a step would stand out)
+      const step = Math.abs((v[iH] - v[iH - 1]) - (v[iH - 1] - v[iH - 2]));
+      console.log(`${k}: velocity step at the hand-off ${(step / peak * 100).toFixed(2)}% of peak`);
+      expect(step).toBeLessThanOrEqual(0.05 * peak + 1e-9);
+    }
+    e.destroy();
+  }, 30_000);
+
+  it('next climb: a clean cut, e = 0 through the 0.3 s hold, then ≥ 0.95 by 0.9 s (600 ms ramp)', async () => {
+    const lenB = lenM;
+    const e = await makeEngine(1440, 900);
+    e.setClimb!(climb1(lenB, true)); e.setProgress(0.05); e.setPhase('complete', { instant: true });
+    run(1);
+    const c2: ClimbInput = { stage: 2, stageStartM: lenB + 30, stageLenM: lenB, posM: lenB + 30, fromSummit: true, summits: 1, atSummit: false };
+    e.setClimb!(c2); e.setProgress(0); e.setPhase('focus');
+    const seen: Stats[] = [];
+    let pos = c2.posM;
+    for (let k = 0; k < 2; k++) { pos += PACE_M; e.setClimb!({ ...c2, posM: pos }); run(1, (s) => seen.push({ ...s }), e.stats as unknown as Stats); }
+    const t0 = seen[0].clock as number;
+    for (const s of seen) { if ((s.clock as number) - t0 < 0.29) expect(s.e).toBe(0); }
+    const at = seen.find((s) => (s.clock as number) - t0 >= 0.9)!;
+    expect(at.e as number).toBeGreaterThanOrEqual(0.95);
+    console.log('next climb first frame', seen[0].gait, seen[0].phi);
+    expect(sk(seen[0]).feet.every((ft) => ft.planted)).toBe(true); // the push pose in double support
+    e.destroy();
+  });
+
+  it('reduced motion: no frame-to-frame motion between re-poses', async () => {
+    const e = await makeEngine(1440, 900, true);
+    e.setClimb!(climb1(lenM * 0.5)); e.setProgress(0.5); e.setPhase('focus', { instant: true });
+    const frames = e.stats.frames, skel = e.stats.skel;
+    run(5);
+    expect(e.stats.frames).toBe(frames);
+    expect(e.stats.skel).toBe(skel);
+    e.destroy();
+  });
+});

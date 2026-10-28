@@ -113,8 +113,9 @@ export function standParams(from: PoseParams, centre: V, t: number, idle = stand
   let lean = 3 * DEG;
   let ub = upperBody(pelvis, lean, headPitch, breathRise(t), f);
   for (let i = 0; i < 40 && dist(ub.shoulder, centre) - WALK.R > 0.33; i++) { lean += 0.5 * DEG; ub = upperBody(pelvis, lean, headPitch, breathRise(t), f); }
-  // near hand: ψ 150° if the arm reaches it (elbow ≤ 165°), else the first angle below it that it does
-  let psi = 150 * DEG, hand = handOnStone(centre, psi, f);
+  // near hand: resting on the stone's back at ψ 168° (the spec's 150° raised the arm overhead, a wave), or the first
+  // angle below it the arm reaches with the elbow ≤ 165°
+  let psi = 168 * DEG, hand = handOnStone(centre, psi, f);
   for (let i = 0; i < 60 && dist(ub.shoulder, wristOfHand(hand, f)) > armSpan(165); i++) { psi += 1 * DEG; hand = handOnStone(centre, psi, f); }
   const hang = freeHand({ x: ub.shoulder.x + 0.03 * f, y: ub.shoulder.y - 0.335 }, -Math.PI / 2 + 0.08 * f, f);
   return {
