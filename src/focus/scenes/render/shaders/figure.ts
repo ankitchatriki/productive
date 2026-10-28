@@ -20,7 +20,7 @@ float ridgeAt(float col) {
 void main() {
   vec2 css = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
   vec2 p = vec2(uCam.x + (css.x - uAnchor.x) / uCam.z, uCam.y - (css.y - uAnchor.y) / uCam.z);
-  float aa = 0.65 / (uDpr * uCam.z);                       // ≈ 0.6 device px, in H
+  float aa = 1.0 / (uDpr * uCam.z);                        // a soft ≈ 1 px edge (the print is soft), in H
   float zBest = -1e3, cov = 0.0, alb = 0.36, side = 0.0;
   vec3 nAcc = vec3(0.0); float wAcc = 0.0;
   for (int i = 0; i < ${MAX_PRIMS}; i++) {
@@ -38,7 +38,7 @@ void main() {
       float z = mix(A.z, B.z, u) + h;
       vec3 n = normalize(vec3((p - c) / max(r, 1e-5), h / max(r, 1e-5) / max(C.w, 0.3)));
       // smooth union on height: organic joins
-      float k = 0.012;
+      float k = 0.006;
       float hh = clamp(0.5 + 0.5 * (z - zBest) / k, 0.0, 1.0);
       float wNew = hh;
       zBest = mix(zBest, z, hh) + k * hh * (1.0 - hh);
@@ -50,10 +50,10 @@ void main() {
   if (cov > 0.0) {
     vec3 n = normalize(nAcc + vec3(0.0, 0.0, 1e-4));
     vec3 lk = normalize(LKEY);
-    float wrap = clamp((dot(n, lk) + 0.35) / 1.35, 0.0, 1.0);
+    float wrap = clamp((dot(n, lk) + 0.25) / 1.25, 0.0, 1.0);
     float sky = 0.5 + 0.5 * n.y;
-    float far = side < -0.5 ? 0.78 : 1.0;
-    L = alb * far * (0.62 * wrap + 0.20 * sky + 0.06);
+    float far = side < -0.5 ? 0.74 : 1.0;
+    L = alb * far * (0.88 * pow(wrap, 1.2) + 0.16 * sky + 0.04);
     L += 0.05 * pow(1.0 - n.z, 3.0) * step(0.0, -n.x) * (side < -0.5 ? 0.3 : 1.0); // a thin light rim on the back
     alpha = cov;
   } else {

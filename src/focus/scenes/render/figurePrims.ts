@@ -7,7 +7,7 @@ import { fromVertical, handPoint, type Skel } from '../walk';
 export interface Prim { a: V; b: V; az: number; bz: number; ra: number; rb: number; albedo: number; kind: number; side: number; squash: number; name: string }
 
 /** Scene-luminance albedos (§4.3, rescaled to the print curve as it is: the plan's 0.36/0.16/0.42 printed far too light). */
-export const ALBEDO = { skin: 0.20, hair: 0.085, wrap: 0.235 }; // calibrated: lit back ≈ L 150, chest ≈ L 70
+export const ALBEDO = { skin: 0.23, hair: 0.085, wrap: 0.235 }; // calibrated: lit back ≈ L 150, chest ≈ L 70
 const Z = { near: 0.06, mid: 0, far: -0.06 };
 
 const add = (a: V, b: V): V => ({ x: a.x + b.x, y: a.y + b.y });
@@ -34,8 +34,8 @@ export function figurePrims(s: Skel): Prim[] {
     P(`calf${i}`, c0, c1, 0.032, 0.026, z, side);
     const n = { x: -Math.sin(ft.ang), y: Math.cos(ft.ang) };
     const heel = add(ft.heel, mul(n, 0.020)), ball = add(ft.ball, mul(n, 0.014)), toe = add(ft.toe, mul(n, 0.009));
-    P(`foot${i}`, heel, ball, 0.021, 0.015, z, side);
-    P(`toe${i}`, ball, toe, 0.015, 0.009, z, side);
+    P(`foot${i}`, heel, ball, 0.019, 0.013, z, side);
+    P(`toe${i}`, ball, toe, 0.013, 0.008, z, side);
   };
   const arm = (i: 0 | 1) => {
     const side = i === 0 ? 1 : -1, z = i === 0 ? Z.near : Z.far;
@@ -51,18 +51,20 @@ export function figurePrims(s: Skel): Prim[] {
   limbs(1); arm(1);
   // torso masses (mid plane)
   const br = s.breath;
-  P('glute', at(0.00, -0.040), at(-0.035, -0.035), 0.058, 0.052, Z.mid, 0);
-  P('pelvis', at(-0.03, 0.0), at(0.05, 0.005), 0.080, 0.074, Z.mid, 0);
-  P('abdomen', at(0.05, 0.008), at(0.17, 0.010), 0.068, 0.075 * br, Z.mid, 0);
-  P('ribcage', at(0.15, 0.006), at(0.255, 0.004), 0.080 * br, 0.074, Z.mid, 0);
-  P('lats', at(0.15, -0.030), at(0.27, -0.030), 0.050, 0.056, Z.mid - 0.005, 0);
-  P('pectoral', at(0.22, 0.030), at(0.26, 0.022), 0.046, 0.040, Z.mid + 0.004, 0);
-  P('wrap', at(-0.06, 0.0), at(0.035, 0.004), 0.086, 0.083, Z.mid + 0.002, 0, ALBEDO.wrap);
+  P('glute', at(0.005, -0.034), at(-0.030, -0.030), 0.054, 0.048, Z.mid, 0);
+  P('pelvis', at(-0.025, 0.004), at(0.05, 0.004), 0.068, 0.062, Z.mid, 0);
+  P('abdomen', at(0.05, 0.006), at(0.16, 0.008), 0.058, 0.066 * br, Z.mid, 0);
+  P('ribcage', at(0.15, 0.004), at(0.255, 0.000), 0.078 * br, 0.072, Z.mid, 0);
+  P('lats', at(0.13, -0.026), at(0.27, -0.032), 0.046, 0.058, Z.mid - 0.005, 0);
+  P('pectoral', at(0.21, 0.030), at(0.25, 0.024), 0.046, 0.040, Z.mid + 0.004, 0);
+  // the modesty wrap: a close band, barely lighter, invisible as a costume at this scale
+  P('wrap', at(-0.045, 0.012), at(0.03, 0.008), 0.064, 0.060, Z.mid + 0.002, 0, ALBEDO.wrap);
   limbs(0);
   // head group: neck, cranium, jaw, hair
   const hd = fromVertical(s.headAxis, f), face = { x: hd.y * f, y: -hd.x * f };
   const hp = (u: number, v: number) => add(add(s.head, mul(hd, u)), mul(face, v));
-  P('neck', at(BODY.torso - 0.01, 0.0), hp(-0.035, -0.010), 0.030, 0.025, Z.mid, 0);
+  P('trapezius', at(BODY.torso - 0.035, -0.035), at(BODY.torso + 0.005, -0.012), 0.040, 0.030, Z.mid - 0.002, 0);
+  P('neck', at(BODY.torso - 0.01, 0.0), hp(-0.035, -0.010), 0.032, 0.026, Z.mid, 0);
   P('cranium', hp(-0.010, -0.004), hp(0.018, -0.006), 0.060, 0.058, Z.mid + 0.002, 0);
   P('jaw', hp(-0.030, 0.012), hp(-0.052, 0.030), 0.036, 0.026, Z.mid + 0.001, 0);
   P('hair', hp(0.004, -0.018), hp(0.024, -0.004), 0.060, 0.054, Z.mid + 0.006, 0, ALBEDO.hair);

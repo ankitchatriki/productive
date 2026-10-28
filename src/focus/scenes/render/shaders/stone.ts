@@ -30,8 +30,8 @@ vec2 craters(vec3 p, float prob) {
     vec3 c = g + 0.25 + 0.5 * h - f;
     float rc = 0.35 + 0.13 * fract(h.x * 7.3 + h.y * 3.1);
     float d = length(c) / rc;
-    if (d < 1.0) { acc.x += -0.6 * (1.0 - d * d); acc.y -= 0.05; }
-    acc.x += 0.25 * exp(-((d - 1.0) / 0.18) * ((d - 1.0) / 0.18));
+    if (d < 1.0) { acc.x += -0.45 * (1.0 - d * d); acc.y -= 0.06 * (1.0 - d); }
+    acc.x += 0.12 * exp(-((d - 1.0) / 0.22) * ((d - 1.0) / 0.22));
     if (d > 1.0 && d < 1.8) acc.y += 0.02;
   }
   return acc;
@@ -41,7 +41,7 @@ vec2 surface(vec3 m) {   // (height in R units, albedo)
   vec2 c1 = craters(m * 3.0, 0.16), c2 = craters(m * 7.0 + 11.0, 0.22);
   vec2 c3 = uQuality > 0.6 ? craters(m * 16.0 + 23.0, 0.30) : vec2(0.0);
   float hgt = 0.022 * c1.x + 0.010 * c2.x + 0.005 * c3.x + 0.020 * (fbm3(m * 7.0, 4) - 0.5);
-  alb += c1.y + c2.y * 0.8 + c3.y * 0.6 + 0.10 * (fbm3(m * 5.0 + 3.0, 4) - 0.5);
+  alb += c1.y + c2.y * 0.8 + c3.y * 0.6 + 0.16 * (fbm3(m * 5.0 + 3.0, 4) - 0.5) + 0.08 * (fbm3(m * 24.0 + 1.0, 3) - 0.5);
   return vec2(hgt, clamp(alb, 0.24, 0.58));
 }
 
@@ -67,8 +67,8 @@ void main() {
     float hx = surface(toMat(normalize(nV + tx * e))).x, hy = surface(toMat(normalize(nV + ty * e))).x;
     vec3 nB = normalize(nV - ((hx - s0.x) / e) * tx * 6.0 - ((hy - s0.x) / e) * ty * 6.0);
     vec3 lk = normalize(LKEY);
-    float wrap = clamp((dot(nB, lk) + 0.20) / 1.20, 0.0, 1.0);
-    L = alb * (0.80 * pow(wrap, 1.2) + 0.10 * (0.5 + 0.5 * nB.y) + 0.02);
+    float wrap = clamp((dot(nB, lk) + 0.12) / 1.12, 0.0, 1.0);
+    L = alb * (0.92 * pow(wrap, 1.35) + 0.07 * (0.5 + 0.5 * nB.y) + 0.015);
     L += 0.06 * pow(1.0 - nV.z, 4.0) * max(0.0, dot(normalize(nV.xy + 1e-5), normalize(lk.xy)));  // rim brightening
     L *= 1.0 - 0.20 * smoothstep(0.80, 0.98, -nV.y);                                            // ground occlusion
     L *= 0.95;

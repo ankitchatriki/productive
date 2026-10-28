@@ -14,7 +14,7 @@ float sceneAt(vec2 uv) {
                              + texture2D(uScene, uv + vec2(0.0, px.y)).r + texture2D(uScene, uv - vec2(0.0, px.y)).r);
   return s * s;
 }
-float grainAt(vec2 css, float k) { return vnoise(css / 1.6 + vec2(hash12(vec2(k, 3.1)), hash12(vec2(k, 7.7))) * 512.0); }
+float grainAt(vec2 css, float k) { return vnoise(css / 2.2 + vec2(hash12(vec2(k, 3.1)), hash12(vec2(k, 7.7))) * 512.0); }
 void main() {
   vec2 uv = vUv;
   float Ls = sceneAt(uv);
@@ -29,7 +29,7 @@ void main() {
   float aspect = uRes.x / uRes.y;
   vec2 q = (ud - vec2(0.56, 0.52)) * vec2(aspect, 1.0);
   float vig = 1.0 - 0.34 * smoothstep(0.35, 1.05, length(q * vec2(0.95 / max(1.0, aspect * 0.62), 1.10)))
-                  - 0.10 * smoothstep(0.55, 0.0, ud.y) - 0.06 * smoothstep(0.45, 0.0, ud.x);
+                  - 0.07 * smoothstep(0.55, 0.0, ud.y) - 0.06 * smoothstep(0.45, 0.0, ud.x);
   P *= vig;
   // 3. paper: low-frequency unevenness ±3% and sparse foxing specks (static: the print, not the scene)
   vec2 css = gl_FragCoord.xy / uDpr;
