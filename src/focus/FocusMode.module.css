@@ -143,34 +143,54 @@
 @media (max-aspect-ratio: 9/10) {
   .overlay[data-scene="sisyphus"] .readoutBox,
   .overlay[data-scene="sisyphus"][data-sticky="true"] .readoutBox {
-    left: 50%; right: auto; transform: translateX(-50%); top: calc(13vh + 16px); bottom: auto; align-items: center; text-align: center;
+    left: 50%; right: auto; transform: translateX(-50%); top: auto; bottom: max(120px, calc(env(safe-area-inset-bottom) + 112px)); align-items: center; text-align: center;
     padding: 10px 16px; width: max-content; max-width: calc(100vw - 32px);
-    background: rgba(21, 16, 13, 0.88); border-radius: 6px; /* cartouche over the sky */
+    /* (portrait: the readout sits low over the rock, no plate needed) */
   }
   .overlay[data-scene="sisyphus"] .climb { width: 180px; }
   .overlay[data-scene="sisyphus"] .climbLine { text-align: center; }
 }
 
-/* Black-figure scene (ROUND3_ART §2.6): no text shadows; the course line sits on a black cartouche over the sky. */
-.overlay[data-scene="sisyphus"] .label {
-  background: rgba(21, 16, 13, 0.88); color: #F1E4C4; border-radius: 6px; padding: 6px 10px; text-shadow: none;
+/* Round 6 (ROUND6_PLAN §8): over the photograph the HUD reads as a caption on a print — Fraunces, warm cream ink,
+   small caps and hairlines, quiet print-mat buttons. */
+.overlay[data-scene="sisyphus"] {
+  --focus-ink: #E8DEC9; --focus-ink-muted: rgba(232, 222, 201, 0.72); --focus-ink-dark: #2B241B;
+  --focus-hair: rgba(232, 222, 201, 0.30); --focus-glass: rgba(26, 22, 17, 0.36); --focus-glass-border: rgba(232, 222, 201, 0.24);
+  --focus-glass-solid: rgba(26, 22, 17, 0.85); --focus-accent: #E2D6BE; --focus-on-accent: #241E16;
+  --focus-text-shadow: 0 1px 10px rgba(16, 13, 10, 0.55); --focus-ring: #E8DEC9;
+  font-family: 'Fraunces', Georgia, serif;
 }
-.overlay[data-scene="sisyphus"] .status,
-.overlay[data-scene="sisyphus"] .readout,
-.overlay[data-scene="sisyphus"] .caption { text-shadow: none; }
-.overlay[data-scene="sisyphus"] .readout { color: #F1E4C4; }
-.overlay[data-scene="sisyphus"] .caption { color: rgba(241, 228, 196, 0.8); }
+/* the header sits on the burned sky: a soft dark scrim keeps cream ink legible there */
+.overlay[data-scene="sisyphus"] .scrim { background: linear-gradient(to bottom, rgba(20, 16, 12, 0.42), transparent 110px); }
+.overlay[data-scene="sisyphus"] .label {
+  font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--focus-ink); text-shadow: var(--focus-text-shadow); background: none; padding: 0;
+}
+.overlay[data-scene="sisyphus"] .status, .overlay[data-scene="sisyphus"] .caption { font-family: 'Fraunces', Georgia, serif; font-weight: 400; text-shadow: var(--focus-text-shadow); }
+.overlay[data-scene="sisyphus"] .caption { color: var(--focus-ink-muted); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; }
+.overlay[data-scene="sisyphus"] .readout {
+  font-family: 'Fraunces', Georgia, serif; font-weight: 300; font-variation-settings: 'opsz' 144; font-variant-numeric: lining-nums tabular-nums;
+  font-size: clamp(44px, 6.2vw, 84px); letter-spacing: 0.01em; color: var(--focus-ink); text-shadow: var(--focus-text-shadow); opacity: 1;
+}
+.overlay[data-scene="sisyphus"] .summit { font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 400; }
+.overlay[data-scene="sisyphus"] .pill, .overlay[data-scene="sisyphus"] .card, .overlay[data-scene="sisyphus"] .hud {
+  border-radius: 2px; font-family: 'Fraunces', Georgia, serif; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.overlay[data-scene="sisyphus"] .pill { height: 40px; font-size: 13px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.12em; }
+.overlay[data-scene="sisyphus"] .pill:hover { background: rgba(26, 22, 17, 0.55); }
+.overlay[data-scene="sisyphus"] .iconBtn { border-radius: 2px; }
+.overlay[data-scene="sisyphus"] :focus-visible { outline: 1.5px solid #E8DEC9; outline-offset: 3px; }
+@media (prefers-reduced-transparency: reduce) { .overlay[data-scene="sisyphus"] .pill, .overlay[data-scene="sisyphus"] .card { background: rgba(26, 22, 17, 0.85); } }
 
-/* Climb strip: altitude + climb number, and the Greek-key meander. */
-.climb { width: 240px; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
-.climbLine { font-size: 13px; line-height: 16px; color: rgba(241, 228, 196, 0.8); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.meander { display: block; overflow: visible; }
-.meander path { fill: none; stroke-linecap: square; stroke-linejoin: miter; vector-effect: non-scaling-stroke; }
-.meanderRest { stroke: #CF9450; stroke-opacity: 0.35; stroke-width: 1.5; }
-.meanderDone { stroke: #F1E4C4; stroke-width: 1.5; }
+/* Climb strip: metres and climb in small caps over a hairline with a cream tick. */
+.climb { width: 240px; display: flex; flex-direction: column; gap: 7px; margin-top: 4px; }
+.climbLine { font-family: 'Fraunces', Georgia, serif; font-size: 11px; line-height: 14px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--focus-ink-muted); font-variant-numeric: lining-nums tabular-nums; text-align: right; white-space: nowrap; }
+.rule { position: relative; height: 1px; background: var(--focus-hair); }
+.ruleDone { position: absolute; left: 0; top: 0; height: 1px; background: var(--focus-ink); opacity: 0.8; }
+.tick { position: absolute; top: -3px; width: 1px; height: 7px; background: var(--focus-ink); transform: translateX(-0.5px); }
 
-/* Summit framing pulls the slope down: the readout sits on a cartouche over the sky (ROUND3_ART §2.6). */
+/* Summit framing and the break: the readout over the print keeps its caption plate. */
 .overlay[data-scene="sisyphus"][data-phase="complete"] .readoutBox,
 .overlay[data-scene="sisyphus"][data-phase="break"] .readoutBox {
-  background: rgba(21, 16, 13, 0.88); border-radius: 6px; padding: 10px 16px;
+  background: rgba(26, 22, 17, 0.55); border: 1px solid var(--focus-hair); border-radius: 2px; padding: 10px 16px;
 }

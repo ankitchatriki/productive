@@ -2,7 +2,7 @@
 import { HEADER, NOISE } from './common';
 
 export const POST_FS = HEADER + NOISE + `
-uniform sampler2D uScene, uSnap, uLut;
+uniform sampler2D uScene, uSnap, uLut, uPaper;
 uniform vec2 uRes;          // device px
 uniform float uDpr, uXfade, uExposure, uGrainT, uSoft, uPaperSeed;
 varying vec2 vUv;
@@ -33,7 +33,7 @@ void main() {
   P *= vig;
   // 3. paper: low-frequency unevenness ±3% and sparse foxing specks (static: the print, not the scene)
   vec2 css = gl_FragCoord.xy / uDpr;
-  float paper = fbm(ud * vec2(3.0, 3.0 / aspect) * 2.0 + uPaperSeed, 3);
+  float paper = texture2D(uPaper, ud * vec2(1.0, 1.0 / aspect) * (0.9 / max(1.0, 1.0 / aspect)) + 0.09 * fract(uPaperSeed * 0.137)).r;   // stays inside one tile: no wrap seam
   P *= 1.0 + 0.06 * (paper - 0.5);
   vec2 cell = floor(css / 9.0);
   float fx = hash12(cell + uPaperSeed);

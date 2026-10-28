@@ -29,7 +29,13 @@ describe('the frame model', () => {
         const p = S(f.ball.x, f.ball.y), col = Math.round(p.x - 0.5);
         expect(Math.abs(m.ridge[col] - p.y)).toBeLessThanOrEqual(1);
         expect(m.contacts.some((c) => Math.abs(c - f.ball.x) < 1e-9)).toBe(true);
+        // the broken crest is exactly the trail under a planted foot (±1 px), and never above the walking line
+        expect(Math.abs(m.crest[col] - m.ridge[col])).toBeLessThanOrEqual(1);
       }
+      for (let i = 0; i < m.crest.length; i++) expect(m.crest[i]).toBeGreaterThanOrEqual(m.ridge[i] - 1e-9);
+      // elsewhere it is broken: bites of a few px
+      let bitten = 0; for (let i = 0; i < m.crest.length; i++) if (m.crest[i] - m.ridge[i] > 2) bitten++;
+      expect(bitten / m.crest.length).toBeGreaterThan(0.2);
       // the stone touches the crest line: its circle's lowest clearance above the line is within 1 px
       const c = S(m.stone.c.x, m.stone.c.y), Rp = m.stone.R * zH;
       let gap = Infinity;
@@ -72,4 +78,39 @@ describe('the stone (P2)', () => {
       e.destroy();
     });
   }
+});
+
+describe('atmosphere and stills (P4)', () => {
+  it('birds: never over the stone or the figure, never just above the crest; none when paused', async () => {
+    const e = await makeEngine(1440, 900);
+    let f = 300;
+    e.setClimb!(climb(f * PACE_M)); e.setProgress(0.2); e.setPhase('focus', { instant: true });
+    let seen = 0;
+    for (let k = 0; k < 400; k++) {
+      f++; e.setClimb!(climb(f * PACE_M));
+      run(1, () => {
+        const m = modelOf(e); const zH = m.cam.Hpx * m.cam.zoom;
+        const sc = { x: m.cam.ax + (m.stone.c.x - m.cam.x) * zH, y: m.cam.ay - (m.stone.c.y - m.cam.y) * zH };
+        for (const b of m.birds) {
+          seen++;
+          expect(Math.hypot(b.x - sc.x, b.y - sc.y)).toBeGreaterThan(m.stone.R * zH);
+          expect(b.y).toBeLessThan(m.ridge[Math.max(0, Math.min(m.ridge.length - 1, Math.round(b.x)))] - 0.12 * 900 + 1);
+        }
+      }, e.stats as unknown as Record<string, unknown>, 6);
+    }
+    expect(seen).toBeGreaterThan(0);
+    e.setPhase('paused'); run(1);
+    expect(modelOf(e).birds.length).toBe(0);
+    e.destroy();
+  }, 60_000);
+  it('reduced motion: grain and sky stay put between re-poses', async () => {
+    const e = await makeEngine(1440, 900, true);
+    e.setClimb!(climb(500 * PACE_M)); e.setProgress(0.3); e.setPhase('focus', { instant: true });
+    const a = modelOf(e);
+    e.setClimb!(climb(510 * PACE_M)); e.setRunning(true);
+    const b = modelOf(e);
+    expect(b.t).toBe(a.t); expect(b.sky.drift).toBe(a.sky.drift); expect(b.birds.length).toBe(0);
+    expect(b.stone.rot).toBeGreaterThan(a.stone.rot);
+    e.destroy();
+  });
 });

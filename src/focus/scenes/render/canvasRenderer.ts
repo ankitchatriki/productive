@@ -89,8 +89,9 @@ export class CanvasRenderer implements Renderer {
     const zH = m.cam.Hpx * m.cam.zoom;
     g.save();
     g.beginPath(); g.moveTo(0, h + 2);
-    for (let i = 0; i < m.ridge.length; i += 2) g.lineTo(i, m.ridge[i]);
-    g.lineTo(w, m.ridge[m.ridge.length - 1]); g.lineTo(w, h + 2); g.closePath();
+    const cr = m.crest.length ? m.crest : m.ridge;
+    for (let i = 0; i < cr.length; i += 2) g.lineTo(i, cr[i]);
+    g.lineTo(w, cr[cr.length - 1]); g.lineTo(w, h + 2); g.closePath();
     g.clip();
     g.fillStyle = css(0.12, e, wm); g.fillRect(0, 0, w, h);
     if (this.rock) {

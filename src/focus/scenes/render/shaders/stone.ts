@@ -3,22 +3,7 @@
 // normal nV, so the terminator and core shadow stay put while the craters travel over the top.
 import { HEADER, NOISE } from './common';
 
-export const STONE_FS = HEADER + NOISE + `
-uniform vec2 uRes; uniform float uDpr, uH, uSeed, uQuality;
-uniform vec3 uStone;        // centre x, y (CSS, y down), radius (CSS px)
-uniform float uRot, uAlbedoOnly;
-uniform sampler2D uRidge; uniform float uRidgeN;
-varying vec2 vUv;
-const vec3 LKEY = vec3(-0.55, 0.45, 0.70);
-
-float ridgeAt(float col) {
-  float c = clamp(col, 0.0, uRidgeN - 1.0); float i = floor(c), f = c - i;
-  vec4 a = texture2D(uRidge, vec2((i + 0.5) / uRidgeN, 0.5)), b = texture2D(uRidge, vec2((min(i + 1.0, uRidgeN - 1.0) + 0.5) / uRidgeN, 0.5));
-  return mix((a.r * 65280.0 + a.g * 255.0) / 8.0 - uH, (b.r * 65280.0 + b.g * 255.0) / 8.0 - uH, f);
-}
-// y-up rotation by +a (CCW): undoes the clockwise roll for the material lookup
-vec3 toMat(vec3 v) { float c = cos(uRot), s = sin(uRot); return vec3(c * v.x - s * v.y, s * v.x + c * v.y, v.z); }
-
+const SURFACE = `
 // one octave of craters: 3D cells, each holding a crater with probability prob. Returns (height, albedo delta).
 vec2 craters(vec3 p, float prob) {
   vec3 i = floor(p), f = fract(p);
@@ -45,6 +30,30 @@ vec2 surface(vec3 m) {   // (height in R units, albedo)
   return vec2(hgt, clamp(alb, 0.24, 0.58));
 }
 
+`;
+
+export const STONE_FS = HEADER + NOISE + `
+uniform vec2 uRes; uniform float uDpr, uH, uSeed, uQuality;
+uniform vec3 uStone;        // centre x, y (CSS, y down), radius (CSS px)
+uniform float uRot, uAlbedoOnly;
+uniform sampler2D uSurf;     // the baked material-space surface
+uniform sampler2D uRidge; uniform float uRidgeN;
+varying vec2 vUv;
+const vec3 LKEY = vec3(-0.55, 0.45, 0.70);
+
+float ridgeAt(float col) {
+  float c = clamp(col, 0.0, uRidgeN - 1.0); float i = floor(c), f = c - i;
+  vec4 a = texture2D(uRidge, vec2((i + 0.5) / uRidgeN, 0.5)), b = texture2D(uRidge, vec2((min(i + 1.0, uRidgeN - 1.0) + 0.5) / uRidgeN, 0.5));
+  return mix((a.r * 65280.0 + a.g * 255.0) / 8.0 - uH, (b.r * 65280.0 + b.g * 255.0) / 8.0 - uH, f);
+}
+// y-up rotation by +a (CCW): undoes the clockwise roll for the material lookup
+vec3 toMat(vec3 v) { float c = cos(uRot), s = sin(uRot); return vec3(c * v.x - s * v.y, s * v.x + c * v.y, v.z); }
+vec2 surf(vec3 m) {
+  vec2 uv = vec2(atan(m.z, m.x) / 6.2831853 + 0.5, asin(clamp(m.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+  vec4 t = texture2D(uSurf, uv);
+  return vec2((t.g - 0.5) * 0.08, t.r * 0.6);
+}
+
 void main() {
   vec2 css = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
   vec2 pp = (css - uStone.xy) / uStone.z; pp.y = -pp.y;            // y-up, units of R
@@ -59,12 +68,12 @@ void main() {
     vec2 q = pp / rim; float qq = min(dot(q, q), 0.9999);
     vec3 nV = vec3(q, sqrt(1.0 - qq));
     vec3 nM = toMat(nV);
-    vec2 s0 = surface(nM);
+    vec2 s0 = surf(nM);
     float alb = s0.y;
     // bump normal: the height's gradient on the view tangent plane
     float e = 0.012;
     vec3 tx = normalize(vec3(1.0, 0.0, -nV.x / nV.z)), ty = normalize(vec3(0.0, 1.0, -nV.y / nV.z));
-    float hx = surface(toMat(normalize(nV + tx * e))).x, hy = surface(toMat(normalize(nV + ty * e))).x;
+    float hx = surf(toMat(normalize(nV + tx * e))).x, hy = surf(toMat(normalize(nV + ty * e))).x;
     vec3 nB = normalize(nV - ((hx - s0.x) / e) * tx * 6.0 - ((hy - s0.x) / e) * ty * 6.0);
     vec3 lk = normalize(LKEY);
     float wrap = clamp((dot(nB, lk) + 0.45) / 1.45, 0.0, 1.0);
@@ -82,5 +91,19 @@ void main() {
     if (below > -1.0 && abs(dx) < 1.4) { alpha = 0.30 * exp(-dx * dx * 2.0) * exp(-max(below, 0.0) / (0.06 * uStone.z)); L = 0.0; }
   }
   gl_FragColor = vec4(sqrt(max(L, 0.0)), 1.0, 0.0, alpha);
+}
+`;
+
+/** The material sphere as an equirectangular map: R = albedo / 0.6, G = height / 0.08 + 0.5. */
+export const STONE_BAKE_FS = HEADER + NOISE + `
+uniform vec2 uSize; uniform float uSeed, uQuality;
+varying vec2 vUv;
+` + SURFACE + `
+void main() {
+  vec2 uv = gl_FragCoord.xy / uSize;
+  float lon = (uv.x - 0.5) * 6.2831853, lat = (uv.y - 0.5) * 3.1415927;
+  vec3 m = vec3(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon));
+  vec2 s = surface(m);
+  gl_FragColor = vec4(clamp(s.y / 0.6, 0.0, 1.0), clamp(s.x / 0.08 + 0.5, 0.0, 1.0), 0.0, 1.0);
 }
 `;

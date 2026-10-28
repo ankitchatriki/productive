@@ -6,7 +6,7 @@ import type { ClimbInput, SceneEngine, SceneInitOptions, ScenePhase } from './ty
 import { camLayout, clampCamX, follow, toScreen, type Cam, type CamLayout } from './camera';
 import { makeTrail, type Trail } from './trail';
 import { M_PER_H, PACE_M, MOUNTAIN_SEED } from '../../domain/mountain';
-import { hash1, smoothstep } from './noise';
+import { fbm1, hash1, noise1, ridged, smoothstep } from './noise';
 import type { V } from './path';
 import { DEG, WALK, armToStone, footFromBall, frac, sm, walkPose, type Skel, type WalkPose } from './walk';
 import { assemble, blendParams, easeStd, paramsOf, sitParams, standParams, type PoseParams } from './poses';
@@ -18,6 +18,17 @@ import { CanvasRenderer } from './render/canvasRenderer';
 import { gradeFor, type Grade } from './render/tone';
 
 type Mode = 'climb' | 'summit' | 'stand' | 'sit';
+
+/**
+ * The broken crest (ROUND6 §3.4): bites below the walking line (H), never above it; zero within the contact windows
+ * under the feet and the stone, so they stand exactly on the trail; rocky and notched everywhere else.
+ */
+export function crestBite(wx: number, contacts: number[], seed: number): number {
+  let win = 1;
+  for (const c of contacts) win = Math.min(win, smoothstep(0.15, 0.6, Math.abs(wx - c)));
+  if (win <= 0) return 0;
+  return (0.060 * smoothstep(0.42, 0.72, fbm1(wx * 2.2 + seed, 4)) + 0.025 * ridged(wx * 9 + 3, 3) + 0.06 * smoothstep(0.72, 0.92, noise1(wx / 1.1 + seed))) * win;
+}
 type SeqKind = 'summit' | 'mini' | 'next';
 interface Seq { kind: SeqKind; t0: number; dur: number }
 
@@ -328,10 +339,13 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
 
     // the crest's screen line, one sample per CSS column
     const N = Math.max(2, Math.ceil(w));
-    const ridge = new Float32Array(N);
+    const ridge = new Float32Array(N), crest = new Float32Array(N);
+    const contacts = [...skel.feet.map((f) => f.ball.x), centre.x - Math.sin((trail.angleAt(sB) * Math.PI) / 180) * R];
+    const sd = (seed() % 997) * 0.731;
     for (let i = 0; i < N; i++) {
       const wx = cam.pos.x + (i + 0.5 - cam.anchor.x) / zH;
       ridge[i] = cam.anchor.y - (trail.groundY(wx) - cam.pos.y) * zH;
+      crest[i] = ridge[i] + crestBite(wx, contacts, sd) * zH;
     }
     // atmosphere
     const xf = xfadeT0 >= 0 ? 1 - Math.min(1, (t - xfadeT0) / CROSSFADE_DUR) : 0;
@@ -362,7 +376,9 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
       cam: { x: cam.pos.x, y: cam.pos.y, zoom: cam.zoom, ax: cam.anchor.x, ay: cam.anchor.y, Hpx: lay.Hpx },
       seed: seed(),
       ridge,
-      contacts: [...skel.feet.map((f) => f.ball.x), centre.x - Math.sin((trail.angleAt(sB) * Math.PI) / 180) * R],
+      crest,
+      groundY: (x: number) => trail.groundY(x),
+      contacts,
       hazeFromX: mode === 'climb' ? Infinity : trail.at(trail.geom.ledgeEnd).x,
       stone: { c: centre, R, rot },
       skel: (globalThis as { __hideFigure?: boolean }).__hideFigure === true ? null : skel,

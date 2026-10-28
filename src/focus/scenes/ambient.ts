@@ -1,39 +1,43 @@
-// Ambient layer (ROUND3_DESIGN §3.6): bird groups (black strokes), rect helper. Pure and seeded.
+// Ambient layer (ROUND6_PLAN §6.3): a few distant birds gliding across the overcast. Pure and seeded.
 import { mulberry32 } from './noise';
 
 export interface BirdGroup { start: number; dur: number; n: number; y: number; seed: number }
 
-/** Bird groups for a session: first within 35–75 s, then every 70–140 s. */
+/** Bird groups for a session: 1–3 birds (weights 0.45 / 0.35 / 0.20), a group every 70–180 s, crossing in 25–45 s. */
 export function birdSchedule(seed: number, horizon = 3600): BirdGroup[] {
   const r = mulberry32(seed);
   const out: BirdGroup[] = [];
-  let t = 35 + r() * 40;
+  let t = 30 + r() * 60;
   while (t < horizon) {
-    out.push({ start: t, dur: 18 + r() * 8, n: 3 + Math.floor(r() * 3), y: 0.12 + r() * 0.18, seed: Math.floor(r() * 1e9) });
-    t += 70 + r() * 70;
+    const u = r();
+    out.push({ start: t, dur: 25 + r() * 20, n: u < 0.45 ? 1 : u < 0.80 ? 2 : 3, y: 0.12 + r() * 0.18, seed: Math.floor(r() * 1e9) });
+    t += 70 + r() * 110;
   }
   return out;
 }
 
+/** A bird: screen position (CSS px) and wing angle (deg; > 0 raised). */
 export interface Bird { x: number; y: number; wing: number }
 
-/** Bird positions (screen px) for group g at time t, or [] when not flying. Right to left on a gentle arc. */
+/**
+ * Bird positions for group g at time t, or [] when not flying: right to left on gentle arcs, gliding with a slight
+ * dihedral; every 6–12 s, 2–3 slow flaps (0.45 s each, eased).
+ */
 export function birdsAt(g: BirdGroup, t: number, w: number, h: number, S: number, yBand: [number, number] = [0.12, 0.30]): Bird[] {
   const u = (t - g.start) / g.dur;
   if (u < 0 || u > 1) return [];
   const r = mulberry32(g.seed);
   const yN = yBand[0] + ((g.y - 0.12) / 0.18) * (yBand[1] - yBand[0]);
   const out: Bird[] = [];
+  const el = t - g.start;
   for (let i = 0; i < g.n; i++) {
-    const ph = r() * Math.PI * 2;
-    const flap = 1.2 + r() * 0.8, glide = 1.5 + r() * 1.5;
-    const cyc = (t - g.start + r() * 3) % (flap + glide);
-    const wing = cyc < flap ? 28 * Math.sin(2 * Math.PI * 3.2 * (t - g.start) + ph) : 8;
-    // loose V behind the leader
-    const off = { x: (i % 2 === 0 ? 1 : 1) * Math.ceil(i / 2) * 0.025 * S, y: (i % 2 === 0 ? -1 : 1) * Math.ceil(i / 2) * 0.012 * S };
-    const bob = 0.004 * S * Math.sin((2 * Math.PI * (t - g.start)) / [2.1, 2.6, 3.3][i % 3] + ph);
+    const period = 6 + r() * 6, ph = r() * period, flaps = 2 + Math.floor(r() * 2);
+    const c = (el + ph) % period;
+    const fl = c < flaps * 0.45 ? Math.sin((Math.PI * 2 * c) / 0.45) * Math.sin((Math.PI * c) / (flaps * 0.45)) : 0;
+    const wing = 6 + 22 * fl;
+    const off = { x: Math.ceil(i / 2) * 0.06 * S * (0.8 + 0.4 * r()), y: (i % 2 === 0 ? -1 : 1) * Math.ceil(i / 2) * 0.03 * S };
     const x = w * (1.05 - 1.15 * u) + off.x;
-    const y = h * yN - Math.sin(Math.PI * u) * 0.04 * h + off.y + bob;
+    const y = h * yN - Math.sin(Math.PI * u) * 0.04 * h + off.y + 0.01 * h * Math.sin(el / 7 + i);
     out.push({ x, y, wing });
   }
   return out;

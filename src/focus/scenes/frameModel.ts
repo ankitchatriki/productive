@@ -16,6 +16,10 @@ export interface FrameModel {
   seed: number;
   /** Screen y (CSS px) of the crest for each CSS column (length = ceil(w)). */
   ridge: Float32Array;
+  /** The broken crest the rock is cut to (CSS px per column, ≥ ridge; equal to it under the feet and the stone). */
+  crest: Float32Array;
+  /** The crest's world height at world x (the cliff's world-anchored passes need it beyond the screen). */
+  groundY: (x: number) => number;
   /** World x of the crest's contact windows (feet, stone): the silhouette is exactly the trail there. */
   contacts: number[];
   /** World x beyond which the far side falls away into haze (the summit's back), or +∞. */

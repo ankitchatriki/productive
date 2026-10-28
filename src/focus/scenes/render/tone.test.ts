@@ -59,3 +59,12 @@ describe('renderer selection (§3.7)', () => {
     expect(failed).toBe(1);
   });
 });
+
+describe('time of block (§6.4)', () => {
+  const rb = (P: number, w: number) => { const c = toneAt(P, w); return c[0] - c[2]; };
+  it('the mid-tones warm by 3–8 levels from p = 0 to p = 0.9; the break is cool (mid R−B ≤ 18)', () => {
+    const d = rb(0.5, gradeFor('focus', 0.9).warmth) - rb(0.5, gradeFor('focus', 0).warmth);
+    expect(d).toBeGreaterThanOrEqual(3); expect(d).toBeLessThanOrEqual(8);
+    expect(rb(0.5, gradeFor('break', 0.5).warmth)).toBeLessThanOrEqual(18);
+  });
+});

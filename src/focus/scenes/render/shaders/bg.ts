@@ -1,33 +1,28 @@
-// Sky and cliff (ROUND6_PLAN §6.1–6.2), one full-screen pass into the scene buffer (sqrt luminance in R, material
-// mask in G: 0 sky, 1 rock). World lookups are relative to a CPU-side origin, so the rock is fixed to the world.
+// Sky and cliff (ROUND6_PLAN §6.1–6.2, §3.3–3.5) as three passes: the sky at half resolution every other frame;
+// the cliff into a world-anchored, double-buffered panorama built a strip per frame (it only depends on the world, so
+// it is rendered once and scrolled); and a per-frame composite that cuts the broken crest, adds the edge glow and the
+// summit's far-side haze. Everything is scene luminance (sqrt-encoded in R).
 import { HEADER, NOISE } from './common';
 
-export const BG_FS = HEADER + NOISE + `
-uniform vec2 uRes;            // device px
-uniform float uDpr, uH;       // device pixel ratio, CSS height
-uniform vec4 uCam;            // camX - originX, camY - originY, zoom * Hpx (CSS px per H), zoom
-uniform vec2 uAnchor;         // CSS px
-uniform vec2 uOrigin;         // world origin (multiple of 64 H) mod 289, for the hash domain
-uniform sampler2D uRidge;     // per CSS column: crest screen y
-uniform float uRidgeN, uSeed;
-uniform vec4 uSky;            // drift, evolve, glow, burn
-uniform vec4 uOpen;           // open amount, open centre x, y (CSS), unused
-uniform vec4 uMoon;           // amount, x, y (CSS), radius
-uniform vec4 uContacts;       // world x (relative) of up to 4 contact windows
-uniform float uHazeX, uQuality;
-varying vec2 vUv;
-
-const vec3 LKEY = vec3(-0.55, 0.45, 0.70);
-
+const RIDGE = `
+uniform sampler2D uRidge;     // per column of the target: crest y (target px, ×8, 16 bit)
+uniform float uRidgeN, uRidgeOff;
 float ridgeAt(float col) {
   float c = clamp(col, 0.0, uRidgeN - 1.0);
   float i = floor(c), f = c - i;
   vec4 a = texture2D(uRidge, vec2((i + 0.5) / uRidgeN, 0.5));
   vec4 b = texture2D(uRidge, vec2((min(i + 1.0, uRidgeN - 1.0) + 0.5) / uRidgeN, 0.5));
-  float ya = (a.r * 65280.0 + a.g * 255.0) / 8.0 - uH, yb = (b.r * 65280.0 + b.g * 255.0) / 8.0 - uH;
+  float ya = (a.r * 65280.0 + a.g * 255.0) / 8.0 - uRidgeOff, yb = (b.r * 65280.0 + b.g * 255.0) / 8.0 - uRidgeOff;
   return mix(ya, yb, f);
 }
 
+`;
+
+export const SKY_FS = HEADER + NOISE + `
+uniform vec2 uRes; uniform float uDpr, uH, uSeed;
+uniform vec4 uSky; uniform vec4 uOpen; uniform vec4 uMoon;
+varying vec2 vUv;
+` + RIDGE + `
 float skyL(vec2 css) {
   vec2 u = css / uH;
   // stratocumulus stretched 2.5:1, domain-warped, drifting and slowly evolving (never sliding like wallpaper)
@@ -37,7 +32,10 @@ float skyL(vec2 css) {
   float big = fbm(sp * vec2(2.6, 3.4) + 1.6 * w + vec2(ev * 0.5, 0.0), 4);
   float billow = ridged(sp * vec2(3.0, 5.5) + 1.2 * w + 2.0, 3);          // soft defined undersides
   float mott = fbm(u * 26.0 + uSeed, 3);
-  float ry = ridgeAt(css.x) / uH;
+  // the crest line, blurred across ±0.4 H so the glow band never shows a step where the crest turns or drops
+  float ry = 0.0;
+  for (int k = -3; k <= 3; k++) ry += ridgeAt(css.x + float(k) * 0.133 * uH);
+  ry /= 7.0 * uH;
   float base = mix(0.80, 0.98, smoothstep(0.05, 0.80, u.y));
   float glow = uSky.z * 1.6 * exp(-max(0.0, ry - u.y) / 0.12);
   float open = uOpen.x * exp(-dot((css - uOpen.yz) / uH * vec2(0.8, 1.6), (css - uOpen.yz) / uH * vec2(0.8, 1.6)) * 4.0);
@@ -48,6 +46,21 @@ float skyL(vec2 css) {
   return L * 0.46;   // calibrated to the print curve: mid sky ≈ L 160–175, the band by the crest ≈ 190–205
 }
 
+void main() {
+  vec2 css = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
+  gl_FragColor = vec4(sqrt(max(skyL(css), 0.0)), 0.0, 0.0, 1.0);
+}
+`;
+
+export const CLIFF_FS = HEADER + NOISE + `
+uniform vec2 uTarget;          // target size (px)
+uniform float uPxPerH;         // target px per H
+uniform vec2 uW0;              // world (relative to the origin) at the target's top-left pixel corner
+uniform vec2 uOrigin;          // world origin mod 289
+uniform float uSeed, uQuality;
+varying vec2 vUv;
+` + RIDGE + `
+const vec3 LKEY = vec3(-0.55, 0.45, 0.70);
 // faceted rock: an anisotropic cellular field; every cell is a flat facet with its own tilt, cracks along the borders
 vec4 facets(vec2 q, float sx, float sy, float salt) {
   vec2 g = vec2(q.x / sx, q.y / sy);
@@ -68,35 +81,17 @@ vec4 facets(vec2 q, float sx, float sy, float salt) {
 float rockDetail(vec2 q) { return 0.55 * ridged(vec2(q.x * 3.2, q.y * 1.7) + uSeed * 0.3, 5) + 0.25 * fbm(vec2(q.x * 9.0, q.y * 6.0), 3) + 0.20 * fbm(vec2(q.x * 26.0, q.y * 9.0) + 4.0, 3); }
 
 void main() {
-  vec2 css = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;      // CSS px, y down
-  vec2 wp = vec2(uCam.x + (css.x - uAnchor.x) / uCam.z, uCam.y - (css.y - uAnchor.y) / uCam.z); // world, relative
-  float ry = ridgeAt(css.x);
-  // crest roughness: bites below the walking line, never above; the trail exactly under the feet and the stone
-  float win = 1.0;
-  for (int i = 0; i < 4; i++) win = min(win, smoothstep(0.15, 0.6, abs(wp.x - uContacts[i])));
-  float bite = (0.060 * smoothstep(0.42, 0.72, fbm(vec2(wp.x * 2.2 + uSeed, 0.5), 4)) + 0.022 * ridged(vec2(wp.x * 9.0, 3.0), 3) + 0.06 * smoothstep(0.72, 0.92, vnoise(vec2(wp.x / 1.1 + uSeed, 1.7)))) * win;
-  float edge = ry + bite * uCam.z;                                      // CSS px
-  float depth = (css.y - edge) / uCam.z;                                // H below the crest (≥ 0 in rock)
-  float aa = 0.75 / uDpr;
-  float rockA = smoothstep(-aa, aa, css.y - edge);
-  float L = 0.0;
-  if (rockA < 1.0) {
-    float s = skyL(css);
-    // edge glow on the sky side: a faint lighter halo against the dark rock
-    s += 0.05 * exp(-max(0.0, edge - css.y) * uDpr / 2.5);
-    L = s;
-  }
-  if (rockA > 0.0) {
+  vec2 px = vec2(gl_FragCoord.x, uTarget.y - gl_FragCoord.y);          // target px, y down
+  vec2 wp = vec2(uW0.x + px.x / uPxPerH, uW0.y - px.y / uPxPerH);
+  float d = max((px.y - ridgeAt(px.x)) / uPxPerH, 0.0);                // H below the (unbroken) crest line
     vec2 p = wp + uOrigin;
-    float d = max(depth, 0.0);
     vec2 q = mat2(0.990, 0.140, -0.140, 0.990) * p;                 // cleavage tilted ~8° from vertical
     vec2 wv = vec2(fbm(q * 0.7 + uSeed, 3), fbm(q * 0.7 + uSeed + 5.2, 3)) - 0.5;
     vec2 qw = q + wv * vec2(0.40, 0.9);
     vec4 big = facets(qw, 0.45, 2.2, uSeed);                       // slabs ≈ 0.45 H wide, 2.2 H tall
     vec4 mid = facets(qw + 11.0, 0.14, 0.55, uSeed + 3.0);           // broken faces
-    vec4 fine = facets(qw + 23.0, 0.045, 0.14, uSeed + 6.0);
     // detail relief on top of the facets
-    float e = 1.0 / uCam.z;
+    float e = 1.0 / uPxPerH;
     float h0 = rockDetail(qw), hx = rockDetail(qw + vec2(e, 0.0)), hy = rockDetail(qw + vec2(0.0, e));
     // facet edges are where the light changes, never drawn lines: the tilt eases across a narrow border
     vec2 tilt = big.xy * 0.75 * smoothstep(0.0, 0.08, big.z) + mid.xy * 0.22 - vec2(hx - h0, hy - h0) / e * 0.15;
@@ -122,6 +117,30 @@ void main() {
     r *= 0.26;                                                     // calibrated: rock body ≈ L 30–70, lit edges ≈ 120
     r += 0.030 * exp(-d / 0.04);                                    // the lit crest lip
     r = mix(r, 0.09, 0.10 * exp(-d / 1.2));                         // haze near the crest
+  gl_FragColor = vec4(sqrt(max(r, 0.0)), 1.0, 0.0, 1.0);
+}
+`;
+
+export const COMP_FS = HEADER + NOISE + `
+uniform vec2 uRes; uniform float uDpr, uH, uSeed;
+uniform vec4 uCam; uniform vec2 uAnchor;
+uniform sampler2D uSkyTex, uCliffTex;
+uniform vec4 uCliffMap;        // cliff texture: world (relative) at its top-left, px per H, unused
+uniform vec2 uCliffSize;
+uniform float uHazeX;
+varying vec2 vUv;
+` + RIDGE + `
+void main() {
+  vec2 css = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
+  vec2 wp = vec2(uCam.x + (css.x - uAnchor.x) / uCam.z, uCam.y - (css.y - uAnchor.y) / uCam.z);
+  float edge = ridgeAt(css.x);                                          // the broken crest (computed per column on the CPU)
+  float aa = 0.75 / uDpr;
+  float rockA = smoothstep(-aa, aa, css.y - edge);
+  float s = texture2D(uSkyTex, vec2(gl_FragCoord.x / uRes.x, gl_FragCoord.y / uRes.y)).r;
+  float L = s * s + 0.05 * exp(-max(0.0, edge - css.y) * uDpr / 2.5);   // the faint halo against the dark rock
+  if (rockA > 0.0) {
+    vec2 c = vec2((wp.x - uCliffMap.x) * uCliffMap.z, (uCliffMap.y - wp.y) * uCliffMap.z) / uCliffSize;
+    float r = texture2D(uCliffTex, vec2(c.x, 1.0 - c.y)).r; r *= r;
     if (wp.x > uHazeX) r = mix(r, 0.26, 1.0 - exp(-(wp.x - uHazeX) / 2.5));
     L = mix(L, r, rockA);
   }

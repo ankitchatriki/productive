@@ -59,7 +59,7 @@ export const luma = (c: [number, number, number]) => 0.2126 * c[0] + 0.7152 * c[
 /** The grade a phase and progress ask for (§6.4); the engine eases toward it (≤ 1% per 10 s while climbing). */
 export interface Grade { exposure: number; warmth: number; glow: number; burn: number }
 export function gradeFor(phase: string, p: number, summitK = 0, overtime = 0): Grade {
-  if (phase === 'break') return { exposure: 0.80, warmth: -0.30 + 0.30 * smoothstep(0.85, 1, p), glow: 0.04, burn: 0.16 };
+  if (phase === 'break') return { exposure: 0.80, warmth: -0.75 + 0.75 * smoothstep(0.85, 1, p), glow: 0.04, burn: 0.16 }; // a cool, selenium-ish night print
   if (phase === 'complete') {
     const base = { exposure: 1.05 + 0.03 * summitK, warmth: 0.25 + 0.15 * summitK, glow: 0.13 + 0.03 * summitK, burn: 0.07 - 0.02 * summitK };
     const d = clamp(overtime, 0, 1); // overtime dusk
