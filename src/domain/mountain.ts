@@ -23,7 +23,7 @@ export const TAIL_TO_COL = CREST.after + LEDGE_LEN + BACK_STEEP + COL_DESCENT;
  *  beyond the right edge with the camera still tracking him to the block's last second, on every viewport up to
  *  21:9; the end clamp remains only as a safety for wider screens)
  */
-export const END_LEAD = 9.6;
+export const END_LEAD = 10.4;
 /** Distance (H) from where the climber stands at a block's end to the next climb's start (the col bottom). */
 export const SUMMIT_TO_COL = END_LEAD + TAIL_TO_COL;
 /** Prefix behind a stage that starts in a col: the last 1.5 H of the ledge + the descent. */
@@ -41,8 +41,17 @@ export interface StageSpec {
 
 /** Incline heading at global trail position sG (deg): 22° ± 6°, gently varying, always ≥ 16° (no false tops). */
 export function inclineHeading(sG: number): number {
-  const v = 22 + 6 * (noise1(sG / 18 + 3.7) * 2 - 1) + 1.5 * (noise1(sG / 5.5 + 11.3) * 2 - 1);
-  return Math.min(32, Math.max(16, v));
+  // REVIEW_ROUND6 A2: the crest is never a ruler line. On top of the slow ±6° swell, a ±3° variation at a 13 H
+  // wavelength and, in roughly two cells of 14 H in three, a 3 H shoulder that eases toward 17° over 4 H before the slope
+  // steepens again: convex and concave runs, all of it the trail itself (so the feet and the stone stay on it).
+  let v = 22 + 6 * (noise1(sG / 18 + 3.7) * 2 - 1) + 1.5 * (noise1(sG / 5.5 + 11.3) * 2 - 1) + 3.0 * (noise1(sG / 13 + 21.9) * 2 - 1);
+  const cell = Math.floor(sG / 14);
+  if (noise1(cell * 7.31 + 0.5) < 0.62) {
+    const c = (cell + 0.3 + 0.4 * noise1(cell * 3.17 + 9.1)) * 14;
+    const k = smooth(c - 5.5, c - 1.5, sG) * (1 - smooth(c + 1.5, c + 5.5, sG));
+    v = v + (Math.min(v, 17) - v) * k;
+  }
+  return Math.min(32, Math.max(14.5, v));
 }
 
 const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };

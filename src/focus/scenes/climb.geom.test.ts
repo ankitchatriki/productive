@@ -13,7 +13,7 @@ describe('camera layout', () => {
     for (const [w, h] of VIEWPORTS.slice(0, 3)) expect(camLayout(w, h).Hpx / h).toBeCloseTo(0.17, 9);
     expect(camLayout(390, 844).Hpx).toBeCloseTo(Math.min(0.13 * 844, 0.30 * 390), 9);
     const l = camLayout(1440, 900);
-    expect(l.Hpx).toBeCloseTo(153, 6); expect(l.anchor.x).toBeCloseTo(0.38 * 1440, 6); expect(l.anchor.y).toBeCloseTo(540, 6);
+    expect(l.Hpx).toBeCloseTo(153, 6); expect(l.anchor.x).toBeCloseTo(0.46 * 1440, 6); expect(l.anchor.y).toBeCloseTo(0.54 * 900, 6);
     expect(camLayout(3440, 1440).anchor.x).toBeCloseTo(0.5 * 3440 - 0.20 * 1440, 6);
     expect(camLayout(844, 390).Hpx).toBeCloseTo(78, 6);
   });

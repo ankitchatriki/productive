@@ -84,7 +84,7 @@ export const fromVertical = (ang: number, facing: 1 | -1): V => ({ x: Math.sin(a
 /** The pelvis 0.002 H under the plan's height, the heel peeled to 31° at toe-off (with the heel rise below). */
 const H0OFF = -0.03, PEEL = 31;
 /** Pelvis height over the ground point (§2.4): 0.397 at 22°. */
-export const h0 = (thDeg: number) => 0.400 + H0OFF - 0.0046 * (thDeg - 22);
+export const h0 = (thDeg: number) => 0.400 + H0OFF - 0.0046 * (clamp(thDeg, 18, 33) - 22); // (shallow shoulders: no straight-legged mid-stance)
 /** Torso lean (deg) for a slope. */
 export const lam0 = (thDeg: number) => clamp(33 + 0.2 * (thDeg - 22), 30, 37); // REVIEW_ROUND6 A3: 30–40° (was 20°)
 /** Breath on its own clock (4.2 s). */

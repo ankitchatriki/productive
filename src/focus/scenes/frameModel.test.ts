@@ -52,14 +52,14 @@ describe('the frame model', () => {
     expect(a.seed).toBe(b.seed);
     expect(c.seed).not.toBe(a.seed);
   });
-  it('a 4-H-or-more lead of incline is in view ahead of the stone at 1440×900 (the crest still hidden)', async () => {
+  it('a 3-H-or-more lead of incline is in view ahead of the stone at 1440×900 (the crest still hidden; REVIEW_ROUND6 A2 moved the stone to the third)', async () => {
     const e = await makeEngine(1440, 900);
     e.setClimb!(climb(600 * PACE_M)); e.setProgress(0.4); e.setPhase('focus', { instant: true });
     run(1);
     const m = modelOf(e);
     const zH = m.cam.Hpx * m.cam.zoom;
     const stoneRight = m.cam.ax + (m.stone.c.x + m.stone.R - m.cam.x) * zH;
-    expect((1440 - stoneRight) / zH).toBeGreaterThanOrEqual(3.5);
+    expect((1440 - stoneRight) / zH).toBeGreaterThanOrEqual(3.0);
     e.destroy();
   });
 });

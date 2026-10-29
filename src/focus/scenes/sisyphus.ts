@@ -27,7 +27,12 @@ export function crestBite(wx: number, contacts: number[], seed: number): number 
   let win = 1;
   for (const c of contacts) win = Math.min(win, smoothstep(0.15, 0.6, Math.abs(wx - c)));
   if (win <= 0) return 0;
-  return (0.060 * smoothstep(0.42, 0.72, fbm1(wx * 2.2 + seed, 4)) + 0.025 * ridged(wx * 9 + 3, 3) + 0.06 * smoothstep(0.72, 0.92, noise1(wx / 1.1 + seed))) * win;
+  // REVIEW_ROUND6 A2: one real notch per ~4 H (0.06–0.12 H deep, 0.3–0.6 H wide), as well as the small breakage
+  const cell = Math.floor(wx / 4), cx = (cell + 0.2 + 0.6 * hash1(cell * 1.7 + seed)) * 4;
+  const hw = 0.15 + 0.15 * hash1(cell * 2.3 + seed + 5), dep = 0.06 + 0.06 * hash1(cell * 3.1 + seed + 9);
+  const u = Math.abs(wx - cx) / hw;
+  const notch = u < 1 ? dep * (1 - Math.pow(u, 1.6)) * (0.8 + 0.2 * noise1(wx * 13 + seed)) : 0;
+  return (0.060 * smoothstep(0.42, 0.72, fbm1(wx * 2.2 + seed, 4)) + 0.025 * ridged(wx * 9 + 3, 3) + 0.06 * smoothstep(0.72, 0.92, noise1(wx / 1.1 + seed)) + notch) * win;
 }
 type SeqKind = 'summit' | 'mini' | 'next';
 interface Seq { kind: SeqKind; t0: number; dur: number }

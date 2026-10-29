@@ -10,7 +10,7 @@ afterAll(removeStubs);
 
 for (const [w, h] of [[1440, 900], [390, 844]] as const) {
   describe(`forward roll at ${w}×${h}`, () => {
-    it('ρ strictly increasing and clockwise; ±1% of the ground scroll over 60 s; ±3% per frame; no surges', async () => {
+    it('ρ strictly increasing and clockwise; ±1% of the centre arc over 60 s; ±3% per frame; ±6% of the ground; no surges', async () => {
       const { e, rows } = await captureClimb(w, h, 300, 61, { record: true });
       const live = rows.filter((r) => (r.clock as number) - (rows[0].clock as number) > 0.7); // after the 600 ms entrance
       expect(live.length).toBeGreaterThan(3500); // 60 fps while climbing
@@ -22,24 +22,32 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
         const r = 0.8 * WALK.R * (live[k].Hpx as number);
         return Math.atan2(r * Math.sin(rho[k]), r * Math.cos(rho[k]));
       };
+      // no slip: the stone turns by its centre's arc / R. On the round-6b crest (convex and concave runs, REVIEW_ROUND6
+      // A2) that arc differs from the ground's by R·κ, so the ground is checked only loosely (±6%)
+      type M = { stone: { c: { x: number; y: number } } };
+      const C = live.map((r) => (r.model as unknown as M).stone.c);
+      const arc = (k: number) => Math.hypot(C[k].x - C[k - 1].x, C[k].y - C[k - 1].y);
       const dr: number[] = [];
-      let worstFrame = 0;
+      let worstFrame = 0, worstGround = 0, arcTotal = 0;
+      for (let k = 1; k < live.length; k++) arcTotal += arc(k);
       for (let k = 1; k < live.length; k++) {
         const d = rho[k] - rho[k - 1];
         expect(d).toBeGreaterThan(0);
         let da = marker(k) - marker(k - 1); while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
         expect(da).toBeGreaterThan(0); // clockwise on screen (atan2 on y-down)
-        const ratio = (d * WALK.R) / (D[k] - D[k - 1]);
+        const ratio = (d * WALK.R) / arc(k);
         worstFrame = Math.max(worstFrame, Math.abs(ratio - 1));
+        worstGround = Math.max(worstGround, Math.abs((d * WALK.R) / (D[k] - D[k - 1]) - 1));
         dr.push(d);
       }
-      const total = ((rho[rho.length - 1] - rho[0]) * WALK.R) / (D[D.length - 1] - D[0]);
+      const total = ((rho[rho.length - 1] - rho[0]) * WALK.R) / arcTotal;
       const mean = dr.reduce((a, b) => a + b, 0) / dr.length;
       let surge = 0;
       for (let k = 1; k < dr.length; k++) surge = Math.max(surge, Math.abs(dr[k] - dr[k - 1]));
-      console.log(`${w}×${h}: roll/ground over 60 s ${total.toFixed(4)}, worst frame ${(worstFrame * 100).toFixed(2)}%, max |ΔΔρ| ${(surge / mean * 100).toFixed(3)}% of mean`);
+      console.log(`${w}×${h}: roll/centre arc over 60 s ${total.toFixed(4)}, vs ground worst ${(worstGround * 100).toFixed(1)}%, worst frame ${(worstFrame * 100).toFixed(2)}%, max |ΔΔρ| ${(surge / mean * 100).toFixed(3)}% of mean`);
       expect(Math.abs(total - 1)).toBeLessThan(0.01);
       expect(worstFrame).toBeLessThan(0.03);
+      expect(worstGround).toBeLessThan(0.06);
       expect(surge).toBeLessThan(0.02 * mean);
       e.destroy();
     }, 60_000);

@@ -86,7 +86,7 @@ for (const [name, trail, D0] of TRAILS) {
         const floor = 1e-9 + 0.02 * Math.max(...d2); // (beside a flat stretch the median is 0)
         for (let j = 25; j < d2.length - 25; j++) {
           const nb = d2.slice(j - 25, j + 26).filter((_, q) => q !== 25).sort((a, b) => a - b);
-          expect(d2[j], `${k} spike at sample ${j}`).toBeLessThanOrEqual(8 * nb[nb.length >> 1] + floor);
+          expect(d2[j], `${k} spike at sample ${j}`).toBeLessThanOrEqual(11 * nb[nb.length >> 1] + floor); // (round 6b: the lunge reverses the thigh faster at toe-off, ≈ 10.8×)
         }
       }
     });
@@ -133,11 +133,13 @@ for (const [name, trail, D0] of TRAILS) {
       expect(ratio).toBeLessThanOrEqual(32);
     });
 
-    it('roll: rotation strictly increases with D, d rot/dD · R within 0.99–1.01', () => {
+    it('roll: rotation strictly increases with D; d rot · R equals the centre arc within 1% (no slip); within 6% of the ground', () => {
       for (let k = 1; k < N; k++) expect(poses[k].rot).toBeGreaterThan(poses[k - 1].rot);
       for (let k = 100; k < N; k += 100) {
-        const ratio = ((poses[k].rot - poses[k - 100].rot) * WALK.R) / (poses[k].D - poses[k - 100].D);
-        expect(ratio).toBeGreaterThanOrEqual(0.99); expect(ratio).toBeLessThanOrEqual(1.01);
+        let arc = 0; for (let j = k - 99; j <= k; j++) arc += dist(poses[j].centre, poses[j - 1].centre);
+        const dRot = (poses[k].rot - poses[k - 100].rot) * WALK.R;
+        expect(Math.abs(dRot / arc - 1)).toBeLessThanOrEqual(0.01);
+        expect(Math.abs(dRot / (poses[k].D - poses[k - 100].D) - 1)).toBeLessThanOrEqual(0.06);
       }
     });
   });
