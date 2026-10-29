@@ -9,9 +9,9 @@ import { WALK } from './walk';
 const VIEWPORTS: Array<[number, number]> = [[1280, 800], [1440, 900], [1920, 1080], [390, 844], [3440, 1440], [844, 390]];
 
 describe('camera layout', () => {
-  it('the figure scale is 0.17 h on desktop and min(0.13 h, 0.30 w) on a phone (ROUND6 §4.5)', () => {
+  it('the figure scale is 0.17 h on desktop and min(0.135 h, 0.30 w) on a phone (ROUND6 §4.5, review K3)', () => {
     for (const [w, h] of VIEWPORTS.slice(0, 3)) expect(camLayout(w, h).Hpx / h).toBeCloseTo(0.17, 9);
-    expect(camLayout(390, 844).Hpx).toBeCloseTo(Math.min(0.13 * 844, 0.30 * 390), 9);
+    expect(camLayout(390, 844).Hpx).toBeCloseTo(Math.min(0.135 * 844, 0.30 * 390), 9);
     const l = camLayout(1440, 900);
     expect(l.Hpx).toBeCloseTo(153, 6); expect(l.anchor.x).toBeCloseTo(0.46 * 1440, 6); expect(l.anchor.y).toBeCloseTo(0.54 * 900, 6);
     expect(camLayout(3440, 1440).anchor.x).toBeCloseTo(0.5 * 3440 - 0.20 * 1440, 6);
@@ -51,16 +51,17 @@ describe('the end is never on screen during focus', () => {
 });
 
 describe('visible progress and determinism', () => {
-  it('the ground scrolls ≥ 15 px per second at 1440×900 for 25- and 50-minute blocks (ROUND6 §9)', () => {
-    for (const minutes of [25, 50]) {
+  it('the ground scrolls ≥ 15 px per second at 1440×900 and 390×844 for 25- and 50-minute blocks (ROUND6 §9, review K3)', () => {
+    for (const [W, Hh] of [[1440, 900], [390, 844]] as const) for (const minutes of [25, 50]) {
       const lenH = (minutes * 60 * PACE_M) / M_PER_H;
       const trail = makeTrail({ stage: 1, startH: 0, lenH, fromSummit: false });
-      const { Hpx, anchor } = camLayout(1440, 900);
+      const { Hpx, anchor } = camLayout(W, Hh);
       const crestX = trail.at(trail.geom.crestS - 0.3).x;
-      const camAt = (sec: number) => clampCamX(trail.at(sec * PACE_H).x, crestX, 1440, anchor.x, Hpx);
+      const camAt = (sec: number) => clampCamX(trail.at(sec * PACE_H).x, crestX, W, anchor.x, Hpx);
       const total = minutes * 60;
-      const pxPerSec = ((camAt(total) - camAt(0)) * Hpx) / total;
-      expect(pxPerSec).toBeGreaterThanOrEqual(15);
+      // the ground slides along the slope: its speed on screen is the trail's arc rate, not just its x
+      const pxPerSec = (Math.hypot(camAt(total) - camAt(0), trail.at(total * PACE_H).y - trail.at(0).y) * Hpx) / total;
+      expect(pxPerSec, `${W}×${Hh} ${minutes} min`).toBeGreaterThanOrEqual(15);
     }
   });
   it('the same mountain state gives the same geometry; the climb ends END_LEAD before its crest fillet', () => {

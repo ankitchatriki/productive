@@ -51,8 +51,21 @@ export class GLRenderer implements Renderer {
   private cliffRidgeBuf: Uint8Array | null = null;
   tileBuilds = 0;
   private lostAt: number[] = [];
-  private onLost = (e: Event) => { e.preventDefault(); this.lostAt.push(performance.now()); this.stats.lost = (this.stats.lost ?? 0) + 1; this.gl = null; if (this.lostAt.filter((t) => performance.now() - t < 60000).length >= 2) this.onFail?.(); };
-  private onRestored = () => { if (this.canvas) { this.init(this.canvas); this.resize(this.w, this.h, this.dpr); } };
+  /** Review K2: a lost context shows the dark print base (not white); with no restore within 1 s, or a second loss
+   *  within a minute, the engine falls back to Canvas 2D. While lost, draw() is a no-op. */
+  private restoreTimer: ReturnType<typeof setTimeout> | null = null;
+  private onLost = (e: Event) => {
+    e.preventDefault();
+    this.lostAt.push(performance.now()); this.stats.lost = (this.stats.lost ?? 0) + 1; this.gl = null;
+    if (this.canvas?.style) this.canvas.style.backgroundColor = '#17130f';
+    if (this.lostAt.filter((t) => performance.now() - t < 60000).length >= 2) { this.onFail?.(); return; }
+    if (typeof setTimeout !== 'undefined') this.restoreTimer = setTimeout(() => { this.restoreTimer = null; if (!this.gl) this.onFail?.(); }, 1000);
+  };
+  private onRestored = () => {
+    if (this.restoreTimer) { clearTimeout(this.restoreTimer); this.restoreTimer = null; }
+    if (this.canvas) { this.init(this.canvas); this.resize(this.w, this.h, this.dpr); }
+  };
+  get lost() { return !this.gl; }
 
   mount(canvas: HTMLCanvasElement): boolean {
     this.canvas = canvas;
@@ -437,6 +450,7 @@ export class GLRenderer implements Renderer {
   }
 
   destroy() {
+    if (this.restoreTimer) { clearTimeout(this.restoreTimer); this.restoreTimer = null; }
     this.canvas?.removeEventListener?.('webglcontextlost', this.onLost as EventListener);
     this.canvas?.removeEventListener?.('webglcontextrestored', this.onRestored as EventListener);
     this.gl = null; this.canvas = null;

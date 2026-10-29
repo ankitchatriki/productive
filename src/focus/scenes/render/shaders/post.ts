@@ -14,7 +14,8 @@ float sceneAt(vec2 uv) {
                              + texture2D(uScene, uv + vec2(0.0, px.y)).r + texture2D(uScene, uv - vec2(0.0, px.y)).r);
   return s * s;
 }
-float grainAt(vec2 css, float k) { return vnoise(css / 2.2 + vec2(hash12(vec2(k, 3.1)), hash12(vec2(k, 7.7))) * 512.0); }
+// REVIEW_ROUND6 A7: film grain clumps; two octaves (css/3.2 and css/1.6, 0.7/0.3), not sensor noise
+float grainAt(vec2 css, float k) { vec2 o = vec2(hash12(vec2(k, 3.1)), hash12(vec2(k, 7.7))) * 512.0; return 0.7 * vnoise(css / 3.2 + o) + 0.3 * vnoise(css / 1.6 + o.yx) + 0.0; }
 void main() {
   vec2 uv = vUv;
   float Ls = sceneAt(uv);
@@ -41,7 +42,7 @@ void main() {
   // 4. grain: a static print grain whose offset changes every 0.5 s, blended (no video flicker); strongest in the mids
   float k = floor(uGrainT / 0.5), f = fract(uGrainT / 0.5);
   float g = mix(grainAt(css, k), grainAt(css, k + 1.0), smoothstep(0.0, 1.0, f)) - 0.5;
-  float amp = 0.075 * (4.0 * P * (1.0 - P)) + 0.008;
+  float amp = 0.075 * (4.0 * P * (1.0 - P)) + 0.008;   // (the two-octave mix has ≈ 0.76 the spread of one octave)
   P += g * amp;
   // 5. toning
   gl_FragColor = vec4(texture2D(uLut, vec2(clamp(P, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5)).rgb, 1.0);

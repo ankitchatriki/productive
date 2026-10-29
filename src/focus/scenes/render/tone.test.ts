@@ -1,7 +1,8 @@
 // P0 (ROUND6_PLAN §10): the print's tone curve and sepia toning, and the renderer selection.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TONE_STOPS, gradeFor, luma, printDensity, toneAt, toneLUT } from './tone';
-import { installStubs, removeStubs, stubCanvas } from '../testkit/engineStub';
+import { installStubs, makeEngine, removeStubs, run, stubCanvas } from '../testkit/engineStub';
+import { PACE_M } from '../../../domain/mountain';
 
 describe('tone (§3.6)', () => {
   it('the LUT reproduces the toning stops within ±3 per channel', () => {
@@ -57,6 +58,41 @@ describe('renderer selection (§3.7)', () => {
     expect(failed).toBe(0);
     lost({ preventDefault() {} } as Event);
     expect(failed).toBe(1);
+  });
+  it('review K2: a lost context that is not restored within 1 s falls back too; a restore in time does not', async () => {
+    vi.useFakeTimers();
+    try {
+      const { GLRenderer } = await import('./glRenderer');
+      const r = new GLRenderer();
+      let failed = 0;
+      r.onFail = () => { failed++; };
+      (r as unknown as { onLost: (e: Event) => void }).onLost({ preventDefault() {} } as Event);
+      vi.advanceTimersByTime(900); expect(failed).toBe(0);
+      vi.advanceTimersByTime(200); expect(failed).toBe(1);
+      const r2 = new GLRenderer();
+      let failed2 = 0;
+      r2.onFail = () => { failed2++; };
+      (r2 as unknown as { onLost: (e: Event) => void }).onLost({ preventDefault() {} } as Event);
+      (r2 as unknown as { onRestored: () => void }).onRestored();
+      vi.advanceTimersByTime(2000); expect(failed2).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('the frame-time governor (review K1)', () => {
+  beforeAll(installStubs);
+  afterAll(removeStubs);
+  it('a GPU-bound device steps down by delivered frame interval (CPU time stays tiny): 30 fps, Q 0.75, Q 0.5', async () => {
+    const e = await makeEngine(1440, 900);
+    const lenM = 1500 * PACE_M;
+    e.setClimb!({ stage: 1, stageStartM: 0, stageLenM: lenM, posM: 300 * PACE_M, fromSummit: false, summits: 0, atSummit: false });
+    e.setProgress(0.2); e.setPhase('focus', { instant: true });
+    run(3, undefined, undefined, 60);
+    expect(e.stats.quality).toBe(1);
+    run(40, undefined, undefined, 12);              // rAF delivered at 12 Hz (83 ms) while the JS takes ~0 ms
+    expect(e.stats.quality).toBe(0.5);
+    expect(e.stats.intervalMs as number).toBeGreaterThan(45);
+    e.destroy();
   });
 });
 

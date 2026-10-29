@@ -131,6 +131,7 @@ describe('F3: hand-offs and transitions', () => {
     const e = await makeEngine(1440, 900);
     e.setClimb!(climb1(lenB, true)); e.setProgress(0.05); e.setPhase('complete', { instant: true });
     run(1);
+    const rotBefore = (e.stats as unknown as Stats).rot as number;
     const c2: ClimbInput = { stage: 2, stageStartM: lenB + 30, stageLenM: lenB, posM: lenB + 30, fromSummit: true, summits: 1, atSummit: false };
     e.setClimb!(c2); e.setProgress(0); e.setPhase('focus');
     const seen: Stats[] = [];
@@ -142,6 +143,9 @@ describe('F3: hand-offs and transitions', () => {
     expect(at.e as number).toBeGreaterThanOrEqual(0.95);
     console.log('next climb first frame', seen[0].gait, seen[0].phi);
     expect(sk(seen[0]).feet.every((ft) => ft.planted)).toBe(true); // the push pose in double support
+    // review K7: ρ carries on into the next climb (no reset), and only grows
+    expect(Math.abs((seen[0].rot as number) - rotBefore)).toBeLessThan(0.05);
+    for (let k = 1; k < seen.length; k++) expect(seen[k].rot as number).toBeGreaterThanOrEqual(seen[k - 1].rot as number);
     e.destroy();
   });
 

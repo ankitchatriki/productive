@@ -65,7 +65,7 @@ describe('the frame model', () => {
 });
 
 describe('the stone (P2)', () => {
-  for (const [w, h, lo, hi] of [[1440, 900, 225, 235], [390, 844, 160, 170]] as const) {
+  for (const [w, h, lo, hi] of [[1440, 900, 225, 235], [390, 844, 166, 176]] as const) { // (phone: Hpx 0.135 h since review K3)
     it(`${w}×${h}: diameter ${lo}–${hi} px; on the phone the stone and figure sit inside 16 px gutters`, async () => {
       const e = await makeEngine(w, h);
       e.setClimb!(climb(600 * PACE_M)); e.setProgress(0.4); e.setPhase('focus', { instant: true });
@@ -83,6 +83,8 @@ describe('the stone (P2)', () => {
 describe('atmosphere and stills (P4)', () => {
   it('birds: never over the stone or the figure, never just above the crest; none when paused', async () => {
     const e = await makeEngine(1440, 900);
+    const win = globalThis.window as unknown as { __keepQuality?: boolean };
+    win.__keepQuality = true;                       // (stepped at 6 Hz for speed: keep the frame-time governor out of it)
     let f = 300;
     e.setClimb!(climb(f * PACE_M)); e.setProgress(0.2); e.setPhase('focus', { instant: true });
     let seen = 0;
@@ -101,6 +103,7 @@ describe('atmosphere and stills (P4)', () => {
     expect(seen).toBeGreaterThan(0);
     e.setPhase('paused'); run(1);
     expect(modelOf(e).birds.length).toBe(0);
+    win.__keepQuality = false;
     e.destroy();
   }, 60_000);
   it('reduced motion: grain and sky stay put between re-poses', async () => {

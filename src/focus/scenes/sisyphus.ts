@@ -51,7 +51,7 @@ export interface SceneStats {
   camX?: number; camY?: number; sLocal?: number; gait?: string; figureAlpha?: number; figureOnScreen?: boolean; slopeFrac?: number;
   zoom?: number; rot?: number; sB?: number; clock?: number; figBox?: number[]; figBounds?: number[]; cut?: boolean;
   D?: number; e?: number; phi?: number; skel?: Skel; centre?: V; Hpx?: number; anchor?: number[]; walking?: boolean; fpsCap?: number;
-  lastMs?: number; poseMs?: number; renderer?: string; grade?: Grade; birds?: number;
+  lastMs?: number; poseMs?: number; renderer?: string; grade?: Grade; birds?: number; intervalMs?: number; fellBack?: string;
 }
 
 export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): FrameModel | null; renderer(): Renderer | null } {
@@ -95,6 +95,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
     trail = makeTrail({ stage: climb.stage, startH: climb.stageStartM / M_PER_H, lenH: lenH(), fromSummit: climb.fromSummit });
     trailKey = key;
     standCache = null;
+    keepRot = true;                       // review K7: the stone's angle carries on across a new trail
     if (prevStage !== climb.stage) { D = sTarget(); return true; }
     return false;
   }
@@ -120,6 +121,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
   let lay: CamLayout = camLayout(800, 600);
   const cam: Cam = { pos: { x: 0, y: 0 }, vel: { x: 0, y: 0 }, zoom: 1, anchor: { x: 0, y: 0 } };
   let camInit = false;
+  let rotOff = 0, lastRotOut = NaN, keepRot = false;
   let renderCam = { pos: { x: 0, y: 0 }, anchor: { x: 0, y: 0 }, zoom: 1 };
 
   // ---------- atmosphere ----------
@@ -190,6 +192,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
   }
   function beginNext(t: number) {
     crossfade(t);
+    keepRot = true;
     mode = 'climb';
     summit = null; seq = null;
     const tgt = sTarget();
@@ -335,7 +338,12 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
     const tP = performance.now();
     const fs = figureState(t);
     stats.poseMs = performance.now() - tP;
-    const { skel, centre, rot, sB } = fs;
+    const { skel, centre, sB } = fs;
+    // review K7: ρ continues into the next climb (a new trail or a re-placed D restarts the raw angle)
+    if (keepRot && Number.isFinite(lastRotOut)) rotOff = lastRotOut - fs.rot;
+    keepRot = false;
+    const rot = fs.rot + rotOff;
+    lastRotOut = rot;
     updateCamera(t, dt);
     stepGrade(dt);
     cam.anchor = renderCam.anchor; const keepPos = cam.pos; cam.pos = renderCam.pos; cam.zoom = renderCam.zoom;
@@ -398,7 +406,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
     };
     cutNow = false;
     lastModel = model;
-    renderer.draw(model);
+    if (!(renderer as { lost?: boolean }).lost) renderer.draw(model);   // review K2: nothing to draw into while the context is lost
 
     // stats (read by the tests)
     const ps = S(skel.pelvis);
@@ -439,6 +447,7 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
     const minGap = 1 / targetFps();
     if (lastFrame && t - lastFrame < minGap - 0.002) { raf = requestAnimationFrame(loop); return; }
     const dt = Math.min(0.1, lastFrame ? t - lastFrame : 1 / 60);
+    if (lastFrame) governFrameTime((t - lastFrame) * 1000, minGap * 1000);
     lastFrame = t;
     const a = performance.now();
     sceneFrame(t, dt);
@@ -463,6 +472,27 @@ export function createSisyphus(): SceneEngine & { stats: SceneStats; model(): Fr
       frameTimes.length = 0;
     }
   }
+  /**
+   * Review K1: the quality governor is driven by the delivered frame interval (rAF to rAF), so a GPU-bound device steps
+   * down even when the JS is cheap: a 90-frame mean above 1.6× the wanted interval drops to 30 fps, then quality 0.75,
+   * then 0.5; at 0.5 a mean interval above 45 ms hands the scene to Canvas 2D. Gaps (a hidden tab, a pause) don't count.
+   */
+  const intervals: number[] = [];
+  function governFrameTime(ms: number, wantMs: number) {
+    if ((typeof document !== 'undefined' && document.visibilityState === 'hidden') || keepQuality() || ms > 2000) { intervals.length = 0; return; }
+    if (ms > 1000) return;                                   // a single hitch is not a trend
+    intervals.push(ms);
+    if (intervals.length < 90) return;
+    const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    intervals.length = 0;
+    stats.intervalMs = Math.round(mean * 10) / 10;
+    if (mean <= 1.6 * wantMs && mean <= 45) return;
+    if (fpsCap > 30) fpsCap = 30;
+    else if (quality > 0.75) { quality = 0.75; stats.quality = quality; applySize(); }
+    else if (quality > 0.5) { quality = 0.5; stats.quality = quality; applySize(); }
+    else if (mean > 45 && renderer?.kind === 'gl') { stats.fellBack = 'frame time'; fallBack(); }
+  }
+  const keepQuality = () => typeof window !== 'undefined' && !!(window as unknown as { __keepQuality?: boolean }).__keepQuality;
   function ensureLoop() {
     if (!mounted || !running || raf) return;
     lastFrame = 0;
