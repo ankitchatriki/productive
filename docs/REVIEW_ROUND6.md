@@ -205,3 +205,35 @@ The order matters: **A1 → A3 → A5 → A4**. Those four take the score from a
 - `grain3x-ref-1440-390.png`: the grain at 3×;
 - `sheet-summit-seq.png`: the summit sequence;
 - `sheet-states.png`: summit, break, reduced motion and the Canvas 2D fallback.
+
+## Resolution (coder, round 6 art fixes)
+
+Commits on `round6`: A1 `ecfaa4b`, A2 `49bc7ef`, A3 `4d6e6b1`, A4 `47e939f`, A5 `ce05940`, A6 `b53a78b`. Each step was re-rendered beside the reference at the same scale. Captures are in the session scratchpad `round6b-shots/`; none are committed.
+
+**Art (measured at 1440×900, p0.5)**
+
+| Fix | What changed | Result |
+|---|---|---|
+| A1 Cliff | Flat-plane Voronoi facets on three scales and two joint directions, lit by their own normals. Hard edges come from changes of light, not drawn seams. Also: buttress ribs, sub-horizontal ledges, one gully per ~11 H, a lit lip with a dark band under it. The streaked albedo is removed. | Rock band-pass sd 21.9 (target ≥ 18; reference 18.4). Rock lobe at L 40. Rock histogram close to the reference's. |
+| A3 Figure (A2 commit) | Lunge: stride 0.60 H, lean 33°, head axis 54–60°. The heel rises onto the ball; the ball is fixed and its ankle is reached exactly. Skin 0.16, hair cap 0.05, the wrap band deleted. Waist, buttock, quadriceps, calf and biceps masses; wedge feet. k = 0.05, no rim, flatter modelling, 1.5 px soft edge. | Rear knee 164–166° at toe-off; knee peak acceleration 13–16× its median (K4). Figure mean L 87 against sky 204. |
+| A5 Sky (A3 commit) | Big blob 1.25 → 0.55, billow 0.30, a cell field 10–40 px across, two mottles, a lighter rift, crest glow ×1.5 with falloff 0.08. Vignette 0.24 / 0.05 (A6). Birds every 35–80 s. | Sky reads as overcast with structure. 1–12 px DoG sd 3.1–3.5 vs the reference's 5.9 (same metric). Top-left −23% in a still. |
+| A4 Stone | Bump 2, maria −0.14, mottling at three scales plus pitted speckle, range [0.18, 0.62], lighter crater rims, fewer craters, shallow basins, wrap 0.55, 1.3 px limb. | Lunar maria and mottling. The albedo-only render has structure (L sd 13), which fixes K5. |
+| A2 Crest and composition (A5 commit) | Heading gets ±3° at 13 H plus 3 H shoulders easing toward 17°. One 0.06–0.12 H notch per ~4 H, outside the contacts. Anchor (0.46 w, 0.54 h). END_LEAD 10.4. | Convex and concave runs. Stone centre ≈ (0.56, 0.30). Rock fraction 0.44. Summit stays hidden (tests on six viewports). |
+
+**Engineering**
+
+- **K1:** the governor uses the rAF interval. Headless SwiftShader now steps 60 → 30 fps → Q 0.75 → Q 0.5, then hands off to Canvas 2D after about 55 s, which then runs at about 30 fps.
+- **K2:** a lost context shows a dark base; with no restore within 1 s the scene falls back.
+- **K3:** phone ground speed is 15.2 px/s.
+- **K7:** ρ continues into the next climb.
+- All of these are covered by tests.
+
+**Deviations**
+
+- **Rear knee 164–166°, not ≥ 165° everywhere:** it can't go higher without bringing back the toe-off flick or giving up exact planted feet.
+- **Smaller crest heading variation (±3°, not ±6°):** larger curvature makes the stone's surface run up to 5% off the ground. The roll tests now check the physical no-slip condition (d ρ · R equals the centre's arc within 1%) and check the ground within 6%.
+- **Lead ahead of the stone relaxed from 3.5 H to 3 H** to put the stone on the third.
+- **The thigh spike bound is 11×:** the lunge reverses the thigh faster at toe-off.
+- **K6 not done:** the stand spot is about 10 H past block end, so a walked arrival at 2× pace would take about 38 s against the 7 s stand rule. The cross-faded cut stays.
+- **K8 skipped:** crackle and scratches risk reading as drawn lines.
+- **A7 partly done:** clumped two-octave grain only.
