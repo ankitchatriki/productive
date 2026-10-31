@@ -3,15 +3,13 @@
   max-width: var(--content-max); margin: 0 auto; padding: var(--space-6) var(--space-8);
   display: grid; gap: 12px 16px;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  grid-template-areas: "head head" "banner banner" "start log";
-  grid-template-rows: auto auto auto;
+  grid-template-areas: "head head" "banner banner" "week week" "start log";
+  grid-template-rows: auto;
+  align-items: start;
 }
 .head { grid-area: head; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; min-height: 40px; }
 .title { display: flex; align-items: baseline; gap: var(--space-3); margin: 0; }
 .date { font-size: var(--text-md); font-weight: var(--weight-regular); color: var(--text-muted); }
-.chips { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.headChip { height: var(--chip-h); padding: 0 12px; font-size: var(--text-sm); text-decoration: none; gap: 6px; }
-.planLink { font-size: var(--text-sm); font-weight: var(--weight-medium); margin-left: var(--space-2); }
 .bannerRow { grid-area: banner; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .banner { margin: 0; flex: 1; min-width: 0; min-height: 40px; padding: 4px 8px 4px 14px; flex-wrap: nowrap; }
 .banner :global(.banner-text) { flex: 1 1 auto; min-width: 0; }
@@ -19,6 +17,8 @@
 /* Start card */
 .start { grid-area: start; display: flex; flex-direction: column; gap: var(--space-4); border-left: 4px solid var(--c); min-height: 0; }
 .idle, .running { display: flex; flex-direction: column; gap: var(--space-4); }
+/* The TODAY block keeps the same offset in idle and running (ROUND3_PLAN §2.1). */
+@media (min-width: 768px) { .idle, .running { min-height: 288px; } }
 .pickRow { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2) var(--space-3); align-items: center; }
 .pickLabel { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-muted); }
 .blockPick { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
@@ -39,20 +39,26 @@
 .livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--ontrack); animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .target { display: flex; align-items: center; gap: 8px; font-size: var(--text-lg); font-weight: var(--weight-semibold); margin: 0; min-width: 0; }
-.readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-display-compact); line-height: var(--lh-display-compact); font-weight: var(--weight-medium); }
+.readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--today-readout, 64px); line-height: 1.05; font-weight: var(--weight-medium); }
 .blockRow { display: flex; align-items: center; gap: var(--space-3); }
 .runActions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.todayBlock { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-4); border-top: var(--border-width) solid var(--border); }
+.todayBlock { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-4); border-top: var(--border-width) solid var(--border); }
 .keyRow { display: flex; justify-content: space-between; align-items: baseline; }
 .keyNumber { font-size: var(--text-3xl); line-height: var(--lh-3xl); font-weight: var(--weight-semibold); margin: 0; display: flex; align-items: center; }
 .keyGoal { font-size: var(--text-xl); color: var(--text-muted); font-weight: var(--weight-regular); margin-left: 6px; }
 .sectionLine { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
 
 /* Log card */
-.log { grid-area: log; display: flex; flex-direction: column; min-height: 0; padding-bottom: var(--space-3); }
+.log { display: flex; flex-direction: column; padding-bottom: var(--space-3); }
 .logHead { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 .logTitle { font-size: var(--text-lg); font-weight: var(--weight-semibold); margin: 0; }
-.logBody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 calc(-1 * var(--space-2)); padding: 0 var(--space-2); }
+.logBody { margin: 0 calc(-1 * var(--space-2)); padding: 0 var(--space-2); }
+.side { grid-area: log; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.upNext { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
+.upNext .logHead { margin-bottom: 0; }
+.upList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.upRow { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); min-height: 36px; padding: 0 6px; border-bottom: var(--border-width) solid var(--border); font-size: var(--text-md); }
+.upRow[data-now] { background: var(--accent-soft); border-radius: var(--radius-xs); }
 .logList { display: flex; flex-direction: column; }
 .logRow {
   display: grid; grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 0.8fr) auto 20px; align-items: center; gap: var(--space-2);
@@ -66,27 +72,19 @@
 .logEdit { color: var(--text-subtle); opacity: 0; display: grid; place-items: center; }
 .logRow:hover .logEdit, .logRow:focus-visible .logEdit { opacity: 1; }
 .liveDot { width: 8px; height: 8px; border-radius: 50%; background: var(--ontrack); animation: pulse 2s ease-in-out infinite; justify-self: center; }
-.logEmpty { height: 100%; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); text-align: center; }
+.logEmpty { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); text-align: center; }
 @media (max-width: 1099px) { .logNote { display: none; } .logRow { grid-template-columns: auto auto minmax(0, 1fr) auto 20px; } }
 @media (hover: none) { .logEdit { opacity: 1; } }
 
-/* One screen at desktop sizes (FOCUS_PLAN thresholds) */
-@media (min-width: 1000px) and (min-height: 700px) {
-  .today { height: 100dvh; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
-  .today:not(:has(.bannerRow)) { grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head head" "start log"; }
-  .start { overflow: hidden; }
-  /* Review S8: the pick / running block sits in the middle of the space above TODAY instead of leaving a blank gap. */
-  .idle, .running { flex: 1; justify-content: center; min-height: 0; }
-  .readout { font-size: clamp(48px, 8vh, 76px); line-height: 1.05; }
-}
-@media (max-width: 999px), (max-height: 699px) {
-  .today { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "banner" "start" "log"; }
-  .logBody { max-height: none; }
+/* Today flows and the page scrolls (ROUND3_PLAN §2.1: the one-screen lock is lifted on purpose). */
+.today:not(:has(.bannerRow)) { grid-template-areas: "head head" "week week" "start log"; }
+@media (max-width: 999px) {
+  .today, .today:not(:has(.bannerRow)) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "banner" "week" "start" "log"; }
 }
 @media (max-width: 767px) {
   .today { padding: var(--space-4); }
   .title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .chips { width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+  .head { min-height: 0; margin-bottom: -12px; }
   .chipsRow { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 2px; }
   .blockChip { scroll-snap-align: start; flex: none; }
   .clockIn { height: 52px; }

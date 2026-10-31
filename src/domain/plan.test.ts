@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adherence, autoAssign, autoAssignStart, blocksOverlap, canPlaceBlock, copyBlocksFromPreviousWeek, copyGoalsFromPreviousWeek,
-  createWeekPlan, dailyGoalFor, defaultAutoAssignCourse, findCarryOver, goalsAreDefault, plannedMinutes, shiftPlanFrom,
+  createWeekPlan, dailyGoalFor, defaultAutoAssignCourse, findCarryOver, goalsAreDefault, plannedMinutes, shiftPlanFrom, todayBlocks,
 } from './plan';
 import { allIntervals } from './aggregate';
 import { course, data, entry, iso, section } from './fixtures';
@@ -170,5 +170,19 @@ describe('findCarryOver', () => {
     const d = mk();
     d.weekPlans['2026-10-19'].sectionByDay['2026-10-19'] = 'a';
     expect(findCarryOver(d, '2026-10-27')).toBeNull();
+  });
+});
+
+describe('todayBlocks (Up next)', () => {
+  const b = (id: string, date: string, s: number, e: number): ScheduledBlock => ({ id, date, startMin: s, endMin: e, courseId: 'c1', sectionId: null, label: '' });
+  const p = () => ({ ...createWeekPlan(WS, data().settings, iso(2026, 10, 26)), blocks: [b('late', '2026-10-27', 960, 1020), b('past', '2026-10-27', 540, 600), b('now', '2026-10-27', 780, 840), b('other', '2026-10-28', 780, 840), b('edge', '2026-10-27', 700, 780)] });
+  it('undefined plan gives []', () => expect(todayBlocks(undefined, '2026-10-27', 600)).toEqual([]));
+  it('excludes other days and past blocks, sorted, now/next', () => {
+    const r = todayBlocks(p(), '2026-10-27', 800);
+    expect(r.map((x) => [x.block.id, x.state])).toEqual([['now', 'now'], ['late', 'next']]);
+  });
+  it('a block ending exactly now is excluded; one starting exactly now is "now"', () => {
+    const r = todayBlocks(p(), '2026-10-27', 780);
+    expect(r.map((x) => [x.block.id, x.state])).toEqual([['now', 'now'], ['late', 'next']]);
   });
 });

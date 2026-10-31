@@ -62,8 +62,9 @@ function make(row: Row, r: [RGB, RGB, RGB, RGB]): Palette {
 export const STOPS: Array<{ p: number; name: string; pal: Palette }> = [
   { p: 0.0, name: 'dawn', pal: make(['#1d2340', '#c88a8f', '#ffc9a3', '#4a3f5c', '#1a1726', '#2a2540'], rock('dawn', 'dawn', 0)) },
   { p: 0.12, name: 'sunrise', pal: make(['#2b3a66', '#e6a98a', '#ffe0b8', '#55506e', '#1c1c2b', '#2c3350'], rock('dawn', 'noon', 0.35)) },
-  { p: 0.30, name: 'morning', pal: make(['#2f5687', '#9fc0d6', '#fff4e0', '#5d6f86', '#202836', '#2b4560'], rock('dawn', 'noon', 0.8)) },
-  { p: 0.50, name: 'noon', pal: make(['#2c5a8f', '#a9c7da', '#fffaf0', '#647891', '#222c3a', '#2d4a66'], rock('noon', 'noon', 0)) },
+  { p: 0.30, name: 'morning', pal: make(['#3a5e88', '#c2c4bc', '#fff4e0', '#5d6f86', '#202836', '#2b4560'], rock('dawn', 'noon', 0.8)) },
+  // Round 3: noon warmed toward a pale haze so mid-block frames aren't cold and grey (ROUND3_DESIGN §3.2).
+  { p: 0.50, name: 'noon', pal: make(['#4a6a90', '#d4c8b0', '#fffaf0', '#7a7f8a', '#2a2c34', '#3d4a5a'], rock('noon', 'noon', 0)) },
   { p: 0.72, name: 'afternoon', pal: make(['#2d4f80', '#c9c0a8', '#ffe9c2', '#6a6c7c', '#252633', '#33415a'], rock('noon', 'golden', 0.6)) },
   { p: 0.86, name: 'golden', pal: make(['#2b3d6b', '#e8a868', '#ffc27a', '#6b5566', '#241c27', '#3a3346'], rock('golden', 'golden', 0)) },
   { p: 0.96, name: 'sunset', pal: make(['#24284f', '#e07a52', '#ff9a5c', '#5a3f55', '#1d1521', '#33263a'], rock('golden', 'dusk', 0.5)) },

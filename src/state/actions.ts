@@ -40,7 +40,8 @@ export type Action =
   | { type: 'focus/extendBreak'; minutes: number }
   | { type: 'focus/setImmersive'; immersive: boolean }
   | { type: 'focus/setScene'; scene: SceneId }
-  | { type: 'focus/end' }
+  | { type: 'focus/end'; now?: IsoInstant }
+  | { type: 'mountain/sync'; now: IsoInstant }
   | { type: 'focus/settings'; patch: Partial<FocusSettings> };
 
 /** What a section delete changed, so Undo can put back exactly that. */

@@ -1,0 +1,55 @@
+/* This week card (ROUND3_DESIGN §4.3; ≤ 184 px tall at desktop per ROUND3_PLAN §3.3) */
+.card { grid-area: week; display: flex; flex-direction: column; gap: 8px; padding: 12px 20px; }
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-height: 18px; }
+.title { margin: 0; }
+.title a { color: inherit; text-decoration: none; }
+.title a:hover { color: var(--accent-text); text-decoration: underline; }
+.range { color: var(--text-subtle); }
+.streak { font-size: var(--text-sm); color: var(--text-muted); cursor: help; white-space: nowrap; }
+
+.body { display: grid; grid-template-columns: minmax(0, 1.5fr) 1px minmax(240px, 1fr); gap: var(--space-5); align-items: start; }
+.main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rule { align-self: stretch; background: var(--border); }
+.totalRow { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; min-height: 32px; }
+.total { margin: 0; font-size: var(--text-2xl); line-height: 1.1; font-weight: var(--weight-semibold); }
+.target { font-size: var(--text-lg); font-weight: var(--weight-regular); color: var(--text-muted); }
+.pace { margin-left: auto; }
+
+.days { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.day { display: flex; flex-direction: column; align-items: center; gap: 3px; text-decoration: none; color: var(--text-muted); border-radius: var(--radius-sm); padding: 2px 0; }
+.day:hover { background: var(--surface-2); }
+.track { position: relative; width: min(28px, 70%); height: 44px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--week-bar-past); border-radius: 3px 3px 0 0; }
+.live { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); opacity: 0.55; animation: livePulse 2.4s ease-in-out infinite; }
+@keyframes livePulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.75; } }
+@media (prefers-reduced-motion: reduce) { .live { animation: none; } }
+.day[data-state="hit"] .fill { background: var(--week-bar-met); }
+.day[data-today] .fill { background: var(--week-bar-today); }
+.day[data-today][data-state="hit"] .fill { background: var(--week-bar-met); }
+.day[data-state="future"] .track { background: repeating-linear-gradient(135deg, var(--surface-2) 0 4px, transparent 4px 8px); }
+.day[data-rest] .track { border-style: dashed; background: transparent; }
+.day[data-rest] .val { color: var(--text-subtle); }
+.val { font-size: 11px; line-height: 14px; color: var(--text-muted); }
+.letter { font-size: 11px; line-height: 14px; font-weight: var(--weight-semibold); color: var(--text-muted); }
+.day[data-today] .letter { color: var(--accent-text); text-decoration: underline 2px; text-underline-offset: 3px; }
+.day[data-today] .val { color: var(--text); font-weight: var(--weight-semibold); }
+.defaultNote { margin: 0; }
+
+.side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sideHead { display: flex; align-items: baseline; justify-content: space-between; }
+.small { font-size: var(--text-sm); }
+.goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.goal { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 24px; font-size: var(--text-sm); }
+.chipSm { height: 22px; font-size: 12px; padding: 0 8px; flex: none; }
+.sideFoot { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; }
+.noPlan { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding-top: 4px; }
+.endLinks { display: flex; gap: var(--space-4); font-size: var(--text-sm); }
+
+/* Compact (phone): B, C, mini row, H inline; the rest behind Details */
+.compact { gap: 8px; padding: 12px 16px; }
+.compact .body { grid-template-columns: minmax(0, 1fr); }
+.compact .total { font-size: var(--text-xl); }
+.compact .track { height: 24px; width: 70%; }
+.compact .days { gap: 4px; }
+.details { align-self: flex-start; padding-left: 0; }
+.detailsBody { display: flex; flex-direction: column; gap: 8px; }

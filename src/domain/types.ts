@@ -82,8 +82,21 @@ export interface Settings {
   focus: FocusSettings;       // round 2 (schema v2)
 }
 
+/** The never-ending mountain (ROUND3_ART §6): where the climber is. Schema v3. */
+export interface MountainState {
+  seed: number;          // 0x5157
+  stage: number;         // index of the current/last climb; increments at each block start
+  posM: number;          // climber position along the trail, metres
+  altM: number;          // altitude at posM, metres
+  stageStartM: number;   // where the current climb started
+  stageStartAltM: number;
+  fromSummit: boolean;   // the current climb began in a col after a summit
+  atSummit: boolean;     // the last climb completed
+  summits: number;       // completed climbs ("Climb N" = summits + 1 during a block)
+}
+
 export interface AppData {
-  schemaVersion: 2;
+  schemaVersion: 3;
   settings: Settings;
   courses: Course[];
   sections: Section[];
@@ -91,6 +104,7 @@ export interface AppData {
   weekPlans: Record<WeekKey, WeekPlan>;
   activeTimer: ActiveTimer | null;
   focus: FocusSession | null;
+  mountain: MountainState;
 }
 
 // ---------- Focus mode (docs/FOCUS_PLAN.md §4) ----------

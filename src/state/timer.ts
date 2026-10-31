@@ -53,7 +53,7 @@ export function useTimerActions() {
   const clockOut = useCallback((stopAt?: IsoInstant) => {
     const t = data.activeTimer;
     if (!t) {
-      if (data.focus) { dispatch({ type: 'focus/end' }); toast.show('Focus session ended.'); }
+      if (data.focus) { dispatch({ type: 'focus/end', now: new Date().toISOString() }); toast.show('Focus session ended.'); }
       return;
     }
     const now = stopAt ?? new Date().toISOString();
@@ -111,7 +111,7 @@ export function useTimerActions() {
   const keepGoing = useCallback(() => dispatch({ type: 'focus/nextBlock', now: new Date().toISOString() }), [dispatch]);
   const nextBlock = useCallback((blockMinutes?: number | null) => dispatch({ type: 'focus/nextBlock', now: new Date().toISOString(), blockMinutes }), [dispatch]);
   const extendBreak = useCallback((minutes: number) => dispatch({ type: 'focus/extendBreak', minutes }), [dispatch]);
-  const endSession = useCallback(() => dispatch({ type: 'focus/end' }), [dispatch]);
+  const endSession = useCallback(() => dispatch({ type: 'focus/end', now: new Date().toISOString() }), [dispatch]);
 
   /** Start a break; `stopAtBlockEnd` bills only up to the block's end instant. */
   const startBreak = useCallback((minutes: number, stopAtBlockEnd = false) => {

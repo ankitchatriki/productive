@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import styles from '../TodayPage.module.css';
 import { useStore } from '../../state/store';
 import { useUi } from '../../state/ui';
@@ -10,28 +10,16 @@ import { Icon } from '../../components/Icon';
 
 type Row = ReturnType<typeof intervalsOnDate>[number];
 
-/** Log card (STRUGGLEMORE §4.2): today's entries; scrolls inside; live row stays in view. */
+/** Log card: today's entries; natural height, no inner scroll. */
 export function LogCard({ intervals, todayMinutes }: { intervals: Row[]; todayMinutes: number }) {
   const data = useStore();
   const ui = useUi();
   const isPhone = useMediaQuery(PHONE_QUERY);
   const [showAll, setShowAll] = useState(false);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
   const hasCourses = data.courses.some((c) => !c.archived);
-  const rows = isPhone && !showAll ? intervals.slice(-3) : intervals;
-
-  useLayoutEffect(() => {
-    const b = bodyRef.current;
-    if (b && stick.current) b.scrollTop = b.scrollHeight;
-  }, [intervals.length, rows.length]);
-  useEffect(() => {
-    const b = bodyRef.current;
-    if (!b) return;
-    const on = () => { stick.current = b.scrollTop + b.clientHeight >= b.scrollHeight - 8; };
-    b.addEventListener('scroll', on);
-    return () => b.removeEventListener('scroll', on);
-  }, []);
+  // The card grows with its rows and the page scrolls (ROUND3_PLAN §2.5): phone shows the last 3, desktop the last 12.
+  const limit = isPhone ? 3 : 12;
+  const rows = !showAll ? intervals.slice(-limit) : intervals;
 
   const entryCount = intervals.filter((i) => i.entryId).length + (intervals.some((i) => !i.entryId) ? 1 : 0);
   return (
@@ -42,7 +30,7 @@ export function LogCard({ intervals, todayMinutes }: { intervals: Row[]; todayMi
         <span className="spacer" />
         <button type="button" className="btn btn-sm" onClick={() => ui.openEntry({})} disabled={!hasCourses}><Icon name="plus" /> Add <kbd className={styles.inKbd}>N</kbd></button>
       </div>
-      <div ref={bodyRef} className={styles.logBody}>
+      <div className={styles.logBody}>
         {intervals.length === 0 ? (
           <div className={styles.logEmpty}>
             <p className="muted">Nothing logged yet. The boulder is waiting.</p>
@@ -74,7 +62,7 @@ export function LogCard({ intervals, todayMinutes }: { intervals: Row[]; todayMi
             })}
           </ul>
         )}
-        {isPhone && !showAll && intervals.length > 3 && (
+        {!showAll && intervals.length > limit && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAll(true)}>Show all ({intervals.length})</button>
         )}
       </div>

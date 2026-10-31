@@ -10,6 +10,18 @@ export interface SceneInitOptions {
 
 /** FOCUS_PLAN §6.3. Progress meaning per phase: focus/open/paused = sun progress;
  *  complete = overtime moon progress (overtime / 60 min); break = break progress. */
+/** The current climb on the never-ending mountain (ROUND3_ART §6.2). */
+export interface ClimbInput {
+  stage: number;
+  stageStartM: number;
+  stageLenM: number;
+  posM: number;
+  fromSummit: boolean;
+  summits: number;
+  /** The climber stands on this climb's summit (also during a +N extension from it). */
+  atSummit?: boolean;
+}
+
 export interface SceneEngine {
   mount(canvas: HTMLCanvasElement, opts: SceneInitOptions): void;
   setProgress(p: number): void;
@@ -19,6 +31,8 @@ export interface SceneEngine {
   setRunning(running: boolean): void;
   setReducedMotion(reduced: boolean): void;
   destroy(): void;
+  /** Optional: scenes that draw the mountain follow the climber's position (Daylight ignores it). */
+  setClimb?(c: ClimbInput): void;
 }
 
 export interface SceneInfo {

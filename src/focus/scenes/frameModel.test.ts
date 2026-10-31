@@ -1,0 +1,119 @@
+// P1 (ROUND6_PLAN §3.4, §10): what the renderer is handed. The crest line is the trail projected (the feet and the
+// stone stand on it), the contact windows sit under the feet and the stone, the model is deterministic per posM, and
+// each climb gets its own rock seed.
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { installStubs, makeEngine, removeStubs, run } from './testkit/engineStub';
+import { M_PER_H, PACE_M } from '../../domain/mountain';
+import type { FrameModel } from './frameModel';
+import { makeTrail } from './trail';
+
+beforeAll(installStubs);
+afterAll(removeStubs);
+const lenM = 1500 * PACE_M;
+const climb = (posM: number, stage = 1) => ({ stage, stageStartM: 0, stageLenM: lenM, posM, fromSummit: false, summits: 0, atSummit: false });
+const modelOf = (e: unknown) => (e as { model(): FrameModel }).model();
+
+describe('the frame model', () => {
+  for (const [w, h] of [[1440, 900], [390, 844]] as const) {
+    it(`${w}×${h}: the crest line is the trail projected; the planted feet and the stone's contact stand on it (±1 px)`, async () => {
+      const e = await makeEngine(w, h);
+      e.setClimb!(climb(600 * PACE_M)); e.setProgress(0.4); e.setPhase('focus', { instant: true });
+      run(2);
+      const m = modelOf(e);
+      const trail = makeTrail({ stage: 1, startH: 0, lenH: lenM / M_PER_H, fromSummit: false });
+      const zH = m.cam.Hpx * m.cam.zoom;
+      const S = (x: number, y: number) => ({ x: m.cam.ax + (x - m.cam.x) * zH, y: m.cam.ay - (y - m.cam.y) * zH });
+      expect(m.ridge.length).toBe(Math.ceil(w));
+      for (let i = 0; i < m.ridge.length; i += 37) { const wx = m.cam.x + (i + 0.5 - m.cam.ax) / zH; expect(Math.abs(m.ridge[i] - S(wx, trail.groundY(wx)).y)).toBeLessThan(1e-3); }
+      for (const f of m.skel!.feet.filter((ft) => ft.planted)) {
+        const p = S(f.ball.x, f.ball.y), col = Math.round(p.x - 0.5);
+        expect(Math.abs(m.ridge[col] - p.y)).toBeLessThanOrEqual(1);
+        expect(m.contacts.some((c) => Math.abs(c - f.ball.x) < 1e-9)).toBe(true);
+        // the broken crest is exactly the trail under a planted foot (±1 px), and never above the walking line
+        expect(Math.abs(m.crest[col] - m.ridge[col])).toBeLessThanOrEqual(1);
+      }
+      for (let i = 0; i < m.crest.length; i++) expect(m.crest[i]).toBeGreaterThanOrEqual(m.ridge[i] - 1e-9);
+      // elsewhere it is broken: bites of a few px
+      let bitten = 0; for (let i = 0; i < m.crest.length; i++) if (m.crest[i] - m.ridge[i] > 2) bitten++;
+      expect(bitten / m.crest.length).toBeGreaterThan(0.2);
+      // the stone touches the crest line: its circle's lowest clearance above the line is within 1 px
+      const c = S(m.stone.c.x, m.stone.c.y), Rp = m.stone.R * zH;
+      let gap = Infinity;
+      for (let a = 0; a < 360; a += 0.25) { const x = c.x + Rp * Math.cos((a * Math.PI) / 180), y = c.y + Rp * Math.sin((a * Math.PI) / 180); const col = Math.round(x - 0.5); if (col >= 0 && col < m.ridge.length) gap = Math.min(gap, m.ridge[col] - y); }
+      expect(Math.abs(gap)).toBeLessThanOrEqual(1);
+      e.destroy();
+    });
+  }
+  it('deterministic: the same posM gives the same model; each climb has its own rock seed', async () => {
+    const at = async (stage: number) => { const e = await makeEngine(1440, 900, true); e.setClimb!(climb(523 * PACE_M, stage)); e.setProgress(0.3); e.setPhase('focus', { instant: true }); const m = modelOf(e); e.destroy(); return m; };
+    const a = await at(1), b = await at(1), c = await at(2);
+    expect(Array.from(a.ridge)).toEqual(Array.from(b.ridge));
+    expect(a.stone.rot).toBe(b.stone.rot);
+    expect(a.seed).toBe(b.seed);
+    expect(c.seed).not.toBe(a.seed);
+  });
+  it('a 3-H-or-more lead of incline is in view ahead of the stone at 1440×900 (the crest still hidden; REVIEW_ROUND6 A2 moved the stone to the third)', async () => {
+    const e = await makeEngine(1440, 900);
+    e.setClimb!(climb(600 * PACE_M)); e.setProgress(0.4); e.setPhase('focus', { instant: true });
+    run(1);
+    const m = modelOf(e);
+    const zH = m.cam.Hpx * m.cam.zoom;
+    const stoneRight = m.cam.ax + (m.stone.c.x + m.stone.R - m.cam.x) * zH;
+    expect((1440 - stoneRight) / zH).toBeGreaterThanOrEqual(3.0);
+    e.destroy();
+  });
+});
+
+describe('the stone (P2)', () => {
+  for (const [w, h, lo, hi] of [[1440, 900, 225, 235], [390, 844, 166, 176]] as const) { // (phone: Hpx 0.135 h since review K3)
+    it(`${w}×${h}: diameter ${lo}–${hi} px; on the phone the stone and figure sit inside 16 px gutters`, async () => {
+      const e = await makeEngine(w, h);
+      e.setClimb!(climb(600 * PACE_M)); e.setProgress(0.4); e.setPhase('focus', { instant: true });
+      let x0 = Infinity, x1 = -Infinity;
+      run(3, (s) => { const b = s.figBox as number[]; x0 = Math.min(x0, b[0] + 20); x1 = Math.max(x1, b[2] - 20); }, e.stats as unknown as Record<string, unknown>);
+      const m = modelOf(e);
+      const d = 2 * m.stone.R * m.cam.Hpx * m.cam.zoom;
+      expect(d).toBeGreaterThanOrEqual(lo); expect(d).toBeLessThanOrEqual(hi);
+      if (w === 390) { expect(x0).toBeGreaterThanOrEqual(16); expect(x1).toBeLessThanOrEqual(w - 16); }
+      e.destroy();
+    });
+  }
+});
+
+describe('atmosphere and stills (P4)', () => {
+  it('birds: never over the stone or the figure, never just above the crest; none when paused', async () => {
+    const e = await makeEngine(1440, 900);
+    const win = globalThis.window as unknown as { __keepQuality?: boolean };
+    win.__keepQuality = true;                       // (stepped at 6 Hz for speed: keep the frame-time governor out of it)
+    let f = 300;
+    e.setClimb!(climb(f * PACE_M)); e.setProgress(0.2); e.setPhase('focus', { instant: true });
+    let seen = 0;
+    for (let k = 0; k < 400; k++) {
+      f++; e.setClimb!(climb(f * PACE_M));
+      run(1, () => {
+        const m = modelOf(e); const zH = m.cam.Hpx * m.cam.zoom;
+        const sc = { x: m.cam.ax + (m.stone.c.x - m.cam.x) * zH, y: m.cam.ay - (m.stone.c.y - m.cam.y) * zH };
+        for (const b of m.birds) {
+          seen++;
+          expect(Math.hypot(b.x - sc.x, b.y - sc.y)).toBeGreaterThan(m.stone.R * zH);
+          expect(b.y).toBeLessThan(m.ridge[Math.max(0, Math.min(m.ridge.length - 1, Math.round(b.x)))] - 0.12 * 900 + 1);
+        }
+      }, e.stats as unknown as Record<string, unknown>, 6);
+    }
+    expect(seen).toBeGreaterThan(0);
+    e.setPhase('paused'); run(1);
+    expect(modelOf(e).birds.length).toBe(0);
+    win.__keepQuality = false;
+    e.destroy();
+  }, 60_000);
+  it('reduced motion: grain and sky stay put between re-poses', async () => {
+    const e = await makeEngine(1440, 900, true);
+    e.setClimb!(climb(500 * PACE_M)); e.setProgress(0.3); e.setPhase('focus', { instant: true });
+    const a = modelOf(e);
+    e.setClimb!(climb(510 * PACE_M)); e.setRunning(true);
+    const b = modelOf(e);
+    expect(b.t).toBe(a.t); expect(b.sky.drift).toBe(a.sky.drift); expect(b.birds.length).toBe(0);
+    expect(b.stone.rot).toBeGreaterThan(a.stone.rot);
+    e.destroy();
+  });
+});

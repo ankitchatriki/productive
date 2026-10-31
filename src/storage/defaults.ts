@@ -1,5 +1,6 @@
 import type { AppData, FocusSettings, Settings } from '../domain/types';
 import { DEFAULT_SCENE } from '../focus/scenes/ids';
+import { defaultMountain } from '../domain/climb';
 
 export const defaultFocusSettings: FocusSettings = {
   defaultBlockMinutes: 50,
@@ -24,7 +25,7 @@ export const defaultSettings: Settings = {
 
 export function emptyAppData(): AppData {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     settings: { ...defaultSettings, restDays: [], focus: { ...defaultFocusSettings, lastChoice: { ...defaultFocusSettings.lastChoice } } },
     courses: [],
     sections: [],
@@ -32,5 +33,6 @@ export function emptyAppData(): AppData {
     weekPlans: {},
     activeTimer: null,
     focus: null,
+    mountain: defaultMountain(),
   };
 }

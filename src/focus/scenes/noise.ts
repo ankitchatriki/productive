@@ -39,3 +39,15 @@ export const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
+/** 2D fBm, roughly 0..1. */
+export function fbm2(x: number, y: number, octaves = 4): number {
+  let a = 0.5, f = 1, v = 0, n = 0;
+  for (let i = 0; i < octaves; i++) { v += a * noise2(x * f + i * 17.3, y * f - i * 9.1); n += a; f *= 2; a *= 0.5; }
+  return v / n;
+}
+/** 1D fBm, roughly 0..1. */
+export function fbm1(x: number, octaves = 3): number {
+  let a = 0.5, f = 1, v = 0, n = 0;
+  for (let i = 0; i < octaves; i++) { v += a * noise1(x * f + i * 31.7); n += a; f *= 2; a *= 0.5; }
+  return v / n;
+}

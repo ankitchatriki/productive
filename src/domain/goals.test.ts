@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeGoalProgress } from './goals';
+import { STATUS_CHIP, STATUS_LABEL, computeGoalProgress, goalText } from './goals';
 import { createWeekPlan } from './plan';
 import { at, data, entry, iso, section } from './fixtures';
 import type { Goal } from './types';
@@ -65,5 +65,24 @@ describe('computeGoalProgress', () => {
     ] });
     expect(computeGoalProgress({ id: 's', kind: 'sectionsCompleted', courseId: null, targetCount: 3 }, plan, d, at(2026, 10, 29)).current).toBe(2);
     expect(computeGoalProgress({ id: 's', kind: 'sectionsCompleted', courseId: 'c1', targetCount: 3 }, plan, d, at(2026, 10, 29)).current).toBe(1);
+  });
+});
+
+describe('goalText (moved from Review)', () => {
+  const name = (id: string) => (id === 'c1' ? 'OChem' : undefined);
+  it('missed duration goal: "Missed by h:mm"', () => {
+    expect(goalText(total, { goalId: 't', current: 480, target: 600, ratio: 0.8, status: 'missed' }, name)).toEqual({ name: 'Total hours', value: '8:00 / 10:00', chip: 'Missed by 2:00' });
+  });
+  it('met over: "Met · +h:mm over"', () => {
+    expect(goalText(total, { goalId: 't', current: 670, target: 600, ratio: 1, status: 'met' }, name).chip).toBe('Met · +1:10 over');
+  });
+  it('count goal: "2 / 5"', () => {
+    const t = goalText(days, { goalId: 'd', current: 2, target: 5, ratio: 0.4, status: 'behind' }, name);
+    expect(t).toEqual({ name: 'Days hitting daily goal', value: '2 / 5', chip: 'Behind' });
+  });
+  it('course name and labels/chips', () => {
+    expect(goalText({ id: 'c', kind: 'courseHours', courseId: 'c1', targetMinutes: 60 }, { goalId: 'c', current: 0, target: 60, ratio: 0, status: 'on_track' }, name).name).toBe('Hours on OChem');
+    expect(STATUS_LABEL.on_track).toBe('On track');
+    expect(STATUS_CHIP.behind).toBe('chip-behind');
   });
 });

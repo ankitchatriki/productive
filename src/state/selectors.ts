@@ -4,6 +4,7 @@ import { blockProgress, blockRemainingMs, breakProgress, breakRemainingMs, focus
 import { sectionsOfCourse } from '../domain/sections';
 import { toDateKey, weekStartOf } from '../domain/time';
 import { computeStreaks } from '../domain/streaks';
+import { weekProgress } from '../domain/weekProgress';
 
 export const todayKey = (now: Date) => toDateKey(now);
 export const currentWeekStart = (now: Date) => weekStartOf(toDateKey(now));
@@ -27,6 +28,9 @@ export function sectionsByCourse(data: AppData, opts: { includeArchived?: boolea
     .map((course) => ({ course, sections: sectionsOfCourse(data.sections, course.id).filter((s) => (opts.filter ? opts.filter(s) : true)) }))
     .filter((g) => g.sections.length > 0);
 }
+
+/** Weekly progress card data (ROUND3_PLAN §1.6). */
+export const weekProgressAt = (data: AppData, now: Date) => weekProgress(data, now);
 
 /** Streaks as of `now`, including the running timer — shared by Today and Review (review R8). */
 export function streaksAt(data: AppData, now: Date) {

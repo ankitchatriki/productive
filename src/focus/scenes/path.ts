@@ -15,15 +15,15 @@ export const PATHS: Record<Layout, PathSpec> = {
 export const WORLD: Record<Layout, { w: number; h: number }> = { landscape: { w: 1.6, h: 1 }, portrait: { w: 0.75, h: 1 } };
 
 /** Figure standing height in world units per layout. */
-export const FIGURE_H: Record<Layout, number> = { landscape: 0.13, portrait: 0.135 };
+export const FIGURE_H: Record<Layout, number> = { landscape: 0.13, portrait: 0.145 };
 
 /** Layout rule: landscape when w/h ≥ 0.9. Returns the world-to-screen transform: x = ox + wx·S, y = h − oy − wy·S.
  *  Portrait lifts the world by 19% of the height so the climb sits above the control bar (review S2). */
 export function layoutFor(w: number, h: number): { layout: Layout; S: number; ox: number; oy: number } {
   const layout: Layout = w / h >= 0.9 ? 'landscape' : 'portrait';
-  const S = layout === 'landscape' ? Math.min(h, w / 1.5) : Math.min(0.9 * h, w / 0.72);
-  // Portrait keeps the plateau (and the stone resting on it) on screen when the phone is narrower than the world.
-  const ox = layout === 'portrait' ? Math.min((w - WORLD[layout].w * S) / 2, w - 0.75 * S) : (w - WORLD[layout].w * S) / 2;
+  // Portrait shows 0.80 world units across so the summit massif (peak, col, twin) fits beside the climb (review T2/T13).
+  const S = layout === 'landscape' ? Math.min(h, w / 1.5) : Math.min(0.9 * h, w / 0.8);
+  const ox = layout === 'portrait' ? w - 0.8 * S : (w - WORLD[layout].w * S) / 2;
   const oy = layout === 'portrait' ? Math.round(0.19 * h) : 0;
   return { layout, S, ox, oy };
 }
@@ -54,6 +54,8 @@ export interface SlopePath {
   groundY(x: number): number;
   /** s at the far end of the plateau. */
   plateauEndS: number;
+  /** Optional exact boulder centre (offset curve) for radius R. */
+  centreAt?(s: number, R: number): V;
 }
 
 export function buildPath(spec: PathSpec): SlopePath {

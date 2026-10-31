@@ -88,6 +88,13 @@ export function FocusController({ announceApp, onStopAtLastActivity }: FocusCont
   }, [data.focus, data.settings.focus.chime, dispatch, announce]);
 
   useEffect(() => { check(); }, [now, check]);
+
+  // The climber's position is saved every 60 s while focusing (ROUND3_ART §6.2); block end and clock out save it too.
+  const lastSync = useRef(0);
+  useEffect(() => {
+    if (session?.phase !== 'focus') { lastSync.current = now.getTime(); return; }
+    if (now.getTime() - lastSync.current >= 60_000) { lastSync.current = now.getTime(); dispatch({ type: 'mountain/sync', now: now.toISOString() }); }
+  }, [now, session?.phase, dispatch]);
   useEffect(() => {
     const onVis = () => { if (document.visibilityState === 'visible') check(); };
     document.addEventListener('visibilitychange', onVis);
